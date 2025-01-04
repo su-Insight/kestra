@@ -3,7 +3,9 @@ package io.kestra.plugin.scripts.exec.scripts.runners;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.tasks.runners.DefaultLogConsumer;
 import io.kestra.core.models.tasks.runners.*;
-import io.kestra.core.models.tasks.runners.types.ProcessTaskRunner;
+import io.kestra.core.runners.DefaultRunContext;
+import io.kestra.core.runners.RunContextInitializer;
+import io.kestra.plugin.core.runner.Process;
 import io.kestra.core.models.tasks.NamespaceFiles;
 import io.kestra.core.runners.FilesService;
 import io.kestra.core.runners.NamespaceFilesService;
@@ -12,7 +14,7 @@ import io.kestra.core.utils.IdUtils;
 import io.kestra.plugin.scripts.exec.scripts.models.DockerOptions;
 import io.kestra.plugin.scripts.exec.scripts.models.RunnerType;
 import io.kestra.plugin.scripts.exec.scripts.models.ScriptOutput;
-import io.kestra.plugin.scripts.runner.docker.DockerTaskRunner;
+import io.kestra.plugin.scripts.runner.docker.Docker;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.With;
@@ -75,6 +77,9 @@ public class CommandsWrapper implements TaskCommands {
     @With
     private Duration timeout;
 
+    @With
+    private TargetOS targetOS;
+
     public CommandsWrapper(RunContext runContext) {
         this.runContext = runContext;
         this.workingDirectory = runContext.tempDir();
@@ -101,7 +106,8 @@ public class CommandsWrapper implements TaskCommands {
             inputFiles,
             outputFiles,
             enableOutputDirectory,
-            timeout
+            timeout,
+            targetOS
         );
     }
 
@@ -130,7 +136,7 @@ public class CommandsWrapper implements TaskCommands {
             String tenantId = ((Map<String, String>) runContext.getVariables().get("flow")).get("tenantId");
             String namespace = ((Map<String, String>) runContext.getVariables().get("flow")).get("namespace");
 
-            NamespaceFilesService namespaceFilesService = runContext.getApplicationContext().getBean(NamespaceFilesService.class);
+            NamespaceFilesService namespaceFilesService = ((DefaultRunContext)runContext).getApplicationContext().getBean(NamespaceFilesService.class);
             List<URI> injectedFiles = namespaceFilesService.inject(
                 runContext,
                 tenantId,
@@ -147,8 +153,9 @@ public class CommandsWrapper implements TaskCommands {
             filesToUpload.addAll(finalInputFiles.keySet());
         }
 
-        RunContext taskRunnerRunContext = runContext.forTaskRunner(realTaskRunner);
+        RunContextInitializer initializer = ((DefaultRunContext) runContext).getApplicationContext().getBean(RunContextInitializer.class);
 
+        RunContext taskRunnerRunContext = initializer.forPlugin(((DefaultRunContext) runContext).clone(), realTaskRunner);
         this.commands = this.render(runContext, commands, filesToUpload);
 
         RunnerResult runnerResult = realTaskRunner.run(taskRunnerRunContext, this, filesToUpload, this.outputFiles);
@@ -173,11 +180,16 @@ public class CommandsWrapper implements TaskCommands {
     }
 
     public TaskRunner getTaskRunner() {
-        if (taskRunner == null) {
-            taskRunner = switch (runnerType) {
-                case DOCKER -> DockerTaskRunner.from(this.dockerOptions);
-                case PROCESS -> new ProcessTaskRunner();
+        if (runnerType != null) {
+            return switch (runnerType) {
+                case DOCKER -> Docker.from(dockerOptions);
+                case PROCESS -> new Process();
             };
+        }
+
+        // special case to take into account the deprecated dockerOptions if set
+        if (taskRunner instanceof Docker && dockerOptions != null) {
+            return Docker.from(dockerOptions);
         }
 
         return taskRunner;

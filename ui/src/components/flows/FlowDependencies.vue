@@ -7,7 +7,7 @@
     import dagre from "dagre"
     import ArrowExpandAll from "vue-material-design-icons/ArrowExpandAll.vue";
 
-    import {cssVariable} from "../../utils/global"
+    import {cssVariable} from "@kestra-io/ui-libs/src/utils/global";
     import {DependenciesNode} from "@kestra-io/ui-libs"
 
     import {linkedElements} from "../../utils/vueFlow"
@@ -189,7 +189,7 @@
                     @expand-dependencies="expand"
                     @mouseover="onMouseOver"
                     @mouseleave="onMouseLeave"
-                    @open-link="openFlow($event)"
+                    @open-link="openFlow"
                 />
             </template>
 

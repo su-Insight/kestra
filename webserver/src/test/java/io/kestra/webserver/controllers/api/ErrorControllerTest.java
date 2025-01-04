@@ -3,7 +3,7 @@ package io.kestra.webserver.controllers.api;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.tasks.log.Log;
+import io.kestra.plugin.core.log.Log;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.core.type.Argument;
 import io.micronaut.http.HttpStatus;
@@ -12,7 +12,7 @@ import io.micronaut.http.client.annotation.Client;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
 import io.micronaut.http.hateoas.JsonError;
 import io.micronaut.reactor.http.client.ReactorHttpClient;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
@@ -27,7 +27,7 @@ import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SuppressWarnings("OptionalGetWithoutIsPresent")
-@MicronautTest
+@KestraTest
 class ErrorControllerTest {
     @Inject
     @Client("/")
@@ -107,7 +107,7 @@ class ErrorControllerTest {
 
         String response = exception.getResponse().getBody(String.class).get();
         assertThat(response, containsString("Cannot deserialize value of type `org.slf4j.event.Level` from String \\\"WRONG\\\""));
-        assertThat(response, containsString("\"path\":\"io.kestra.core.models.flows.Flow[\\\"tasks\\\"] > java.util.ArrayList[0] > io.kestra.core.tasks.log.Log[\\\"level\\\"]\""));
+        assertThat(response, containsString("\"path\":\"io.kestra.core.models.flows.Flow[\\\"tasks\\\"] > java.util.ArrayList[0] > io.kestra.plugin.core.log.Log[\\\"level\\\"]\""));
     }
 
 }

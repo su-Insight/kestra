@@ -16,7 +16,7 @@ public class UriProvider {
     String uri;
 
     private URI build(String url) {
-        if (uri == null) {
+        if (uri == null || uri.isEmpty()) {
             return null;
         }
 
@@ -50,5 +50,9 @@ public class UriProvider {
             "flows/" +
             flow.getNamespace() + "/" +
             flow.getId());
+    }
+
+    public URI resetPasswordUrl(String token) {
+        return this.build("/ui/login/reset-password?token=" + token);
     }
 }

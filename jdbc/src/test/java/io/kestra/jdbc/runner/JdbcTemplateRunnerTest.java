@@ -8,12 +8,10 @@ import io.kestra.core.repositories.LocalFlowRepositoryLoader;
 import io.kestra.core.repositories.TemplateRepositoryInterface;
 import io.kestra.core.runners.RunnerUtils;
 import io.kestra.core.runners.StandAloneRunner;
-import io.kestra.core.tasks.flows.TemplateTest;
+import io.kestra.plugin.core.flow.TemplateTest;
 import io.kestra.core.utils.TestsUtils;
 import io.kestra.jdbc.JdbcTestUtils;
-import io.micronaut.context.annotation.Property;
-import io.micronaut.core.util.StringUtils;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.junit.jupiter.api.BeforeAll;
@@ -24,7 +22,7 @@ import org.junitpioneer.jupiter.RetryingTest;
 import java.io.IOException;
 import java.net.URISyntaxException;
 
-@MicronautTest(transactional = false)
+@KestraTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // must be per-class to allow calling once init() which took a lot of time
 public abstract class JdbcTemplateRunnerTest {
     @Inject

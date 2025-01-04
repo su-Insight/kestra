@@ -2,13 +2,13 @@ package io.kestra.core.models.flows;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.kestra.core.models.Label;
-import io.kestra.core.models.conditions.types.VariableCondition;
+import io.kestra.plugin.core.condition.ExpressionCondition;
 import io.kestra.core.models.flows.input.StringInput;
 import io.kestra.core.models.listeners.Listener;
-import io.kestra.core.models.triggers.types.Schedule;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.log.Log;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.log.Log;
 import io.kestra.core.utils.IdUtils;
 import org.junit.jupiter.api.Test;
 
@@ -102,14 +102,14 @@ class FlowWithSourceTest {
             ))
             .listeners(List.of(
                 Listener.builder()
-                    .conditions(List.of(VariableCondition.builder().expression("true").build()))
+                    .conditions(List.of(ExpressionCondition.builder().expression("true").build()))
                     .build()
             ))
             .triggers(List.of(
                 Schedule.builder().id("schedule").cron("0 1 9 * * *").build()
             ))
-            .taskDefaults(List.of(
-                TaskDefault.builder()
+            .pluginDefaults(List.of(
+                PluginDefault.builder()
                     .type(Log.class.getName())
                     .forced(true)
                     .values(Map.of(

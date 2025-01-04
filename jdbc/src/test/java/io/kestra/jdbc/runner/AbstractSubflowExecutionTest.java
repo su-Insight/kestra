@@ -4,13 +4,12 @@ import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.runners.DeserializationIssuesCaseTest;
 import io.kestra.core.runners.SubflowExecution;
-import io.kestra.core.tasks.flows.Subflow;
+import io.kestra.plugin.core.flow.Subflow;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.jdbc.JdbcTestUtils;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.jooq.Field;
-import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +20,7 @@ import java.util.Optional;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@MicronautTest(transactional = false)
+@KestraTest
 public abstract class AbstractSubflowExecutionTest {
     @Inject
     AbstractJdbcSubflowExecutionStorage subflowExecutionStorage;

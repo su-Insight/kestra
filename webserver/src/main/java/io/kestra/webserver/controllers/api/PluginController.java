@@ -3,6 +3,7 @@ package io.kestra.webserver.controllers.api;
 import io.kestra.core.docs.*;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Input;
+import io.kestra.core.models.flows.PluginDefault;
 import io.kestra.core.models.flows.Type;
 import io.kestra.core.models.tasks.FlowableTask;
 import io.kestra.core.models.tasks.Task;
@@ -12,10 +13,14 @@ import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.plugins.RegisteredPlugin;
 import io.micronaut.cache.annotation.Cacheable;
 import io.micronaut.core.annotation.NonNull;
+import io.micronaut.core.annotation.Nullable;
 import io.micronaut.http.HttpHeaders;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MutableHttpResponse;
-import io.micronaut.http.annotation.*;
+import io.micronaut.http.annotation.Controller;
+import io.micronaut.http.annotation.Get;
+import io.micronaut.http.annotation.PathVariable;
+import io.micronaut.http.annotation.QueryValue;
 import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
 import io.micronaut.validation.Validated;
@@ -49,23 +54,26 @@ public class PluginController {
         description = "The schema will be output as [http://json-schema.org/draft-07/schema](Json Schema Draft 7)"
     )
     public HttpResponse<Map<String, Object>> schemas(
-        @Parameter(description = "The schema needed") @PathVariable SchemaType type
+        @Parameter(description = "The schema needed") @PathVariable SchemaType type,
+        @Parameter(description = "If schema should be an array of requested type") @Nullable @QueryValue(value = "arrayOf", defaultValue = "false") boolean arrayOf
     ) {
         return HttpResponse.ok()
-            .body(this.schemasCache(type))
+            .body(this.schemasCache(type, arrayOf))
             .header(HttpHeaders.CACHE_CONTROL, CACHE_DIRECTIVE);
     }
 
     @Cacheable("default")
-    protected Map<String, Object> schemasCache(SchemaType type) {
+    protected Map<String, Object> schemasCache(SchemaType type, boolean arrayOf) {
         if (type == SchemaType.flow) {
-            return jsonSchemaGenerator.schemas(Flow.class);
+            return jsonSchemaGenerator.schemas(Flow.class, arrayOf);
         } else if (type == SchemaType.template) {
-            return jsonSchemaGenerator.schemas(Template.class);
+            return jsonSchemaGenerator.schemas(Template.class, arrayOf);
         } else if (type == SchemaType.task) {
-            return jsonSchemaGenerator.schemas(Task.class);
+            return jsonSchemaGenerator.schemas(Task.class, arrayOf);
         } else if (type == SchemaType.trigger) {
-            return jsonSchemaGenerator.schemas(AbstractTrigger.class);
+            return jsonSchemaGenerator.schemas(AbstractTrigger.class, arrayOf);
+        } else if (type == SchemaType.plugindefault) {
+            return jsonSchemaGenerator.schemas(PluginDefault.class, arrayOf);
         } else {
             throw new IllegalArgumentException("Invalid type " + type);
         }
@@ -130,17 +138,13 @@ public class PluginController {
     public MutableHttpResponse<Map<String, PluginIcon>> icons() {
         Map<String, PluginIcon> icons = pluginRegistry.plugins()
             .stream()
-            .flatMap(plugin -> Stream
-                .concat(
+            .flatMap(plugin -> Stream.of(
                     plugin.getTasks().stream(),
-                    Stream.concat(
-                        Stream.concat(
-                            plugin.getTriggers().stream(),
-                            plugin.getConditions().stream()
-                        ),
-                        plugin.getTaskRunners().stream()
-                    )
+                    plugin.getTriggers().stream(),
+                    plugin.getConditions().stream(),
+                    plugin.getTaskRunners().stream()
                 )
+                .flatMap(i -> i)
                 .map(e -> new AbstractMap.SimpleEntry<>(
                     e.getName(),
                     new PluginIcon(
@@ -152,6 +156,20 @@ public class PluginController {
             )
             .filter(entry -> entry.getKey() != null)
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a1, a2) -> a1));
+
+        // add aliases
+        Map<String, PluginIcon> aliasIcons = pluginRegistry.plugins().stream()
+            .flatMap(plugin -> plugin.getAliases().values().stream().map(e -> new AbstractMap.SimpleEntry<>(
+                e.getKey(),
+                new PluginIcon(
+                    e.getKey().substring(e.getKey().lastIndexOf('.') + 1),
+                    plugin.icon(e.getValue()),
+                    FlowableTask.class.isAssignableFrom(e.getValue())
+                ))))
+            .filter(entry -> entry.getKey() != null)
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a1, a2) -> a1));
+        icons.putAll(aliasIcons);
+
         return HttpResponse.ok(icons).header(HttpHeaders.CACHE_CONTROL, CACHE_DIRECTIVE);
     }
 
@@ -159,6 +177,13 @@ public class PluginController {
     @ExecuteOn(TaskExecutors.IO)
     @Operation(tags = {"Plugins"}, summary = "Get plugins icons")
     public MutableHttpResponse<Map<String, PluginIcon>> pluginGroupIcons() {
+        Map<String, PluginIcon> icons = loadPluginsIcon();
+
+        return HttpResponse.ok(icons).header(HttpHeaders.CACHE_CONTROL, CACHE_DIRECTIVE);
+    }
+
+    @Cacheable("default")
+    protected Map<String, PluginIcon> loadPluginsIcon() {
         Map<String, PluginIcon> icons = new HashMap<>();
 
         pluginRegistry.plugins().stream()
@@ -174,7 +199,7 @@ public class PluginController {
                 });
             });
 
-        return HttpResponse.ok(icons).header(HttpHeaders.CACHE_CONTROL, CACHE_DIRECTIVE);
+        return icons;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -239,7 +264,7 @@ public class PluginController {
             .orElseThrow(() -> new NoSuchElementException("Class '" + className + "' doesn't exists "));
 
         Class baseCls = registeredPlugin.baseClass(className);
-        if(registeredPlugin.getAliases().containsKey(className)) {
+        if(registeredPlugin.getAliases().containsKey(className.toLowerCase())) {
             return ClassPluginDocumentation.of(jsonSchemaGenerator, registeredPlugin, cls, allProperties ? null : baseCls, className);
         } else {
             return ClassPluginDocumentation.of(jsonSchemaGenerator, registeredPlugin, cls, allProperties ? null : baseCls);

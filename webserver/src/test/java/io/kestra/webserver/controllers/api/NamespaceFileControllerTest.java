@@ -6,6 +6,7 @@ import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.storages.FileAttributes;
 import io.kestra.core.storages.StorageContext;
 import io.kestra.core.storages.StorageInterface;
+import io.kestra.plugin.core.flow.Subflow;
 import io.kestra.webserver.controllers.h2.JdbcH2ControllerTest;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.type.Argument;
@@ -15,7 +16,7 @@ import io.micronaut.http.client.annotation.Client;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
 import io.micronaut.http.client.multipart.MultipartBody;
 import io.micronaut.reactor.http.client.ReactorHttpClient;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -30,19 +31,15 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.net.URL;
-import java.nio.charset.Charset;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.hamcrest.core.Is.is;
 
-@MicronautTest
+@KestraTest
 class NamespaceFileControllerTest extends JdbcH2ControllerTest {
     private static final String NAMESPACE = "io.namespace";
 
@@ -210,7 +207,7 @@ class NamespaceFileControllerTest extends JdbcH2ControllerTest {
 
         Flow retrievedFlow = flowRepository.findById(null, NAMESPACE, "task-flow").get();
         assertThat(retrievedFlow.getNamespace(), is(NAMESPACE));
-        assertThat(((io.kestra.core.tasks.flows.Subflow) retrievedFlow.getTasks().get(0)).getNamespace(), is(namespaceToExport));
+        assertThat(((Subflow) retrievedFlow.getTasks().get(0)).getNamespace(), is(namespaceToExport));
     }
 
     private void assertNamespaceFileContent(URI fileUri, String expectedContent) throws IOException {
@@ -230,10 +227,25 @@ class NamespaceFileControllerTest extends JdbcH2ControllerTest {
 
     @Test
     void delete() throws IOException {
-        storageInterface.createDirectory(null, toNamespacedStorageUri("namespace", URI.create("/test")));
-        client.toBlocking().exchange(HttpRequest.DELETE("/api/v1/namespaces/" + NAMESPACE + "/files?path=/test", null));
-        boolean res = storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, URI.create("/test")));
-        assertThat(res, is(false));
+        storageInterface.put(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folder/file.txt")), new ByteArrayInputStream("Hello".getBytes()));
+        client.toBlocking().exchange(HttpRequest.DELETE("/api/v1/namespaces/" + NAMESPACE + "/files?path=/folder/file.txt", null));
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folder/file.txt"))), is(false));
+        // Zombie folders are deleted, but not the root folder
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folder"))), is(false));
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, null)), is(true));
+
+        storageInterface.put(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folderWithMultipleFiles/file1.txt")), new ByteArrayInputStream("Hello".getBytes()));
+        storageInterface.put(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folderWithMultipleFiles/file2.txt")), new ByteArrayInputStream("Hello".getBytes()));
+        client.toBlocking().exchange(HttpRequest.DELETE("/api/v1/namespaces/" + NAMESPACE + "/files?path=/folderWithMultipleFiles/file1.txt", null));
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folderWithMultipleFiles/file1.txt"))), is(false));
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folderWithMultipleFiles/file2.txt"))), is(true));
+        // Since there is still one file in the folder, it should not be deleted
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folderWithMultipleFiles"))), is(true));
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, null)), is(true));
+
+        client.toBlocking().exchange(HttpRequest.DELETE("/api/v1/namespaces/" + NAMESPACE + "/files?path=/folderWithMultipleFiles", null));
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, URI.create("/folderWithMultipleFiles/"))), is(false));
+        assertThat(storageInterface.exists(null, toNamespacedStorageUri(NAMESPACE, null)), is(true));
     }
 
     @Test
