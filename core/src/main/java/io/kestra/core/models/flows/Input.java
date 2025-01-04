@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.kestra.core.models.flows.input.*;
+import io.kestra.core.models.validations.ManualConstraintViolation;
 import io.micronaut.core.annotation.Introspected;
 import lombok.Builder;
 import lombok.Getter;
@@ -21,7 +22,6 @@ import jakarta.validation.constraints.Pattern;
 @Getter
 @NoArgsConstructor
 @Introspected
-@JsonInclude(JsonInclude.Include.NON_DEFAULT)
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", visible = true, include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ArrayInput.class, name = "ARRAY"),
@@ -39,6 +39,7 @@ import jakarta.validation.constraints.Pattern;
     @JsonSubTypes.Type(value = TimeInput.class, name = "TIME"),
     @JsonSubTypes.Type(value = URIInput.class, name = "URI")
 })
+@JsonInclude(JsonInclude.Include.NON_DEFAULT)
 public abstract class Input<T> implements Data {
     @NotNull
     @NotBlank

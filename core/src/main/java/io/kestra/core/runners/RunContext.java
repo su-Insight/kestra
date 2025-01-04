@@ -1,6 +1,7 @@
 package io.kestra.core.runners;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableMap;
@@ -15,9 +16,9 @@ import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Input;
 import io.kestra.core.models.flows.input.SecretInput;
-import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.common.EncryptedString;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.plugins.PluginConfigurations;
@@ -41,6 +42,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.*;
 import java.util.function.Consumer;
@@ -69,7 +71,7 @@ public class RunContext {
     private Optional<String> secretKey;
 
     /**
-     * Only used by {@link io.kestra.core.models.triggers.types.Flow}
+     * Only used by {@link io.kestra.plugin.core.trigger.Flow}
      *
      * @param applicationContext the current {@link ApplicationContext}
      * @param flow the current {@link Flow}
@@ -144,6 +146,11 @@ public class RunContext {
         this.pluginConfiguration = Collections.emptyMap();
     }
 
+    private RunContext(final ApplicationContext context) {
+        this.applicationContext = context;
+        this.initBean(context);
+    }
+
     private void initPluginConfiguration(ApplicationContext applicationContext, String plugin) {
         this.pluginConfiguration = applicationContext.findBean(PluginConfigurations.class)
             .map(pluginConfigurations -> pluginConfigurations.getConfigurationByPluginType(plugin))
@@ -170,7 +177,10 @@ public class RunContext {
 
     private void initContext(Flow flow, Task task, Execution execution, TaskRun taskRun, boolean decryptVariables) {
         this.variables = this.variables(flow, task, execution, taskRun, null, decryptVariables);
+        initStorage(taskRun);
+    }
 
+    private void initStorage(TaskRun taskRun) {
         if (taskRun != null && this.storageInterface != null) {
             this.storage = new InternalStorage(
                 logger(),
@@ -237,6 +247,7 @@ public class RunContext {
         return triggerExecutionId;
     }
 
+    @JsonInclude
     public Map<String, Object> getVariables() {
         return variables;
     }
@@ -411,6 +422,10 @@ public class RunContext {
             builder.put("value", taskRun.getValue());
         }
 
+        if (taskRun.getIteration() != null) {
+            builder.put("iteration", taskRun.getIteration());
+        }
+
         return builder.build();
     }
 
@@ -501,10 +516,7 @@ public class RunContext {
 
         final TaskRun taskRun = workerTask.getTaskRun();
 
-        this.initLogger(taskRun, workerTask.getTask());
-
-        Map<String, Object> clone = new HashMap<>(this.variables);
-
+        final Map<String, Object> clone = new HashMap<>(this.variables);
         clone.remove("taskrun");
         clone.put("taskrun", this.variables(taskRun));
 
@@ -521,12 +533,15 @@ public class RunContext {
             clone.put("taskrun", taskrun);
         }
 
-        clone.put("addSecretConsumer", (Consumer<String>) s -> runContextLogger.usedSecret(s));
+        final RunContext newContext = new RunContext(applicationContext);
+        clone.put("addSecretConsumer", (Consumer<String>) s -> newContext.runContextLogger.usedSecret(s));
 
-        this.variables = ImmutableMap.copyOf(clone);
-        this.storage = new InternalStorage(logger(), StorageContext.forTask(taskRun), storageInterface);
-        this.initPluginConfiguration(applicationContext, workerTask.getTask().getType());
-        return this;
+        newContext.variables = ImmutableMap.copyOf(clone);
+        newContext.temporaryDirectory = this.tempDir();
+        newContext.initLogger(taskRun, workerTask.getTask());
+        newContext.initStorage(taskRun);
+        newContext.initPluginConfiguration(applicationContext, workerTask.getTask().getType());
+        return newContext;
     }
 
     public RunContext forWorker(ApplicationContext applicationContext, WorkerTrigger workerTrigger) {
@@ -542,15 +557,15 @@ public class RunContext {
     }
 
     public RunContext forWorkingDirectory(ApplicationContext applicationContext, WorkerTask workerTask) {
-        forWorker(applicationContext, workerTask);
+        RunContext newContext = forWorker(applicationContext, workerTask);
 
-        Map<String, Object> clone = new HashMap<>(this.variables);
+        Map<String, Object> clone = new HashMap<>(newContext.variables);
 
         clone.put("workerTaskrun", clone.get("taskrun"));
 
-        this.variables = ImmutableMap.copyOf(clone);
+        newContext.variables = ImmutableMap.copyOf(clone);
 
-        return this;
+        return newContext;
     }
 
     public RunContext forTaskRunner(TaskRunner taskRunner) {
@@ -876,6 +891,22 @@ public class RunContext {
         return tempFile;
     }
 
+    public Path file(String filename) throws IOException {
+        return this.file(null, filename);
+    }
+
+    public Path file(byte[] content, String filename) throws IOException {
+        Path newFilePath = this.resolve(Path.of(filename));
+        Files.createDirectories(newFilePath.getParent());
+        Path file = Files.createFile(newFilePath);
+
+        if (content != null) {
+            Files.write(file, content);
+        }
+
+        return file;
+    }
+
     /**
      * Get the file extension including the '.' to be used with the various methods that took a suffix.
      * @param fileName the name of the file
@@ -890,7 +921,7 @@ public class RunContext {
         try {
             this.cleanTemporaryDirectory();
         } catch (IOException ex) {
-            logger().warn("Unable to cleanup worker task", ex);
+            new RunContextLogger().logger().warn("Unable to cleanup worker task", ex);
         }
     }
 

@@ -11,8 +11,9 @@ import io.kestra.core.models.tasks.retrys.AbstractRetry;
 import io.kestra.core.services.ConditionService;
 import io.kestra.core.services.ExecutionService;
 import io.kestra.core.services.LogService;
-import io.kestra.core.tasks.flows.Pause;
-import io.kestra.core.tasks.flows.WorkingDirectory;
+import io.kestra.plugin.core.flow.WaitFor;
+import io.kestra.plugin.core.flow.Pause;
+import io.kestra.plugin.core.flow.WorkingDirectory;
 import io.micronaut.context.ApplicationContext;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -219,6 +220,19 @@ public class ExecutorService {
             );
 
             if (endedTask.isPresent()) {
+                WorkerTaskResult workerTaskResult = endedTask.get();
+                // Compute outputs for the parent Flowable task if a terminated state was resolved
+                if (workerTaskResult.getTaskRun().getState().isTerminated()) {
+                    try {
+                        Output outputs = flowableParent.outputs(runContext);
+                        return Optional.of(new WorkerTaskResult(workerTaskResult
+                            .getTaskRun()
+                            .withOutputs(outputs != null ? outputs.toMap() : ImmutableMap.of()))
+                        );
+                    } catch (Exception e) {
+                        runContext.logger().error("Unable to resolve outputs from the Flowable task: {}", e.getMessage(), e);
+                    }
+                }
                 return endedTask;
             }
 
@@ -289,11 +303,9 @@ public class ExecutorService {
                 );
 
                 if (!nexts.isEmpty()) {
-                    return this.saveFlowableOutput(
-                        nexts,
-                        executor,
-                        parentTaskRun
-                    );
+                    return nexts.stream()
+                        .map(throwFunction(NextTaskRun::getTaskRun))
+                        .toList();
                 }
             } catch (Exception e) {
                 log.warn("Unable to resolve the next tasks to run", e);
@@ -305,8 +317,7 @@ public class ExecutorService {
 
     private List<TaskRun> saveFlowableOutput(
         List<NextTaskRun> nextTaskRuns,
-        Executor executor,
-        TaskRun parentTaskRun
+        Executor executor
     ) {
         return nextTaskRuns
             .stream()
@@ -326,7 +337,7 @@ public class ExecutorService {
                         t.getTaskRun()
                     );
 
-                    Output outputs = flowableTask.outputs(runContext, executor.getExecution(), parentTaskRun);
+                    Output outputs = flowableTask.outputs(runContext);
                     taskRun = taskRun.withOutputs(outputs != null ? outputs.toMap() : ImmutableMap.of());
                 } catch (Exception e) {
                     executor.getFlow().logger().warn("Unable to save output on taskRun '{}'", taskRun, e);
@@ -404,7 +415,8 @@ public class ExecutorService {
         }
 
         return executor.withTaskRun(
-            this.saveFlowableOutput(nextTaskRuns, executor, null),
+            // TODO - saveFlowableOutput seems to be only useful for Template
+            this.saveFlowableOutput(nextTaskRuns, executor),
             "handleNext"
         );
     }
@@ -512,13 +524,38 @@ public class ExecutorService {
                             ExecutionDelay.DelayType.RESTART_FAILED_TASK);
                     executionDelays.add(executionDelayBuilder.build());
                     executor.withExecution(behavior.equals(AbstractRetry.Behavior.CREATE_NEW_EXECUTION) ?
-                            executionService.markWithTaskRunAs(executor.getExecution(), taskRun.getId(), State.Type.RETRIED, true):
+                            executionService.markWithTaskRunAs(executor.getExecution(), taskRun.getId(), State.Type.RETRIED, true) :
                             executionService.markWithTaskRunAs(executor.getExecution(), taskRun.getId(), State.Type.RETRYING, false),
                         "handleRetryTask");
                     // Prevent workerTaskResult of flowable to be sent
                     // because one of its children is retrying
                     if (taskRun.getParentTaskRunId() != null) {
                         list = list.stream().filter(workerTaskResult -> !workerTaskResult.getTaskRun().getId().equals(taskRun.getParentTaskRunId())).toList();
+                    }
+                }
+            }
+            // WaitFor case
+            else if (task instanceof WaitFor waitFor && taskRun.getState().isRunning()) {
+                if (waitFor.childTaskRunExecuted(executor.getExecution(), taskRun)) {
+                    Output newOutput = waitFor.outputs(taskRun);
+                    TaskRun updatedTaskRun = taskRun.withOutputs(newOutput.toMap());
+                    RunContext runContext = runContextFactory.of(executor.getFlow(), task, executor.getExecution().withTaskRun(updatedTaskRun), updatedTaskRun);
+                    List<NextTaskRun> next = ((FlowableTask<?>) task).resolveNexts(runContext, executor.getExecution(), updatedTaskRun);
+                    Instant nextDate = waitFor.nextExecutionDate(runContext, executor.getExecution(), updatedTaskRun);
+                    if (next.isEmpty()) {
+                        return executor;
+                    } else if (nextDate != null && !next.isEmpty()) {
+                        executionDelays.add(ExecutionDelay.builder()
+                            .taskRunId(taskRun.getId())
+                            .executionId(executor.getExecution().getId())
+                            .date(nextDate)
+                            .state(State.Type.RUNNING)
+                            .delayType(ExecutionDelay.DelayType.CONTINUE_FLOWABLE)
+                            .build());
+                        Execution execution = executionService.pauseFlowable(executor.getExecution(), updatedTaskRun);
+                        executor.withExecution(execution, "pauseLoop");
+                    } else {
+                        executor.withExecution(executor.getExecution().withTaskRun(updatedTaskRun), "handleWaitFor");
                     }
                 }
             }
@@ -607,14 +644,10 @@ public class ExecutorService {
 
         List<ResolvedTask> currentTasks = conditionService.findValidListeners(executor.getFlow(), executor.getExecution());
 
-        List<TaskRun> nexts = this.saveFlowableOutput(
-            FlowableUtils.resolveSequentialNexts(
-                executor.getExecution(),
-                currentTasks
-            ),
-            executor,
-            null
-        );
+        List<TaskRun> nexts = FlowableUtils.resolveSequentialNexts(executor.getExecution(), currentTasks)
+            .stream()
+            .map(throwFunction(NextTaskRun::getTaskRun))
+            .toList();
 
         if (nexts.isEmpty()) {
             return executor;

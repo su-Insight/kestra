@@ -1,5 +1,5 @@
 <template>
-    <div v-show="explorerVisible" class="w-25 p-3 sidebar" @click="$refs.tree.setCurrentKey(undefined)">
+    <div v-show="explorerVisible" class="p-3 sidebar" @click="$refs.tree.setCurrentKey(undefined)">
         <div class="d-flex flex-row">
             <el-select
                 v-model="filter"
@@ -114,7 +114,6 @@
             :allow-drop="(_, drop, dropType) => !drop.data?.leaf || dropType !== 'inner'"
             draggable
             node-key="id"
-            empty-text=""
             v-loading="items === undefined"
             :props="{class: 'node', isLeaf: 'leaf'}"
             class="mt-3"
@@ -133,6 +132,13 @@
             @node-drop="nodeMoved"
             @keydown.delete.prevent="deleteKeystroke"
         >
+            <template #empty>
+                <div class="m-5 empty">
+                    <img :src="FileExplorerEmpty">
+                    <h3>{{ $t("namespace files.no_items.heading") }}</h3>
+                    <p>{{ $t("namespace files.no_items.paragraph") }}</p>
+                </div>
+            </template>
             <template #default="{data, node}">
                 <el-dropdown
                     :ref="`dropdown__${data.fileName}`"
@@ -333,6 +339,8 @@
 
     import Utils from "../../utils/utils";
 
+    import FileExplorerEmpty from "../../assets/icons/file_explorer_empty.svg"
+
     import Magnify from "vue-material-design-icons/Magnify.vue";
     import FilePlus from "vue-material-design-icons/FilePlus.vue";
     import FolderPlus from "vue-material-design-icons/FolderPlus.vue";
@@ -366,6 +374,7 @@
         },
         data() {
             return {
+                FileExplorerEmpty,
                 namespace: undefined,
                 filter: "",
                 dialog: {...DIALOG_DEFAULTS},
@@ -402,7 +411,7 @@
             },
         },
         methods: {
-            ...mapMutations("editor", ["changeOpenedTabs"]),
+            ...mapMutations("editor", ["toggleExplorerVisibility", "changeOpenedTabs"]),
             ...mapActions("namespace", [
                 "createDirectory",
                 "readDirectory",
@@ -446,7 +455,6 @@
                     const items = await this.readDirectory(payload);
 
                     this.renderNodes(items);
-
                     this.items = this.sorted(this.items)
                 }
 
@@ -631,7 +639,7 @@
                                 const folderIndex = currentFolder.findIndex(
                                     (item) =>
                                         typeof item === "object" &&
-                                        item.name === folderName
+                                        item.fileName === folderName
                                 );
                                 if (folderIndex === -1) {
                                     // If the folder doesn't exist, create it
@@ -763,8 +771,7 @@
                         extension: extension
                     });
 
-                    const folder = path.split("/");
-                    this.dialog.folder = folder[folder.length - 2] ?? undefined;
+                    this.dialog.folder = path.substring(0, path.lastIndexOf("/"));
                 }
 
                 if (!this.dialog.folder) {
@@ -773,23 +780,20 @@
                 } else {
                     const SELF = this;
                     (function pushItemToFolder(basePath = "", array) {
-                        for (let i = 0; i < array.length; i++) {
-                            const item = array[i];
+                        for (const item of array) {
                             const folderPath = `${basePath}${item.fileName}`;
-                            if (
-                                folderPath === SELF.dialog.folder &&
-                                Array.isArray(item.children)
-                            ) {
-                                item.children.push(NEW);
-                                item.children = SELF.sorted(item.children);
+                            
+                            if (folderPath === SELF.dialog.folder && Array.isArray(item.children)) {
+                                item.children = SELF.sorted([...item.children, NEW]);
                                 return true; // Return true if the folder is found and item is pushed
-                            } else if (Array.isArray(item.children)) {
-                                if (pushItemToFolder(`${folderPath}/`, item.children)) {
-                                    return true; // Return true if the folder is found and item is pushed in recursive call
-                                }
+                            }
+                            
+                            if (Array.isArray(item.children) && pushItemToFolder(`${folderPath}/`, item.children)) {
+                                return true; // Return true if the folder is found and item is pushed in recursive call
                             }
                         }
-                        return false; // Return false if the folder is not found
+                        
+                        return false;
                     })(undefined, this.items);
                 }
 
@@ -922,6 +926,10 @@
         height: calc(100% - 64px);
         overflow: hidden auto;
 
+        .el-tree__empty-block {
+            height: auto;
+        }
+
         &::-webkit-scrollbar {
             width: 2px;
         }
@@ -948,10 +956,36 @@
 </style>
 
 <style lang="scss" scoped>
+    @import "@kestra-io/ui-libs/src/scss/variables.scss";
+
     .sidebar {
-        flex: unset;
         background: var(--card-bg);
         border-right: 1px solid var(--bs-border-color);
+
+        .empty {
+            position: relative;
+            top: 100px;
+            text-align: center;   
+            color: white;
+
+            html.light & {
+                color: $tertiary;
+            }
+          
+            & img {
+                margin-bottom: 2rem;   
+            }
+
+            & h3 {
+                font-size: var(--font-size-lg);
+                font-weight: 500;         
+                margin-bottom: .5rem;   
+            }
+
+            & p {
+                font-size: var(--font-size-sm);
+            }
+        }
 
         :deep(.el-button):not(.el-dialog .el-button) {
             border: 0;

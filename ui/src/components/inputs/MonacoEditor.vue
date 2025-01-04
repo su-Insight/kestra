@@ -18,7 +18,7 @@
     import {yamlSchemas} from "override/utils/yamlSchemas";
     import Utils from "../../utils/utils";
     import YamlUtils from "../../utils/yamlUtils";
-    import {uniqBy} from "lodash";
+    import uniqBy from "lodash/uniqBy";
 
     window.MonacoEnvironment = {
         getWorker(moduleId, label) {
@@ -92,6 +92,10 @@
                 default: undefined
             },
             diffEditor: {
+                type: Boolean,
+                default: false
+            },
+            input: {
                 type: Boolean,
                 default: false
             }
@@ -301,7 +305,8 @@
                 const namespacesWithRange = YamlUtils.extractFieldFromMaps(source, "namespace").reverse();
                 const namespace = namespacesWithRange.find(namespaceWithRange => {
                     const range = namespaceWithRange.range;
-                    return range[0] < position.offset && position.offset < range[2];
+                    const offset = model.getOffsetAt(position)
+                    return range[0] <= offset && offset <= range[2];
                 })?.namespace;
                 if (namespace === undefined) {
                     return undefined;
@@ -365,8 +370,8 @@
                     .find((subflowWithRange) => {
                         const range = subflowWithRange.range;
                         return (
-                            range[0] < previousWordOffset &&
-                            previousWordOffset < range[2]
+                            range[0] <= previousWordOffset &&
+                            previousWordOffset <= range[2]
                         );
                     });
 
@@ -439,6 +444,16 @@
             tillCursorContent(lineContent, position) {
                 return lineContent.substring(0, position.column - 1);
             },
+            tasks(source) {
+                const tasksFromTasksProp = YamlUtils.extractFieldFromMaps(source, "tasks")
+                    .flatMap(allTasks => allTasks.tasks);
+                const tasksFromTaskProp = YamlUtils.extractFieldFromMaps(source, "task")
+                    .map(task => task.task)
+                    .flatMap(task => YamlUtils.pairsToMap(task) ?? [])
+
+                return [...tasksFromTasksProp, ...tasksFromTaskProp]
+                    .filter(task => typeof task?.get === "function" && task?.get("id"));
+            },
             async autocompletion(
                 source,
                 lineContent,
@@ -454,7 +469,7 @@
                     autocompletions = flowAsJs?.inputs?.map(input => input.id);
                     break;
                 case "outputs":
-                    autocompletions = flowAsJs?.tasks?.map(task => task.id);
+                    autocompletions = this.tasks(source).map(task => task.get("id"));
                     break;
                 case "labels":
                     autocompletions = Object.keys(flowAsJs?.labels ?? {});
@@ -474,7 +489,7 @@
                 default: {
                     let match = field.match(/^outputs\.([^.]+)$/);
                     if (match) {
-                        autocompletions = await this.outputsFor(match[1], flowAsJs);
+                        autocompletions = await this.outputsFor(match[1], source);
                     }
                 }
                 }
@@ -499,13 +514,15 @@
                         }
                     }) ?? [];
             },
-            async outputsFor(taskId, flowAsJs) {
-                const task = flowAsJs?.tasks?.find(task => task.id === taskId);
-                if (!task?.type) {
+            async outputsFor(taskId, source) {
+                const taskType = this.tasks(source).filter(task => task.get("id") === taskId)
+                    .map(task => task.get("type"))
+                    ?.[0];
+                if (!taskType) {
                     return [];
                 }
 
-                const pluginDoc = await this.$store.dispatch("plugin/load", {cls: task.type, commit: false});
+                const pluginDoc = await this.$store.dispatch("plugin/load", {cls: taskType, commit: false});
 
                 return Object.entries(pluginDoc?.schema?.outputs?.properties ?? {})
                     .map(([propName, propInfo]) => propName + (propInfo.type === "object" ? "." : ""));
@@ -536,6 +553,7 @@
                     },
                     ...this.options
                 };
+
                 if (this.diffEditor) {
                     this.editor = monaco.editor.createDiffEditor(this.$el, options);
                     let originalModel = monaco.editor.createModel(this.original, this.language);
@@ -575,7 +593,7 @@
             },
             async changeTab(pathOrName, valueSupplier, useModelCache = true) {
                 let model;
-                if (pathOrName === undefined) {
+                if (this.input || pathOrName === undefined) {
                     model = monaco.editor.createModel(
                         await valueSupplier(),
                         this.language,
@@ -614,8 +632,8 @@
             destroy: function () {
                 this.subflowAutocompletionProvider?.dispose();
                 this.nestedFieldAutocompletionProvider?.dispose();
-                this.editor?.getModel()?.dispose();
-                this.editor?.dispose();
+                this.editor?.getModel()?.dispose?.();
+                this.editor?.dispose?.();
             },
             needReload: function (newValue, oldValue) {
                 return oldValue.renderSideBySide !== newValue.renderSideBySide;
@@ -630,6 +648,8 @@
 
 <style scoped lang="scss">
     .monaco-editor {
+        position: absolute;
+        width: 100%;
         height: 100%;
         outline: none;
     }
