@@ -24,7 +24,11 @@ import reactor.core.publisher.Flux;
 public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Execution> {
     Boolean isTaskRunEnabled();
 
-    Optional<Execution> findById(String tenantId, String id);
+    default Optional<Execution> findById(String tenantId, String id) {
+        return findById(tenantId, id, false);
+    }
+
+    Optional<Execution> findById(String tenantId, String id, boolean allowDeleted);
 
     ArrayListTotal<Execution> findByFlowId(String tenantId, String namespace, String id, Pageable pageable);
 
@@ -51,7 +55,7 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ChildFilter childFilter
     );
 
-    Flux<Execution> find(
+    default Flux<Execution> find(
         @Nullable String query,
         @Nullable String tenantId,
         @Nullable String namespace,
@@ -62,6 +66,22 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable Map<String, String> labels,
         @Nullable String triggerExecutionId,
         @Nullable ChildFilter childFilter
+    ) {
+        return find(query, tenantId, namespace, flowId, startDate, endDate, state, labels, triggerExecutionId, childFilter, false);
+    }
+
+    Flux<Execution> find(
+        @Nullable String query,
+        @Nullable String tenantId,
+        @Nullable String namespace,
+        @Nullable String flowId,
+        @Nullable ZonedDateTime startDate,
+        @Nullable ZonedDateTime endDate,
+        @Nullable List<State.Type> state,
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId,
+        @Nullable ChildFilter childFilter,
+        boolean allowDeleted
     );
 
     ArrayListTotal<TaskRun> findTaskRun(

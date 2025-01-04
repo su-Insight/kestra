@@ -3,7 +3,7 @@ package io.kestra.core.serializers;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.junit.jupiter.api.Test;
@@ -15,7 +15,7 @@ import jakarta.inject.Inject;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class ObjectMapperFactoryTest {
     @Inject
     ObjectMapper objectMapper;
@@ -69,28 +69,28 @@ class ObjectMapperFactoryTest {
 
         String s = objectMapper.writeValueAsString(b);
 
-        assertThat(s, not(containsString("\"intNull\":0")));
-        assertThat(s, not(containsString("\"intDefault\":")));
+        assertThat(s, containsString("\"intNull\":0"));
+        assertThat(s, containsString("\"intDefault\":0"));
         assertThat(s, containsString("\"intChange\":1"));
 
         assertThat(s, not(containsString("\"integerNull\":")));
-        assertThat(s, not(containsString("\"integerDefault\":")));
+        assertThat(s, containsString("\"integerDefault\":0"));
         assertThat(s, containsString("\"integerChange\":1"));
 
-        assertThat(s, not(containsString("\"boolNull\":")));
-        assertThat(s, not(containsString("\"boolDefaultTrue\":")));
+        assertThat(s, containsString("\"boolNull\":false"));
+        assertThat(s, containsString("\"boolDefaultTrue\":true"));
         assertThat(s, containsString("\"boolChangeTrue\":false"));
-        assertThat(s, not(containsString("\"boolDefaultFalse\":")));
+        assertThat(s, containsString("\"boolDefaultFalse\":false"));
         assertThat(s, containsString("\"boolChangeTrue\":false"));
 
         assertThat(s, not(containsString("\"booleanNull\":")));
-        assertThat(s, not(containsString("\"booleanDefaultTrue\":")));
+        assertThat(s, containsString("\"booleanDefaultTrue\":true"));
         assertThat(s, containsString("\"booleanChangeTrue\":false"));
-        assertThat(s, not(containsString("\"booleanDefaultFalse\":")));
+        assertThat(s, containsString("\"booleanDefaultFalse\":false"));
         assertThat(s, containsString("\"booleanChangeTrue\":false"));
 
         assertThat(s, not(containsString("\"stringNull\":")));
-        assertThat(s, not(containsString("\"stringDefault\":")));
+        assertThat(s, containsString("\"stringDefault\":\"bla\""));
         assertThat(s, containsString("\"stringChange\":\"foo\""));
 
         assertThat(s, containsString("\"duration\":\"PT5M\""));

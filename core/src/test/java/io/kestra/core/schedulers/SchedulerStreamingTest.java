@@ -12,6 +12,8 @@ import io.kestra.core.runners.TestMethodScopedWorker;
 import io.kestra.core.runners.Worker;
 import io.kestra.core.models.triggers.TriggerService;
 import io.kestra.core.utils.IdUtils;
+import io.kestra.core.utils.TestsUtils;
+import io.kestra.jdbc.runner.JdbcScheduler;
 import jakarta.inject.Inject;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -24,7 +26,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -54,12 +55,8 @@ public class SchedulerStreamingTest extends AbstractSchedulerTest {
     }
 
     private void run(Flow flow, CountDownLatch queueCount, Consumer<List<Execution>> consumer) throws Exception {
-        List<Execution> executionList = new CopyOnWriteArrayList<>();
-
         // wait for execution
-        Runnable assertionStop = executionQueue.receive(SchedulerStreamingTest.class, either -> {
-            Execution execution = either.getLeft();
-            executionList.add(execution);
+        Flux<Execution> receive = TestsUtils.receive(executionQueue, either -> {
             queueCount.countDown();
         });
 
@@ -72,10 +69,9 @@ public class SchedulerStreamingTest extends AbstractSchedulerTest {
 
         // scheduler
         try (
-            AbstractScheduler scheduler = new DefaultScheduler(
+            AbstractScheduler scheduler = new JdbcScheduler(
                 applicationContext,
-                flowListenersServiceSpy,
-                triggerState
+                flowListenersServiceSpy
             );
             Worker worker = applicationContext.createBean(TestMethodScopedWorker.class, IdUtils.create(), 8, null)
         ) {
@@ -83,9 +79,7 @@ public class SchedulerStreamingTest extends AbstractSchedulerTest {
             worker.run();
             scheduler.run();
             queueCount.await(1, TimeUnit.MINUTES);
-            assertionStop.run();
-
-            consumer.accept(executionList);
+            consumer.accept(receive.collectList().block());
         }
     }
 
@@ -108,7 +102,6 @@ public class SchedulerStreamingTest extends AbstractSchedulerTest {
                     .orElseThrow();
 
                 assertThat(executionCount.size(), is(10));
-                assertThat(executionList.size(), is(10));
                 assertThat(SchedulerStreamingTest.startedEvaluate.get(false), is(1));
                 assertThat(last.getTrigger().getVariables().get("startedEvaluate"), is(1));
             }
@@ -129,7 +122,6 @@ public class SchedulerStreamingTest extends AbstractSchedulerTest {
                     .toList();
 
                 assertThat(executionCount.size(), greaterThan(10));
-                assertThat(executionList.size(), greaterThan(10));
                 assertThat(SchedulerStreamingTest.startedEvaluate.get(true), greaterThan(1));
             }
         );

@@ -29,7 +29,7 @@
             </ul>
         </template>
     </top-nav-bar>
-    <section :class="{'container': topbar}" v-if="ready">
+    <section data-component="FILENAME_PLACEHOLDER" :class="{'container padding-bottom': topbar}" v-if="ready">
         <data-table
             @page-changed="onPageChanged"
             ref="dataTable"
@@ -57,8 +57,8 @@
                 </el-form-item>
                 <el-form-item>
                     <date-filter
-                        @update:is-relative="onDateFilterTypeChange($event)"
-                        @update:filter-value="onDataTableValue($event)"
+                        @update:is-relative="onDateFilterTypeChange"
+                        @update:filter-value="onDataTableValue"
                     />
                 </el-form-item>
                 <el-form-item>
@@ -96,7 +96,7 @@
                         multiple
                         collapse-tags
                         collapse-tags-tooltip
-                        @change="onDisplayColumnsChange($event)"
+                        @change="onDisplayColumnsChange"
                     >
                         <el-option
                             v-for="col in optionalColumns"
@@ -425,6 +425,8 @@
     import {ElMessageBox, ElSwitch, ElFormItem, ElAlert} from "element-plus";
     import {h, ref} from "vue";
 
+    import {filterLabels} from "./utils"
+
     export default {
         mixins: [RouteContext, RestoreUrl, DataTableActions, SelectTableActions],
         components: {
@@ -555,6 +557,7 @@
                 isOpenLabelsModal: false,
                 executionLabels: [],
                 actionOptions: {},
+                refreshDates: false
             };
         },
         created() {
@@ -584,6 +587,7 @@
                 return undefined;
             },
             startDate() {
+                this.refreshDates;
                 if (this.$route.query.startDate) {
                     return this.$route.query.startDate;
                 }
@@ -657,6 +661,9 @@
                     delete queryFilter["timeRange"];
                     delete queryFilter["startDate"];
                     delete queryFilter["endDate"];
+                } else if (queryFilter.timeRange) {
+                    delete queryFilter["startDate"];
+                    delete queryFilter["endDate"];
                 }
 
                 if (this.namespace) {
@@ -670,6 +677,7 @@
                 return _merge(base, queryFilter)
             },
             loadData(callback) {
+                this.refreshDates = !this.refreshDates;
                 if (this.isDisplayedTop) {
                     this.dailyReady = false;
 
@@ -803,6 +811,13 @@
                 );
             },
             setLabels() {
+                const filtered = filterLabels(this.executionLabels)
+
+                if(filtered.error) {
+                    this.$toast().error(this.$t("wrong labels"))
+                    return;
+                }
+
                 this.$toast().confirm(
                     this.$t("bulk set labels", {"executionCount": this.queryBulkAction ? this.total : this.selection.length}),
                     () => {
@@ -813,7 +828,7 @@
                                         sort: this.$route.query.sort || "state.startDate:desc",
                                         state: this.$route.query.state ? [this.$route.query.state] : this.statuses
                                     }, false),
-                                    data: this.executionLabels
+                                    data: filtered.labels
                                 })
                                 .then(r => {
                                     this.$toast().success(this.$t("Set labels done", {executionCount: r.data.count}));
@@ -823,7 +838,7 @@
                             return this.$store
                                 .dispatch("execution/bulkSetLabels", {
                                     executionsId: this.selection,
-                                    executionLabels: this.executionLabels
+                                    executionLabels: filtered.labels
                                 })
                                 .then(r => {
                                     this.$toast().success(this.$t("Set labels done", {executionCount: r.data.count}));
@@ -858,3 +873,9 @@
         },
     };
 </script>
+
+<style scoped lang="scss">
+    .padding-bottom {
+        padding-bottom: 4rem;
+    }
+</style>
