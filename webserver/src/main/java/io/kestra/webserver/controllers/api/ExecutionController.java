@@ -18,7 +18,6 @@ import io.kestra.core.models.hierarchies.FlowGraph;
 import io.kestra.core.models.storage.FileMetas;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
-import io.kestra.core.models.triggers.types.Webhook;
 import io.kestra.core.models.validations.ManualConstraintViolation;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
@@ -34,6 +33,7 @@ import io.kestra.core.storages.StorageContext;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.Await;
+import io.kestra.plugin.core.trigger.Webhook;
 import io.kestra.webserver.responses.BulkErrorResponse;
 import io.kestra.webserver.responses.BulkResponse;
 import io.kestra.webserver.responses.PagedResults;
@@ -44,24 +44,13 @@ import io.kestra.webserver.utils.filepreview.FileRenderBuilder;
 import io.micronaut.context.annotation.Value;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import io.micronaut.core.annotation.Nullable;
+import io.micronaut.core.async.annotation.SingleResult;
 import io.micronaut.core.convert.format.Format;
 import io.micronaut.data.model.Pageable;
-import io.micronaut.http.HttpRequest;
-import io.micronaut.http.HttpResponse;
-import io.micronaut.http.HttpStatus;
-import io.micronaut.http.MediaType;
-import io.micronaut.http.MutableHttpResponse;
-import io.micronaut.http.annotation.Body;
-import io.micronaut.http.annotation.Controller;
-import io.micronaut.http.annotation.Delete;
-import io.micronaut.http.annotation.Get;
-import io.micronaut.http.annotation.Part;
-import io.micronaut.http.annotation.PathVariable;
-import io.micronaut.http.annotation.Post;
-import io.micronaut.http.annotation.Put;
-import io.micronaut.http.annotation.QueryValue;
+import io.micronaut.http.*;
+import io.micronaut.http.annotation.*;
 import io.micronaut.http.exceptions.HttpStatusException;
-import io.micronaut.http.multipart.StreamingFileUpload;
+import io.micronaut.http.server.multipart.MultipartBody;
 import io.micronaut.http.server.types.files.StreamedFile;
 import io.micronaut.http.sse.Event;
 import io.micronaut.scheduling.TaskExecutors;
@@ -86,6 +75,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -101,6 +91,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
+import static io.kestra.core.utils.DateUtils.validateTimeline;
 import static io.kestra.core.utils.Rethrow.throwBiFunction;
 import static io.kestra.core.utils.Rethrow.throwFunction;
 
@@ -177,6 +168,7 @@ public class ExecutionController {
         @Parameter(description = "The trigger execution id") @Nullable @QueryValue String triggerExecutionId,
         @Parameter(description = "A execution child filter") @Nullable @QueryValue ExecutionRepositoryInterface.ChildFilter childFilter
     ) {
+        validateTimeline(startDate, endDate);
         final ZonedDateTime now = ZonedDateTime.now();
 
         return PagedResults.of(executionRepository.find(
@@ -362,6 +354,8 @@ public class ExecutionController {
         @Parameter(description = "A execution child filter") @Nullable @QueryValue ExecutionRepositoryInterface.ChildFilter childFilter,
         @Parameter(description = "Specificies whether to delete non-terminated executions") @Nullable @QueryValue(defaultValue = "false") boolean includeNonTerminated
     ) {
+        validateTimeline(startDate, endDate);
+
         Integer count = executionRepository
             .find(
                 query,
@@ -515,84 +509,82 @@ public class ExecutionController {
     @Post(uri = "/trigger/{namespace}/{id}", consumes = MediaType.MULTIPART_FORM_DATA)
     @Operation(tags = {"Executions"}, summary = "Trigger a new execution for a flow")
     @ApiResponse(responseCode = "409", description = "if the flow is disabled")
+    @SingleResult
     @Deprecated
-    public Execution trigger(
+    public Publisher<Execution> trigger(
         @Parameter(description = "The flow namespace") @PathVariable String namespace,
-        @Parameter(description = "The flow id") @PathVariable String id,
-        @Parameter(description = "The inputs") HttpRequest<?> inputs,
+        @Parameter(description = "The flow id") @Nullable @PathVariable String id,
+        @Parameter(description = "The inputs") @Nullable  @Body MultipartBody inputs,
         @Parameter(description = "The labels as a list of 'key:value'") @Nullable @QueryValue List<String> labels,
-        @Parameter(description = "The inputs of type file") @Nullable @Part Publisher<StreamingFileUpload> files,
         @Parameter(description = "If the server will wait the end of the execution") @QueryValue(defaultValue = "false") Boolean wait,
         @Parameter(description = "The flow revision or latest if null") @QueryValue Optional<Integer> revision
     ) throws IOException {
-        return this.create(namespace, id, inputs, labels, files, wait, revision);
+        return this.create(namespace, id, inputs, labels, wait, revision);
     }
 
     @ExecuteOn(TaskExecutors.IO)
     @Post(uri = "/{namespace}/{id}", consumes = MediaType.MULTIPART_FORM_DATA)
     @Operation(tags = {"Executions"}, summary = "Create a new execution for a flow")
     @ApiResponse(responseCode = "409", description = "if the flow is disabled")
-    public Execution create(
+    @SingleResult
+    public Publisher<Execution> create(
         @Parameter(description = "The flow namespace") @PathVariable String namespace,
         @Parameter(description = "The flow id") @PathVariable String id,
-        @Parameter(description = "The inputs") HttpRequest<?> inputs, // FIXME we had to inject the HttpRequest here due to https://github.com/micronaut-projects/micronaut-core/issues/9694
+        @Parameter(description = "The inputs") @Nullable @Body MultipartBody inputs,
         @Parameter(description = "The labels as a list of 'key:value'") @Nullable @QueryValue List<String> labels,
-        @Parameter(description = "The inputs of type file") @Nullable @Part Publisher<StreamingFileUpload> files,
         @Parameter(description = "If the server will wait the end of the execution") @QueryValue(defaultValue = "false") Boolean wait,
         @Parameter(description = "The flow revision or latest if null") @QueryValue Optional<Integer> revision
     ) throws IOException {
-        Optional<Flow> find = flowRepository.findById(tenantService.resolveTenant(), namespace, id, revision);
-        if (find.isEmpty()) {
-            return null;
-        }
+        return Mono.<Execution>create(
+            sink -> {
+                Optional<Flow> find = flowRepository.findById(tenantService.resolveTenant(), namespace, id, revision);
+                if (find.isEmpty()) {
+                    sink.success();
+                    return;
+                }
 
-        Flow found = find.get();
-        if (found.isDisabled()) {
-            throw new IllegalStateException("Cannot execute disabled flow");
-        }
+                Flow found = find.get();
+                if (found.isDisabled()) {
+                    sink.error(new IllegalStateException("Cannot execute disabled flow"));
+                    return;
+                }
 
-        if (found instanceof FlowWithException fwe) {
-            throw new IllegalStateException("Cannot execute an invalid flow: " + fwe.getException());
-        }
+                if (found instanceof FlowWithException fwe) {
+                    sink.error(new IllegalStateException("Cannot execute an invalid flow: " + fwe.getException()));
+                    return;
+                }
 
-        Map<String, Object> inputMap = (Map<String, Object>) inputs.getBody(Map.class).orElse(null);
-        Execution current = Execution.newExecution(
-            found,
-            throwBiFunction((flow, execution) -> flowInputOutput.typedInputs(flow, execution, inputMap, files)),
-            parseLabels(labels)
-        );
+                try {
+                    Execution current = Execution.newExecution(
+                        found,
+                        throwBiFunction((flow, execution) -> flowInputOutput.typedInputs(flow, execution, inputs)),
+                        parseLabels(labels)
+                    );
 
-        executionQueue.emit(current);
-        eventPublisher.publishEvent(new CrudEvent<>(current, CrudEventType.CREATE));
+                    executionQueue.emit(current);
+                    eventPublisher.publishEvent(new CrudEvent<>(current, CrudEventType.CREATE));
 
-        if (!wait) {
-            return current;
-        }
+                    if (!wait) {
+                        sink.success(current);
+                    } else {
+                        Runnable receive = this.executionQueue.receive(either -> {
+                            if (either.isRight()) {
+                                log.error("Unable to deserialize the execution: {}", either.getRight().getMessage());
+                                sink.success();
+                            }
 
-        AtomicReference<Runnable> cancel = new AtomicReference<>();
-
-        return Mono
-            .<Execution>create(emitter -> {
-                Runnable receive = this.executionQueue.receive(either -> {
-                    if (either.isRight()) {
-                        log.error("Unable to deserialize the execution: {}", either.getRight().getMessage());
-                        return;
+                            Execution item = either.getLeft();
+                            if (item.getId().equals(current.getId()) && this.isStopFollow(found, item)) {
+                                sink.success(item);
+                            }
+                        });
+                        sink.onDispose(() -> receive.run());
                     }
-
-                    Execution item = either.getLeft();
-                    if (item.getId().equals(current.getId()) && this.isStopFollow(found, item)) {
-                        emitter.success(item);
-                    }
-                });
-
-                cancel.set(receive);
-            })
-            .doFinally((signalType) -> {
-                if (cancel.get() != null) {
-                    cancel.get().run();
+                } catch (IOException e) {
+                    sink.error(new RuntimeException(e));
                 }
             })
-            .block();
+            .doOnError(t -> Flux.from(inputs).subscribeOn(Schedulers.boundedElastic()).blockLast()); // need to consume the inputs in case of error;
     }
 
     private List<Label> parseLabels(List<String> labels) {
@@ -769,6 +761,8 @@ public class ExecutionController {
         @Parameter(description = "The trigger execution id") @Nullable @QueryValue String triggerExecutionId,
         @Parameter(description = "A execution child filter") @Nullable @QueryValue ExecutionRepositoryInterface.ChildFilter childFilter
     ) throws Exception {
+        validateTimeline(startDate, endDate);
+
         Integer count = executionRepository
             .find(
                 query,
@@ -951,34 +945,39 @@ public class ExecutionController {
         return HttpResponse.ok(BulkResponse.builder().count(executions.size()).build());
     }
 
-    @SuppressWarnings("unchecked")
     @ExecuteOn(TaskExecutors.IO)
     @Post(uri = "/{executionId}/resume", consumes = MediaType.MULTIPART_FORM_DATA)
     @Operation(tags = {"Executions"}, summary = "Resume a paused execution.")
     @ApiResponse(responseCode = "204", description = "On success")
     @ApiResponse(responseCode = "409", description = "if the executions is not paused")
-    public HttpResponse<?> resume(
+    @SingleResult
+    public Publisher<HttpResponse<?>> resume(
         @Parameter(description = "The execution id") @PathVariable String executionId,
-        @Parameter(description = "The inputs") HttpRequest<?> inputs, // FIXME we had to inject the HttpRequest here due to https://github.com/micronaut-projects/micronaut-core/issues/9694
-        @Parameter(description = "The inputs of type file") @Nullable @Part Publisher<StreamingFileUpload> files
+        @Parameter(description = "The inputs") @Nullable @Body MultipartBody inputs
     ) throws Exception {
-        Optional<Execution> maybeExecution = executionRepository.findById(tenantService.resolveTenant(), executionId);
-        if (maybeExecution.isEmpty()) {
-            return HttpResponse.notFound();
-        }
+        return Mono.<HttpResponse<?>>create(sink -> {
+            Optional<Execution> maybeExecution = executionRepository.findById(tenantService.resolveTenant(), executionId);
+            if (maybeExecution.isEmpty()) {
+                sink.success(HttpResponse.notFound());
+                return;
+            }
 
-        var execution = maybeExecution.get();
-        if (!execution.getState().isPaused()) {
-            throw new IllegalStateException("Execution is not paused, can't resume it");
-        }
+            var execution = maybeExecution.get();
+            if (!execution.getState().isPaused()) {
+                sink.error(new IllegalStateException("Execution is not paused, can't resume it"));
+                return;
+            }
 
-        var flow = flowRepository.findByExecutionWithoutAcl(execution);
+            var flow = flowRepository.findByExecutionWithoutAcl(execution);
 
-        Map<String, Object> inputMap = (Map<String, Object>) inputs.getBody(Map.class).orElse(null);
-
-        Execution resumeExecution = this.executionService.resume(execution, flow, State.Type.RUNNING, inputMap, files);
-        this.executionQueue.emit(resumeExecution);
-        return HttpResponse.noContent();
+            try {
+                Execution resumeExecution = this.executionService.resume(execution, flow, State.Type.RUNNING, inputs);
+                this.executionQueue.emit(resumeExecution);
+                sink.success(HttpResponse.noContent());
+            } catch (Exception e) {
+                sink.error(new RuntimeException(e));
+            }
+        }).doOnError(t -> Flux.from(inputs).subscribeOn(Schedulers.boundedElastic()).blockLast()); // need to consume the inputs in case of error
     }
 
     @ExecuteOn(TaskExecutors.IO)
@@ -1053,6 +1052,8 @@ public class ExecutionController {
         @Parameter(description = "The trigger execution id") @Nullable @QueryValue String triggerExecutionId,
         @Parameter(description = "A execution child filter") @Nullable @QueryValue ExecutionRepositoryInterface.ChildFilter childFilter
     ) throws Exception {
+        validateTimeline(startDate, endDate);
+
         var ids = executionRepository
             .find(
                 query,
@@ -1091,6 +1092,8 @@ public class ExecutionController {
         @Parameter(description = "The trigger execution id") @Nullable @QueryValue String triggerExecutionId,
         @Parameter(description = "A execution child filter") @Nullable @QueryValue ExecutionRepositoryInterface.ChildFilter childFilter
     ) {
+        validateTimeline(startDate, endDate);
+
         var ids = executionRepository
             .find(
                 query,
@@ -1129,6 +1132,8 @@ public class ExecutionController {
         @Parameter(description = "The trigger execution id") @Nullable @QueryValue String triggerExecutionId,
         @Parameter(description = "A execution child filter") @Nullable @QueryValue ExecutionRepositoryInterface.ChildFilter childFilter
     ) throws Exception {
+        validateTimeline(startDate, endDate);
+
         var ids = executionRepository
             .find(
                 query,
@@ -1415,6 +1420,8 @@ public class ExecutionController {
         @Parameter(description = "A execution child filter") @Nullable @QueryValue ExecutionRepositoryInterface.ChildFilter childFilter,
         @Parameter(description = "The labels to add to the execution") @Body @NotNull List<Label> setLabels
     ) {
+        validateTimeline(startDate, endDate);
+
         var ids = executionRepository
             .find(
                 query,

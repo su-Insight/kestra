@@ -4,8 +4,10 @@ import com.google.common.annotations.Beta;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.tasks.*;
+import io.kestra.core.models.tasks.runners.TargetOS;
 import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.runners.RunContext;
+import io.kestra.plugin.core.runner.Process;
 import io.kestra.plugin.scripts.exec.scripts.models.DockerOptions;
 import io.kestra.plugin.scripts.exec.scripts.models.RunnerType;
 import io.kestra.plugin.scripts.exec.scripts.models.ScriptOutput;
@@ -16,6 +18,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import org.apache.commons.lang3.SystemUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -80,7 +83,8 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
     @Builder.Default
     @Schema(
         title = "Fail the task on the first command with a non-zero status.",
-        description = "If set to `false` all commands will be executed one after the other. The final state of task execution is determined by the last command. Note that this property maybe be ignored if a non compatible interpreter is specified."
+        description = "If set to `false` all commands will be executed one after the other. The final state of task execution is determined by the last command. Note that this property maybe be ignored if a non compatible interpreter is specified." +
+            "\nYou can also disable it if your interpreter does not support the `set -e`option."
     )
     @PluginProperty
     protected Boolean failFast = true;
@@ -99,6 +103,12 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
     )
     @Deprecated
     private Boolean outputDirectory;
+
+    @Schema(
+        title = "The target operating system where the script will run."
+    )
+    @Builder.Default
+    public TargetOS targetOS = TargetOS.AUTO;
 
     abstract public DockerOptions getDocker();
 
@@ -131,14 +141,15 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
             .withEnv(this.getEnv())
             .withWarningOnStdErr(this.getWarningOnStdErr())
             .withRunnerType(this.taskRunner == null ? this.getRunner() : null)
-            .withContainerImage(this.getContainerImage())
+            .withContainerImage(runContext.render(this.getContainerImage()))
             .withTaskRunner(this.taskRunner)
             .withDockerOptions(this.injectDefaults(getDocker()))
             .withNamespaceFiles(this.namespaceFiles)
             .withInputFiles(this.inputFiles)
             .withOutputFiles(this.outputFiles)
             .withEnableOutputDirectory(this.getOutputDirectory())
-            .withTimeout(this.getTimeout());
+            .withTimeout(this.getTimeout())
+            .withTargetOS(this.targetOS);
     }
 
     protected List<String> getBeforeCommandsWithOptions() {
@@ -165,7 +176,19 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
      * @return   list of commands;
      */
     protected List<String> getExitOnErrorCommands() {
+        // If targetOS is Windows OR targetOS is AUTO && current system is windows and we use process as a runner.(TLDR will run on windows)
+        if (targetOS.equals(TargetOS.WINDOWS) || targetOS.equals(TargetOS.AUTO) && SystemUtils.IS_OS_WINDOWS && this.taskRunner instanceof Process) {
+            return List.of("");
+        }
         // errexit option may be unsupported by non-shell interpreter.
         return List.of("set -e");
+    }
+
+    /** {@inheritDoc} **/
+    @Override
+    public void kill() {
+        if (this.taskRunner != null) {
+            this.taskRunner.kill();
+        }
     }
 }

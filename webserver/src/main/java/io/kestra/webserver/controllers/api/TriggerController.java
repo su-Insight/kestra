@@ -2,10 +2,7 @@ package io.kestra.webserver.controllers.api;
 
 import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.flows.Flow;
-import io.kestra.core.models.triggers.AbstractTrigger;
-import io.kestra.core.models.triggers.PollingTriggerInterface;
-import io.kestra.core.models.triggers.Trigger;
-import io.kestra.core.models.triggers.TriggerContext;
+import io.kestra.core.models.triggers.*;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.ArrayListTotal;
 import io.kestra.core.repositories.FlowRepositoryInterface;
@@ -185,13 +182,19 @@ public class TriggerController {
         }
 
         Trigger updatedTrigger = this.triggerRepository.lock(newTrigger.uid(), (current) -> {
+            if (abstractTrigger instanceof RealtimeTriggerInterface && !newTrigger.getDisabled().equals(current.getDisabled())) {
+                throw new IllegalArgumentException("Realtime triggers can not be disabled through the API, please edit the trigger from the flow.");
+            }
             Trigger updated = null;
+            ZonedDateTime nextExecutionDate = null;
             try {
                 RunContext runContext = runContextFactory.of(maybeFlow.get(), abstractTrigger);
                 ConditionContext conditionContext = conditionService.conditionContext(runContext, maybeFlow.get(), null);
                 // We must set up the backfill before the update to calculate the next execution date
                 updated = current.initBackfill(newTrigger);
-                ZonedDateTime nextExecutionDate = ((PollingTriggerInterface) abstractTrigger).nextEvaluationDate(conditionContext, Optional.of(updated));
+                if (abstractTrigger instanceof PollingTriggerInterface) {
+                    nextExecutionDate = ((PollingTriggerInterface) abstractTrigger).nextEvaluationDate(conditionContext, Optional.of(updated));
+                }
                 updated = Trigger.update(current, newTrigger, nextExecutionDate);
             } catch (Exception e) {
                 throw new HttpStatusException(HttpStatus.BAD_REQUEST, e.getMessage());

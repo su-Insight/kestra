@@ -2,7 +2,6 @@ package io.kestra.webserver.controllers.api;
 
 import io.kestra.core.services.FlowService;
 import io.kestra.core.storages.FileAttributes;
-import io.kestra.core.storages.StorageContext;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.Rethrow;
@@ -23,11 +22,15 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+
+import static io.kestra.core.runners.NamespaceFilesService.toNamespacedStorageUri;
 
 @Slf4j
 @Validated
@@ -240,7 +243,31 @@ public class NamespaceFileController {
     ) throws IOException, URISyntaxException {
         ensureWritableNamespaceFile(path);
 
-        storageInterface.delete(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, path));
+        String pathWithoutScheme = path.getPath();
+        List<String> allNamespaceFilesPaths = new ArrayList<>(storageInterface.allByPrefix(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, null), true).stream()
+            .map(toNamespacedStorageUri(namespace, null)::relativize)
+            .map(uri -> "/" + uri.getPath())
+            .toList());
+
+        if (allNamespaceFilesPaths.contains(pathWithoutScheme + "/")) {
+            // the given path to delete is a directory
+            pathWithoutScheme = pathWithoutScheme + "/";
+        }
+
+        while (!pathWithoutScheme.equals("/")) {
+            String parentFolder = pathWithoutScheme.substring(0, pathWithoutScheme.lastIndexOf('/') + 1);
+            if (parentFolder.equals("/")) {
+                break;
+            }
+            List<String> filesInParentFolder = allNamespaceFilesPaths.stream().filter(p -> p.length() > parentFolder.length() && p.startsWith(parentFolder)).toList();
+            // there is more than one file in this folder so we stop the cascade deletion there
+            if (filesInParentFolder.size() > 1) {
+                break;
+            }
+            allNamespaceFilesPaths.removeIf(filesInParentFolder::contains);
+            pathWithoutScheme = parentFolder.endsWith("/") ? parentFolder.substring(0, parentFolder.length() - 1) : parentFolder;
+        }
+        storageInterface.delete(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, URI.create(pathWithoutScheme)));
     }
 
     private void forbiddenPathsGuard(URI path) {
@@ -251,10 +278,6 @@ public class NamespaceFileController {
         if (forbiddenPathPatterns.stream().anyMatch(pattern -> pattern.matcher(path.getPath()).matches())) {
             throw new IllegalArgumentException("Forbidden path: " + path.getPath());
         }
-    }
-
-    private URI toNamespacedStorageUri(String namespace, @Nullable URI relativePath) {
-        return URI.create("kestra://" + StorageContext.namespaceFilePrefix(namespace) + Optional.ofNullable(relativePath).map(URI::getPath).orElse("/"));
     }
 
     private void ensureWritableNamespaceFile(URI path) {

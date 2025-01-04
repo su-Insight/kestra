@@ -27,10 +27,10 @@ import io.kestra.core.services.ExecutionService;
 import io.kestra.core.services.FlowListenersInterface;
 import io.kestra.core.services.LogService;
 import io.kestra.core.services.SkipExecutionService;
-import io.kestra.core.services.TaskDefaultService;
+import io.kestra.core.services.PluginDefaultService;
 import io.kestra.core.services.WorkerGroupService;
-import io.kestra.core.tasks.flows.ForEachItem;
-import io.kestra.core.tasks.flows.Template;
+import io.kestra.plugin.core.flow.ForEachItem;
+import io.kestra.plugin.core.flow.Template;
 import io.kestra.core.topologies.FlowTopologyService;
 import io.kestra.core.utils.Await;
 import io.kestra.core.utils.Either;
@@ -39,7 +39,6 @@ import io.kestra.jdbc.JdbcMapper;
 import io.kestra.jdbc.repository.AbstractJdbcExecutionRepository;
 import io.kestra.jdbc.repository.AbstractJdbcFlowTopologyRepository;
 import io.kestra.jdbc.repository.AbstractJdbcWorkerJobRunningRepository;
-import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import io.micronaut.transaction.exceptions.CannotCreateTransactionException;
 import jakarta.annotation.PreDestroy;
@@ -109,7 +108,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
     private RunContextFactory runContextFactory;
 
     @Inject
-    private TaskDefaultService taskDefaultService;
+    private PluginDefaultService pluginDefaultService;
 
     @Inject
     private Optional<Template.TemplateExecutorInterface> templateExecutorInterface;
@@ -817,7 +816,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
             }
         }
 
-        return taskDefaultService.injectDefaults(flow, execution);
+        return pluginDefaultService.injectDefaults(flow, execution);
     }
 
     /**
@@ -863,6 +862,10 @@ public class JdbcExecutor implements ExecutorInterface, Service {
                         Execution newExecution = executionService.replay(executor.getExecution(), null, null);
                         executor = executor.withExecution(newExecution, "retryFailedFlow");
                     }
+                    else if (executionDelay.getDelayType().equals(ExecutionDelay.DelayType.CONTINUE_FLOWABLE)) {
+                        Execution execution  = executionService.retryWaitFor(executor.getExecution(), executionDelay.getTaskRunId());
+                        executor = executor.withExecution(execution, "continueLoop");
+                    }
                 } catch (Exception e) {
                     executor = handleFailedExecutionFromExecutor(executor, e);
                 }
@@ -888,7 +891,8 @@ public class JdbcExecutor implements ExecutorInterface, Service {
                 String deduplicationKey = taskRun.getParentTaskRunId() + "-" +
                     taskRun.getTaskId() + "-" +
                     taskRun.getValue() + "-" +
-                    (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0);
+                    (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0)
+                    + taskRun.getIteration();
 
                 if (executorState.getChildDeduplication().containsKey(deduplicationKey)) {
                     log.trace("Duplicate Nexts on execution '{}' with key '{}'", execution.getId(), deduplicationKey);
@@ -902,7 +906,8 @@ public class JdbcExecutor implements ExecutorInterface, Service {
 
     private boolean deduplicateWorkerTask(Execution execution, ExecutorState executorState, TaskRun taskRun) {
         String deduplicationKey = taskRun.getId() +
-            (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0);
+            (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0)
+            + taskRun.getIteration();
         State.Type current = executorState.getWorkerTaskDeduplication().get(deduplicationKey);
 
         if (current == taskRun.getState().getCurrent()) {

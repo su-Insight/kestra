@@ -14,8 +14,8 @@ import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.runners.*;
 import io.kestra.core.services.*;
-import io.kestra.core.tasks.flows.ForEachItem;
-import io.kestra.core.tasks.flows.Template;
+import io.kestra.plugin.core.flow.ForEachItem;
+import io.kestra.plugin.core.flow.Template;
 import io.kestra.core.utils.Either;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -63,7 +63,7 @@ public class MemoryExecutor implements ExecutorInterface {
     private QueueInterface<LogEntry> logQueue;
 
     @Inject
-    private TaskDefaultService taskDefaultService;
+    private PluginDefaultService pluginDefaultService;
 
     @Inject
     private Optional<Template.TemplateExecutorInterface> templateExecutorInterface;
@@ -146,7 +146,7 @@ public class MemoryExecutor implements ExecutorInterface {
             }
         }
 
-        return taskDefaultService.injectDefaults(flow, execution);
+        return pluginDefaultService.injectDefaults(flow, execution);
     }
 
     private void handleExecution(ExecutionState state) {
