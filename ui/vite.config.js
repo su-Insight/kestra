@@ -12,7 +12,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "override": path.resolve(__dirname, "src/override/"),
+            "override": path.resolve(__dirname, "src/override/")
         },
     },
     plugins: [

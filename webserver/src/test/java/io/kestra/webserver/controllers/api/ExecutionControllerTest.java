@@ -13,7 +13,7 @@ import io.kestra.core.models.flows.State;
 import io.kestra.core.models.storage.FileMetas;
 import io.kestra.core.models.tasks.TaskForExecution;
 import io.kestra.core.models.triggers.AbstractTriggerForExecution;
-import io.kestra.core.models.triggers.types.Webhook;
+import io.kestra.plugin.core.trigger.Webhook;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.ExecutionRepositoryInterface;
@@ -101,8 +101,8 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
         .put("instant", "2019-10-06T18:27:49Z")
         .put("file", Objects.requireNonNull(InputsTest.class.getClassLoader().getResource("data/hello.txt")).getPath())
         .put("secret", "secret")
-        .put("array", """
-            ["s1", "s2", "s3"]""")
+        .put("array", "[1, 2, 3]")
+        .put("json", "{}")
         .build();
 
     @Test
@@ -142,8 +142,8 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
             .addPart("files", "file", MediaType.TEXT_PLAIN_TYPE, applicationFile)
             .addPart("files", "optionalFile", MediaType.TEXT_XML_TYPE, logbackFile)
             .addPart("secret", "secret")
-            .addPart("array", """
-            ["s1", "s2", "s3"]""")
+            .addPart("array", "[1, 2, 3]")
+            .addPart("json", "{}")
             .build();
     }
 
@@ -177,7 +177,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
         Execution result = triggerInputsFlowExecution(true);
 
         assertThat(result.getState().getCurrent(), is(State.Type.SUCCESS));
-        assertThat(result.getTaskRunList().size(), is(10));
+        assertThat(result.getTaskRunList().size(), is(13));
     }
 
     @Test
@@ -261,8 +261,8 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
 
         result = this.eval(execution, "{{ missing }}", 21);
         assertThat(result.getResult(), is(nullValue()));
-        assertThat(result.getError(), containsString("Missing variable: 'missing' on '{{ missing }}' at line 1"));
-        assertThat(result.getStackTrace(), containsString("Missing variable: 'missing' on '{{ missing }}' at line 1"));
+        assertThat(result.getError(), containsString("Unable to find `missing` used in the expression `{{ missing }}` at line 1"));
+        assertThat(result.getStackTrace(), containsString("Unable to find `missing` used in the expression `{{ missing }}` at line 1"));
     }
 
     @Test
@@ -536,7 +536,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
     @Test
     void downloadFile() throws TimeoutException {
         Execution execution = runnerUtils.runOne(null, TESTS_FLOW_NS, "inputs", null, (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, inputs));
-        assertThat(execution.getTaskRunList(), hasSize(10));
+        assertThat(execution.getTaskRunList(), hasSize(13));
 
         String path = (String) execution.getInputs().get("file");
 
@@ -571,7 +571,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
     @Test
     void filePreview() throws TimeoutException {
         Execution defaultExecution = runnerUtils.runOne(null, TESTS_FLOW_NS, "inputs", null, (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, inputs));
-        assertThat(defaultExecution.getTaskRunList(), hasSize(10));
+        assertThat(defaultExecution.getTaskRunList(), hasSize(13));
 
         String defaultPath = (String) defaultExecution.getInputs().get("file");
 
@@ -591,12 +591,12 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
             .put("instant", "2019-10-06T18:27:49Z")
             .put("file", Objects.requireNonNull(ExecutionControllerTest.class.getClassLoader().getResource("data/iso88591.txt")).getPath())
             .put("secret", "secret")
-            .put("array", """
-            ["s1", "s2", "s3"]""")
+            .put("array", "[1, 2, 3]")
+            .put("json", "{}")
             .build();
 
         Execution latin1Execution = runnerUtils.runOne(null, TESTS_FLOW_NS, "inputs", null, (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, latin1FileInputs));
-        assertThat(latin1Execution.getTaskRunList(), hasSize(10));
+        assertThat(latin1Execution.getTaskRunList(), hasSize(13));
 
         String latin1Path = (String) latin1Execution.getInputs().get("file");
 

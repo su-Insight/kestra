@@ -2,7 +2,7 @@ jackson:
   serialization:
     writeDatesAsTimestamps: false
     writeDurationsAsTimestamps: false
-  serialization-inclusion: non_default
+  serialization-inclusion: non_null
 
 kestra:
   encryption:
@@ -26,7 +26,7 @@ kestra:
         int: 2
   tasks:
     defaults:
-    - type: io.kestra.core.services.TaskDefaultServiceTest$DefaultTester
+    - type: io.kestra.core.services.PluginDefaultServiceTest$DefaultTester
       values:
         doubleValue: 19
         arrays:
@@ -54,6 +54,6 @@ kestra:
       - type: io.kestra.plugin.Test2
         values:
           prop2: value2
-      - type: io.kestra.core.models.triggers.types.Schedule
+      - type: io.kestra.plugin.core.trigger.Schedule
         values:
           recoverMissedSchedules: ALL
