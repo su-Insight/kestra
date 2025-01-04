@@ -1,16 +1,16 @@
 package io.kestra.core.docs;
 
 import io.kestra.core.models.tasks.runners.TaskRunner;
-import io.kestra.core.models.tasks.runners.types.ProcessTaskRunner;
+import io.kestra.plugin.core.runner.Process;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.plugins.PluginScanner;
 import io.kestra.core.plugins.RegisteredPlugin;
-import io.kestra.core.tasks.debugs.Echo;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Dag;
-import io.kestra.core.tasks.flows.Subflow;
-import io.kestra.core.tasks.states.Set;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.plugin.core.debug.Echo;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Dag;
+import io.kestra.plugin.core.flow.Subflow;
+import io.kestra.plugin.core.state.Set;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +25,7 @@ import java.util.Objects;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class DocumentationGeneratorTest {
     @Inject
     JsonSchemaGenerator jsonSchemaGenerator;
@@ -163,14 +163,13 @@ class DocumentationGeneratorTest {
     void taskRunner() throws IOException {
         PluginScanner pluginScanner = new PluginScanner(ClassPluginDocumentationTest.class.getClassLoader());
         RegisteredPlugin scan = pluginScanner.scan();
-        Class<ProcessTaskRunner> processTaskRunner = scan.findClass(ProcessTaskRunner.class.getName()).orElseThrow();
+        Class<Process> processTaskRunner = scan.findClass(Process.class.getName()).orElseThrow();
 
         ClassPluginDocumentation<? extends TaskRunner> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan, processTaskRunner, TaskRunner.class);
 
         String render = DocumentationGenerator.render(doc);
 
-        assertThat(render, containsString("title: ProcessTaskRunner"));
+        assertThat(render, containsString("title: Process"));
         assertThat(render, containsString("Task runner that executes a task as a subprocess on the Kestra host."));
-        assertThat(render, containsString("This plugin is currently in beta"));
     }
 }

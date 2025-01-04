@@ -18,7 +18,7 @@
     import {yamlSchemas} from "override/utils/yamlSchemas";
     import Utils from "../../utils/utils";
     import YamlUtils from "../../utils/yamlUtils";
-    import {uniqBy} from "lodash";
+    import uniqBy from "lodash/uniqBy";
 
     window.MonacoEnvironment = {
         getWorker(moduleId, label) {
@@ -92,6 +92,10 @@
                 default: undefined
             },
             diffEditor: {
+                type: Boolean,
+                default: false
+            },
+            input: {
                 type: Boolean,
                 default: false
             }
@@ -214,6 +218,46 @@
                     }
                 })
 
+                this.pebbleAutocompletion = monaco.languages.registerCompletionItemProvider(["yaml", "plaintext"], {
+                    triggerCharacters: ["{"],
+                    provideCompletionItems(model, position) {
+                        const lineContent = _this.lineContent(model, position);
+                        const tillCursorContent = _this.tillCursorContent(lineContent, position);
+                        const match = tillCursorContent.match(/\{\{ *(?:.*~ ?)?$/);
+                        if (!match) {
+                            return noSuggestions;
+                        }
+
+                        const suggestionFor = (label) => ({
+                            kind: monaco.languages.CompletionItemKind.Property,
+                            label,
+                            insertText: label,
+                            range: {
+                                startLineNumber: position.lineNumber,
+                                endLineNumber: position.lineNumber,
+                                startColumn: position.column,
+                                endColumn: position.column
+                            }
+                        });
+                        return {
+                            suggestions: [
+                                suggestionFor("outputs"),
+                                suggestionFor("inputs"),
+                                suggestionFor("vars"),
+                                suggestionFor("flow"),
+                                suggestionFor("execution"),
+                                suggestionFor("trigger"),
+                                suggestionFor("task"),
+                                suggestionFor("taskrun"),
+                                suggestionFor("labels"),
+                                suggestionFor("envs"),
+                                suggestionFor("globals"),
+                                suggestionFor("parents")
+                            ]
+                        };
+                    }
+                });
+
                 this.nestedFieldAutocompletionProvider = monaco.languages.registerCompletionItemProvider(["yaml", "plaintext"], {
                     triggerCharacters: ["."],
                     async provideCompletionItems(model, position) {
@@ -240,7 +284,7 @@
 
                         const indexOfFieldToComplete = match.index + match[1].length;
                         return {
-                            suggestions: await _this.autocompletion(
+                            suggestions: await _this.autocompletionForField(
                                 _this.autocompletionSource,
                                 lineContent,
                                 match[2],
@@ -301,7 +345,8 @@
                 const namespacesWithRange = YamlUtils.extractFieldFromMaps(source, "namespace").reverse();
                 const namespace = namespacesWithRange.find(namespaceWithRange => {
                     const range = namespaceWithRange.range;
-                    return range[0] < position.offset && position.offset < range[2];
+                    const offset = model.getOffsetAt(position)
+                    return range[0] <= offset && offset <= range[2];
                 })?.namespace;
                 if (namespace === undefined) {
                     return undefined;
@@ -365,8 +410,8 @@
                     .find((subflowWithRange) => {
                         const range = subflowWithRange.range;
                         return (
-                            range[0] < previousWordOffset &&
-                            previousWordOffset < range[2]
+                            range[0] <= previousWordOffset &&
+                            previousWordOffset <= range[2]
                         );
                     });
 
@@ -385,7 +430,8 @@
                                 id: subflowTask.flowId,
                                 revision: subflowTask.revision,
                                 source: false,
-                                store: false
+                                store: false,
+                                deleted: true
                             }
                         )).inputs?.map(input => input.id) ?? [];
                     } catch (e) {
@@ -439,7 +485,17 @@
             tillCursorContent(lineContent, position) {
                 return lineContent.substring(0, position.column - 1);
             },
-            async autocompletion(
+            tasks(source) {
+                const tasksFromTasksProp = YamlUtils.extractFieldFromMaps(source, "tasks")
+                    .flatMap(allTasks => allTasks.tasks);
+                const tasksFromTaskProp = YamlUtils.extractFieldFromMaps(source, "task")
+                    .map(task => task.task)
+                    .flatMap(task => YamlUtils.pairsToMap(task) ?? [])
+
+                return [...tasksFromTasksProp, ...tasksFromTaskProp]
+                    .filter(task => typeof task?.get === "function" && task?.get("id"));
+            },
+            async autocompletionForField(
                 source,
                 lineContent,
                 field,
@@ -454,13 +510,13 @@
                     autocompletions = flowAsJs?.inputs?.map(input => input.id);
                     break;
                 case "outputs":
-                    autocompletions = flowAsJs?.tasks?.map(task => task.id);
+                    autocompletions = this.tasks(source).map(task => task.get("id"));
                     break;
                 case "labels":
                     autocompletions = Object.keys(flowAsJs?.labels ?? {});
                     break;
                 case "flow":
-                    autocompletions = ["id", "namespace", "revision"];
+                    autocompletions = ["id", "namespace", "revision", "tenantId"];
                     break;
                 case "execution":
                     autocompletions = ["id", "startDate", "originalId"];
@@ -471,10 +527,13 @@
                 case "trigger":
                     autocompletions = await this.triggerVars(flowAsJs);
                     break;
+                case "task":
+                    autocompletions = ["id", "type"];
+                    break;
                 default: {
                     let match = field.match(/^outputs\.([^.]+)$/);
                     if (match) {
-                        autocompletions = await this.outputsFor(match[1], flowAsJs);
+                        autocompletions = await this.outputsFor(match[1], source);
                     }
                 }
                 }
@@ -499,16 +558,17 @@
                         }
                     }) ?? [];
             },
-            async outputsFor(taskId, flowAsJs) {
-                const task = flowAsJs?.tasks?.find(task => task.id === taskId);
-                if (!task?.type) {
+            async outputsFor(taskId, source) {
+                const taskType = this.tasks(source).filter(task => task.get("id") === taskId)
+                    .map(task => task.get("type"))
+                    ?.[0];
+                if (!taskType) {
                     return [];
                 }
 
-                const pluginDoc = await this.$store.dispatch("plugin/load", {cls: task.type, commit: false});
+                const pluginDoc = await this.$store.dispatch("plugin/load", {cls: taskType, commit: false});
 
-                return Object.entries(pluginDoc?.schema?.outputs?.properties ?? {})
-                    .map(([propName, propInfo]) => propName + (propInfo.type === "object" ? "." : ""));
+                return Object.keys(pluginDoc?.schema?.outputs?.properties ?? {});
             },
             async triggerVars(flowAsJs) {
                 const fetchTriggerVarsByType = await Promise.all(
@@ -536,6 +596,7 @@
                     },
                     ...this.options
                 };
+
                 if (this.diffEditor) {
                     this.editor = monaco.editor.createDiffEditor(this.$el, options);
                     let originalModel = monaco.editor.createModel(this.original, this.language);
@@ -552,7 +613,9 @@
 
                     this.editor = monaco.editor.create(this.$el, options);
 
-                    await this.changeTab(this.currentTab?.path ?? this.currentTab?.name, () => this.value);
+                    if(!this.input){
+                        await this.changeTab(this.currentTab?.path ?? this.currentTab?.name, () => this.value);
+                    }
                 }
 
                 let editor = this.getModifiedEditor();
@@ -562,7 +625,7 @@
                     if (self.value !== value) {
                         self.$emit("change", value, event);
 
-                        if (self.currentTab && self.currentTab.name) {
+                        if (!self.input && self.currentTab && self.currentTab.name) {
                             self.changeOpenedTabs({
                                 action: "dirty",
                                 ...self.currentTab,
@@ -571,11 +634,13 @@
                         }
                     }
                 });
+
+                setTimeout(() => monaco.editor.remeasureFonts(), 1)
                 this.$emit("editorDidMount", this.editor);
             },
             async changeTab(pathOrName, valueSupplier, useModelCache = true) {
                 let model;
-                if (pathOrName === undefined) {
+                if (this.input || pathOrName === undefined) {
                     model = monaco.editor.createModel(
                         await valueSupplier(),
                         this.language,
@@ -613,9 +678,10 @@
             },
             destroy: function () {
                 this.subflowAutocompletionProvider?.dispose();
+                this.pebbleAutocompletion?.dispose();
                 this.nestedFieldAutocompletionProvider?.dispose();
-                this.editor?.getModel()?.dispose();
-                this.editor?.dispose();
+                this.editor?.getModel()?.dispose?.();
+                this.editor?.dispose?.();
             },
             needReload: function (newValue, oldValue) {
                 return oldValue.renderSideBySide !== newValue.renderSideBySide;
@@ -630,6 +696,8 @@
 
 <style scoped lang="scss">
     .monaco-editor {
+        position: absolute;
+        width: 100%;
         height: 100%;
         outline: none;
     }
