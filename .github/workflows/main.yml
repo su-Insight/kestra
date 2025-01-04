@@ -239,7 +239,6 @@ jobs:
               io.kestra.plugin:plugin-servicenow:LATEST
               io.kestra.plugin:plugin-singer:LATEST
               io.kestra.plugin:plugin-soda:LATEST
-              io.kestra.plugin:plugin-solace:LATEST
               io.kestra.plugin:plugin-spark:LATEST
               io.kestra.plugin:plugin-sqlmesh:LATEST
               io.kestra.plugin:plugin-surrealdb:LATEST
