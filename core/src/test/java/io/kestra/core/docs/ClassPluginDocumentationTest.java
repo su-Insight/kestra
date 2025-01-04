@@ -2,10 +2,10 @@ package io.kestra.core.docs;
 
 import io.kestra.core.Helpers;
 import io.kestra.core.models.tasks.runners.TaskRunner;
-import io.kestra.core.models.tasks.runners.types.ProcessTaskRunner;
+import io.kestra.plugin.core.runner.Process;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
-import io.kestra.core.models.triggers.types.Schedule;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.plugins.PluginScanner;
 import io.kestra.core.plugins.RegisteredPlugin;
 import org.junit.jupiter.api.Test;
@@ -34,9 +34,9 @@ class ClassPluginDocumentationTest {
             List<RegisteredPlugin> scan = pluginScanner.scan(plugins);
 
             assertThat(scan.size(), is(1));
-            assertThat(scan.get(0).getTasks().size(), is(1));
+            assertThat(scan.getFirst().getTasks().size(), is(1));
 
-            ClassPluginDocumentation<? extends Task> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan.get(0), scan.get(0).getTasks().get(0), Task.class);
+            ClassPluginDocumentation<? extends Task> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan.getFirst(), scan.getFirst().getTasks().getFirst(), Task.class);
 
             assertThat(doc.getDocExamples().size(), is(2));
             assertThat(doc.getIcon(), is(notNullValue()));
@@ -114,10 +114,10 @@ class ClassPluginDocumentationTest {
             PluginScanner pluginScanner = new PluginScanner(ClassPluginDocumentationTest.class.getClassLoader());
             RegisteredPlugin scan = pluginScanner.scan();
 
-            ClassPluginDocumentation<? extends TaskRunner> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan, ProcessTaskRunner.class, null);
+            ClassPluginDocumentation<? extends TaskRunner> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan, Process.class, null);
 
             assertThat((Map<?, ?>) doc.getPropertiesSchema().get("properties"), anEmptyMap());
-            assertThat(doc.getCls(), is("io.kestra.core.models.tasks.runners.types.ProcessTaskRunner"));
+            assertThat(doc.getCls(), is("io.kestra.plugin.core.runner.Process"));
             assertThat(doc.getPropertiesSchema().get("title"), is("Task runner that executes a task as a subprocess on the Kestra host."));
             assertThat(doc.getDefs(), anEmptyMap());
         }));

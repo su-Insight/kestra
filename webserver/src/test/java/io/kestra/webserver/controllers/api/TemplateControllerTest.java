@@ -2,7 +2,7 @@ package io.kestra.webserver.controllers.api;
 
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.templates.Template;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.jdbc.repository.AbstractJdbcTemplateRepository;
 import io.kestra.webserver.controllers.domain.IdWithNamespace;
@@ -138,7 +138,7 @@ class TemplateControllerTest extends JdbcH2ControllerTest {
         client.toBlocking().retrieve(PUT("/api/v1/templates/" + template.getNamespace() + "/" + template.getId(), updateTemplate), Template.class);
         Template updatedTemplate = client.toBlocking().retrieve(HttpRequest.GET("/api/v1/templates/" + template.getNamespace() + "/" + template.getId()), Template.class);
         assertThat(updatedTemplate.getTasks().size(), is(1));
-        assertThat(updatedTemplate.getTasks().get(0).getId(), is("task-3"));
+        assertThat(updatedTemplate.getTasks().getFirst().getId(), is("task-3"));
         assertThat(updatedTemplate.getDescription(),is("My new template description"));
     }
 

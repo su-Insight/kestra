@@ -3,12 +3,6 @@
     <div v-else>
         <data-table class="blueprints" @page-changed="onPageChanged" ref="dataTable" :total="total" divider>
             <template #navbar>
-                <div class="d-flex sub-nav">
-                    <slot name="nav" />
-                    <el-form-item>
-                        <search-field :router="!embed" placeholder="search blueprint" @search="s => q = s" />
-                    </el-form-item>
-                </div>
                 <el-radio-group v-if="ready" v-model="selectedTag" class="tags-selection">
                     <el-radio-button
                         :key="0"
@@ -26,6 +20,9 @@
                         {{ tag.name }}
                     </el-radio-button>
                 </el-radio-group>
+            </template>
+            <template #search>
+                <search-field :router="!embed" placeholder="search blueprint" @search="s => q = s" class="blueprints-search" />
             </template>
             <template #table>
                 <el-alert type="info" v-if="!blueprints || blueprints.length === 0" :closable="false">
@@ -143,12 +140,12 @@
             },
             async blueprintToEditor(blueprintId) {
                 localStorage.setItem(editorViewTypes.STORAGE_KEY, editorViewTypes.SOURCE_TOPOLOGY);
-                localStorage.setItem("autoRestore-creation_draft", (await this.$http.get(`${this.blueprintBaseUri}/${blueprintId}/flow`)).data);
                 this.$router.push({
                     name: "flows/create",
                     params: {
                         tenant: this.$route.params.tenant
-                    }
+                    },
+                    query: {blueprintId: blueprintId}
                 });
             },
             tagsToString(blueprintTags) {
@@ -319,7 +316,14 @@
         }
     }
 
+    .blueprints-search {
+        width: 300px;
+        height: 24px;
+        font-size: 12px;
+    }
+
     .blueprints {
+        display: grid;
         width: 100%;
 
         .blueprint-card {
@@ -415,8 +419,8 @@
     .tags-selection {
         display: flex;
         width: 100%;
-        margin-bottom: calc(2 * var(--spacer));
-        gap: $spacer;
+        margin-bottom: var(--spacer);
+        gap: calc($spacer / 3);
         flex-wrap: wrap;
 
         & > * {
@@ -427,6 +431,7 @@
                 border: 1px solid var(--bs-border-color);
                 background: var(--bs-white);
                 width: 100%;
+                font-size: var(--el-font-size-extra-small);
                 font-weight: bold;
                 box-shadow: none;
                 text-overflow: ellipsis;

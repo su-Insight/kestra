@@ -238,7 +238,7 @@ public class Execution implements DeletedInterface, TenantInterface {
         return this.taskRunList
             .stream()
             .filter(taskRun -> taskRun.getTaskId().equals(id))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public TaskRun findTaskRunByTaskRunId(String id) throws InternalException {
@@ -324,7 +324,7 @@ public class Execution implements DeletedInterface, TenantInterface {
         return tasks
             .stream()
             .filter(resolvedTask -> !resolvedTask.getTask().getDisabled())
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public List<TaskRun> findTaskRunByTasks(List<ResolvedTask> resolvedTasks, TaskRun parentTaskRun) {
@@ -339,7 +339,7 @@ public class Execution implements DeletedInterface, TenantInterface {
                 .stream()
                 .anyMatch(resolvedTask -> FlowableUtils.isTaskRunFor(resolvedTask, t, parentTaskRun))
             )
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public Optional<TaskRun> findFirstByState(State.Type state) {
@@ -568,7 +568,7 @@ public class Execution implements DeletedInterface, TenantInterface {
      * {@code RUNNING} taskRun, on the lastAttempts.
      * If no Attempt is found, we create one (must be nominal case).
      * The executor will catch the {@code FAILED} taskRun emitted and will failed the execution.
-     * In the worst case, we FAILED the execution (only from {@link io.kestra.core.models.triggers.types.Flow}).
+     * In the worst case, we FAILED the execution (only from {@link io.kestra.plugin.core.trigger.Flow}).
      *
      * @param e the exception throw from Executor
      * @return a new execution with taskrun failed if possible or execution failed is other case
@@ -652,7 +652,7 @@ public class Execution implements DeletedInterface, TenantInterface {
                             Stream.of(lastAttempt
                                 .withState(State.Type.FAILED))
                         )
-                        .collect(Collectors.toList())
+                        .toList()
                 )
                 .withState(State.Type.FAILED),
             RunContextLogger.logEntries(loggingEventFromException(e), LogEntry.of(taskRun))
@@ -759,7 +759,7 @@ public class Execution implements DeletedInterface, TenantInterface {
                 current.put("taskrun", Map.of("value", childTaskRun.getValue()));
             }
 
-            if (childTaskRun.getOutputs() != null) {
+            if (childTaskRun.getOutputs() != null && !childTaskRun.getOutputs().isEmpty()) {
                 current.put("outputs", childTaskRun.getOutputs());
             }
 
@@ -843,7 +843,7 @@ public class Execution implements DeletedInterface, TenantInterface {
         )
             .filter(t -> t.getValue() != null)
             .map(TaskRun::getValue)
-            .collect(Collectors.toList());
+            .toList();
     }
 
 

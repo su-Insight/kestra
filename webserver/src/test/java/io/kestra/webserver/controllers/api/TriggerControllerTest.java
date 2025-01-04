@@ -2,17 +2,16 @@ package io.kestra.webserver.controllers.api;
 
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.triggers.Trigger;
-import io.kestra.core.models.triggers.types.Schedule;
-import io.kestra.core.runners.StandAloneRunner;
-import io.kestra.core.tasks.debugs.Return;
 import io.kestra.core.tasks.test.PollingTrigger;
 import io.kestra.core.utils.Await;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.jdbc.JdbcTestUtils;
 import io.kestra.jdbc.repository.AbstractJdbcFlowRepository;
 import io.kestra.jdbc.repository.AbstractJdbcTriggerRepository;
-import io.kestra.webserver.controllers.api.TriggerController;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.webserver.controllers.h2.JdbcH2ControllerTest;
+import io.kestra.webserver.responses.BulkResponse;
 import io.kestra.webserver.responses.PagedResults;
 import io.micronaut.core.type.Argument;
 import io.micronaut.http.HttpRequest;
@@ -25,8 +24,6 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.Collections;
@@ -51,12 +48,9 @@ class TriggerControllerTest extends JdbcH2ControllerTest {
     @Inject
     private JdbcTestUtils jdbcTestUtils;
 
-    @Inject
-    private StandAloneRunner runner;
-
-
+    @Override
     @BeforeEach
-    protected void init() throws IOException, URISyntaxException {
+    protected void setup() {
         jdbcTestUtils.drop();
         jdbcTestUtils.migrate();
 
@@ -179,6 +173,154 @@ class TriggerControllerTest extends JdbcH2ControllerTest {
     }
 
     @Test
+    void unlockByTriggers() {
+        Trigger triggerLock = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .executionId(IdUtils.create())
+            .build();
+
+        Trigger triggerNotLock = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .build();
+
+        jdbcTriggerRepository.save(triggerLock);
+        jdbcTriggerRepository.save(triggerNotLock);
+
+        List<Trigger> triggers = List.of(triggerLock, triggerNotLock);
+
+        BulkResponse bulkResponse = client.toBlocking().retrieve(HttpRequest.POST("/api/v1/triggers/unlock/by-triggers", triggers), BulkResponse.class);
+
+        assertThat(bulkResponse.getCount(), is(1));
+    }
+
+    @Test
+    void unlockByQuery() {
+        Trigger triggerLock = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .executionId(IdUtils.create())
+            .build();
+
+        Trigger triggerNotLock = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .build();
+
+        jdbcTriggerRepository.save(triggerLock);
+        jdbcTriggerRepository.save(triggerNotLock);
+
+        BulkResponse bulkResponse = client.toBlocking().retrieve(HttpRequest.POST("/api/v1/triggers/unlock/by-query?namespace=io.kestra.unittest", null), BulkResponse.class);
+
+        assertThat(bulkResponse.getCount(), is(1));
+    }
+
+    @Test
+    void enableByTriggers() {
+        Trigger triggerDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .disabled(true)
+            .build();
+
+        Trigger triggerNotDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .build();
+
+        jdbcTriggerRepository.save(triggerDisabled);
+        jdbcTriggerRepository.save(triggerNotDisabled);
+
+        List<Trigger> triggers = List.of(triggerDisabled, triggerNotDisabled);
+
+        BulkResponse bulkResponse = client.toBlocking().retrieve(HttpRequest.POST("/api/v1/triggers/set-disabled/by-triggers", new TriggerController.SetDisabledRequest(triggers, false)), BulkResponse.class);
+
+        assertThat(bulkResponse.getCount(), is(2));
+        assertThat(jdbcTriggerRepository.findLast(triggerDisabled).get().getDisabled(), is(false));
+    }
+
+    @Test
+    void enableByQuery() {
+        Trigger triggerDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .disabled(true)
+            .build();
+
+        Trigger triggerNotDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .build();
+
+        jdbcTriggerRepository.save(triggerDisabled);
+        jdbcTriggerRepository.save(triggerNotDisabled);
+
+        BulkResponse bulkResponse = client.toBlocking().retrieve(HttpRequest.POST("/api/v1/triggers/set-disabled/by-query?namespace=io.kestra.unittest&disabled=false", null), BulkResponse.class);
+
+        assertThat(bulkResponse.getCount(), is(2));
+        assertThat(jdbcTriggerRepository.findLast(triggerDisabled).get().getDisabled(), is(false));
+    }
+
+    @Test
+    void disableByTriggers() {
+        Trigger triggerDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .disabled(true)
+            .build();
+
+        Trigger triggerNotDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .build();
+
+        jdbcTriggerRepository.save(triggerDisabled);
+        jdbcTriggerRepository.save(triggerNotDisabled);
+
+        List<Trigger> triggers = List.of(triggerDisabled, triggerNotDisabled);
+
+        BulkResponse bulkResponse = client.toBlocking().retrieve(HttpRequest.POST("/api/v1/triggers/set-disabled/by-triggers", new TriggerController.SetDisabledRequest(triggers, true)), BulkResponse.class);
+
+        assertThat(bulkResponse.getCount(), is(2));
+        assertThat(jdbcTriggerRepository.findLast(triggerNotDisabled).get().getDisabled(), is(true));
+    }
+
+    @Test
+    void disableByQuery() {
+        Trigger triggerDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .disabled(true)
+            .build();
+
+        Trigger triggerNotDisabled = Trigger.builder()
+            .flowId(IdUtils.create())
+            .namespace("io.kestra.unittest")
+            .triggerId(IdUtils.create())
+            .build();
+
+        jdbcTriggerRepository.save(triggerDisabled);
+        jdbcTriggerRepository.save(triggerNotDisabled);
+
+        BulkResponse bulkResponse = client.toBlocking().retrieve(HttpRequest.POST("/api/v1/triggers/set-disabled/by-query?namespace=io.kestra.unittest&disabled=true", null), BulkResponse.class);
+
+        assertThat(bulkResponse.getCount(), is(2));
+        assertThat(jdbcTriggerRepository.findLast(triggerNotDisabled).get().getDisabled(), is(true));
+    }
+
+    @Test
     void nextExecutionDate() throws InterruptedException, TimeoutException {
         Flow flow = generateFlow("flow-with-triggers");
         jdbcFlowRepository.create(flow, flow.generateSource(), flow);
@@ -188,7 +330,7 @@ class TriggerControllerTest extends JdbcH2ControllerTest {
             Duration.ofMinutes(2)
         );
         PagedResults<TriggerController.Triggers> triggers = client.toBlocking().retrieve(HttpRequest.GET("/api/v1/triggers/search?q=trigger-nextexec"), Argument.of(PagedResults.class, TriggerController.Triggers.class));
-        assertThat(triggers.getResults().get(0).getTriggerContext().getNextExecutionDate(), notNullValue());
+        assertThat(triggers.getResults().getFirst().getTriggerContext().getNextExecutionDate(), notNullValue());
         assertThat(triggers.getResults().get(1).getTriggerContext().getNextExecutionDate(), notNullValue());
     }
 

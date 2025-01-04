@@ -1,7 +1,10 @@
 rootProject.name="kestra"
 
+include 'platform'
+
 include 'cli'
 include 'core'
+include 'tests'
 
 include 'runner-memory'
 
@@ -19,4 +22,5 @@ include 'ui'
 include 'model'
 include 'processor'
 include 'script'
+include 'e2e-tests'
 

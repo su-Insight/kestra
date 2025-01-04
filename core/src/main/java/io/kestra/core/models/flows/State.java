@@ -52,6 +52,11 @@ public class State {
         this.histories.add(new History(this.current, Instant.now()));
     }
 
+    public State(Type type, List<History> histories) {
+        this.current = type;
+        this.histories = histories;
+    }
+
     public static State of(Type state, List<History> histories) {
         State result = new State(state);
 
@@ -70,20 +75,28 @@ public class State {
         return new State(state, this);
     }
 
+    public State reset() {
+        return new State(
+            Type.CREATED,
+            List.of(this.histories.getFirst())
+        );
+    }
+
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     public Duration getDuration() {
         return Duration.between(
-            this.histories.get(0).getDate(),
+            this.histories.getFirst().getDate(),
             this.histories.size() > 1 ? this.histories.get(this.histories.size() - 1).getDate() : Instant.now()
         );
     }
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     public Instant getStartDate() {
-        return this.histories.get(0).getDate();
+        return this.histories.getFirst().getDate();
     }
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @JsonInclude(JsonInclude.Include.NON_EMPTY) // otherwise empty optional will be included as null
     public Optional<Instant> getEndDate() {
         if (!this.isTerminated() && !this.isPaused()) {
             return Optional.empty();
@@ -113,7 +126,7 @@ public class State {
             return Instant.now();
         }
 
-        return this.histories.get(0).getDate();
+        return this.histories.getFirst().getDate();
     }
 
     @JsonIgnore
@@ -151,6 +164,11 @@ public class State {
     @JsonIgnore
     public boolean isRetrying() {
         return this.current.isRetrying();
+    }
+
+    @JsonIgnore
+    public boolean isSuccess() {
+        return this.current.isSuccess();
     }
 
     @JsonIgnore
@@ -202,6 +220,10 @@ public class State {
 
         public boolean isRetrying() {
             return this == Type.RETRYING || this == Type.RETRIED;
+        }
+
+        public boolean isSuccess() {
+            return this == Type.SUCCESS;
         }
 
     }

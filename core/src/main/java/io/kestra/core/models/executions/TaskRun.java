@@ -12,7 +12,6 @@ import lombok.*;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -58,13 +57,6 @@ public class TaskRun implements TenantInterface {
     @With
     Integer iteration;
 
-    public void destroyOutputs() {
-        // DANGER ZONE: this method is only used to deals with issues with messages too big that must be stripped down
-        // to avoid crashing the platform. Don't use it for anything else.
-        this.outputs = Collections.emptyMap();
-        this.state = this.state.withState(State.Type.FAILED);
-    }
-
     @Deprecated
     public void setItems(String items) {
         // no-op for backward compatibility
@@ -83,6 +75,23 @@ public class TaskRun implements TenantInterface {
             this.attempts,
             this.outputs,
             this.state.withState(state),
+            this.iteration
+        );
+    }
+
+    public TaskRun replaceState(State newState) {
+        return new TaskRun(
+            this.tenantId,
+            this.id,
+            this.executionId,
+            this.namespace,
+            this.flowId,
+            this.taskId,
+            this.parentTaskRunId,
+            this.value,
+            this.attempts,
+            this.outputs,
+            newState,
             this.iteration
         );
     }
@@ -253,7 +262,7 @@ public class TaskRun implements TenantInterface {
         }
         Instant base = this.lastAttempt().getState().maxDate();
         Instant nextDate = retry.nextRetryDate(this.attempts.size(), base);
-        if (retry.getMaxDuration() != null && nextDate.isAfter(this.attempts.get(0).getState().minDate().plus(retry.getMaxDuration()))) {
+        if (retry.getMaxDuration() != null && nextDate.isAfter(this.attempts.getFirst().getState().minDate().plus(retry.getMaxDuration()))) {
 
             return null;
         }
@@ -268,5 +277,18 @@ public class TaskRun implements TenantInterface {
         return this.nextRetryDate(retry) != null;
     }
 
+    public TaskRun incrementIteration() {
+        int iteration = this.iteration == null ? 1 : this.iteration;
+        return this.toBuilder()
+            .iteration(iteration + 1)
+            .build();
+    }
+
+    public TaskRun resetAttempts() {
+        return this.toBuilder()
+            .state(new State(State.Type.CREATED, List.of(this.state.getHistories().getFirst())))
+            .attempts(null)
+            .build();
+    }
 
 }
