@@ -1,23 +1,26 @@
 import path from "path";
 import {defineConfig} from "vite";
 import vue from "@vitejs/plugin-vue";
-import pluginRewriteAll from "vite-plugin-rewrite-all";
 import {visualizer} from "rollup-plugin-visualizer";
 import eslintPlugin from "vite-plugin-eslint";
 
 export default defineConfig({
     base: "",
+    define: {
+        "import.meta.env.__ROOT_DIR__": JSON.stringify(__dirname),
+    },
     build: {
         outDir: "../webserver/src/main/resources/ui",
     },
     resolve: {
         alias: {
             "override": path.resolve(__dirname, "src/override/"),
+            // allow to render at runtime
+            vue: "vue/dist/vue.esm-bundler.js"
         },
     },
     plugins: [
         vue(),
-        pluginRewriteAll(),
         visualizer(),
         eslintPlugin({
             failOnWarning: true,

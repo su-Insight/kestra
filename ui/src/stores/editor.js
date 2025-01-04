@@ -1,31 +1,33 @@
 export default {
     namespaced: true,
     state: {
-        explorerVisible: true,
+        onboarding: false,
+        explorerVisible: false,
+        explorerWidth: 20,
         current: undefined,
         tabs: [],
+        view: undefined,
     },
     mutations: {
-        toggleExplorerVisibility(state) {
-            state.explorerVisible = !state.explorerVisible;
+        updateOnboarding(state) {
+            state.onboarding = true;
+        },
+        toggleExplorerVisibility(state, isVisible) {
+            state.explorerVisible = isVisible ?? !state.explorerVisible;
+        },
+        changeExplorerWidth(state, width) {
+            state.explorerWidth = width > 40 ? 40 : width < 20 ? 20 : width;
         },
         changeOpenedTabs(state, payload) {
-            const {
-                action,
-                name,
-                extension,
-                index,
-                persistent,
-                dirty,
-                path,
-            } = payload;
+            const {action, name, extension, index, persistent, dirty, path} =
+                payload;
 
             if (action === "open") {
                 const index = state.tabs.findIndex((tab) => {
                     if (path) {
                         return tab.path === path;
                     }
-                    return tab.name === name
+                    return tab.name === name;
                 });
 
                 let isDirty;
@@ -42,23 +44,23 @@ export default {
                     extension,
                     persistent,
                     dirty: isDirty,
-                    path
+                    path,
                 };
             } else if (action === "close") {
                 state.tabs = state.tabs.filter((tab) => {
                     if (path) {
                         return tab.path !== path;
                     }
-                    return tab.name !== name
+                    return tab.name !== name;
                 });
                 const POSITION = index
                     ? index
                     : state.tabs.findIndex((tab) => {
-                        if (path) {
-                            return tab.path === path;
-                        }
-                        return tab.name === name
-                    });
+                          if (path) {
+                              return tab.path === path;
+                          }
+                          return tab.name === name;
+                      });
 
                 if (state.current.name === name) {
                     const i = POSITION - 1 >= 0;
@@ -71,7 +73,7 @@ export default {
                     if (path) {
                         return tab.path === path;
                     }
-                    return tab.name === name
+                    return tab.name === name;
                 });
 
                 state.tabs[tabIdxToDirty].dirty = dirty;
@@ -82,6 +84,13 @@ export default {
             if (state.tabs[0]) {
                 state.tabs = [state.tabs[0]];
             }
+        },
+        closeAllTabs(state) {
+            state.tabs = [];
+            state.current = undefined
+        },
+        changeView(state, view) {
+            state.view = view;
         },
     },
 };

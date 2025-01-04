@@ -14,15 +14,14 @@ export const inputsToFormDate = (submitor, inputsList, values) => {
     values = cleanInputs(inputsList, values);
 
     const formData = new FormData();
-
     for (let input of inputsList || []) {
         const inputName = input.id;
         const inputValue = values[inputName];
         if (inputValue !== undefined) {
             if (input.type === "DATETIME") {
-                formData.append(inputName, submitor.$moment(inputValue).toISOString());
+                if(inputValue) formData.append(inputName, submitor.$moment(inputValue).toISOString());
             } else if (input.type === "DATE") {
-                formData.append(inputName, submitor.$moment(inputValue).format("YYYY-MM-DD"));
+                if(inputValue) formData.append(inputName, submitor.$moment(inputValue).format("YYYY-MM-DD"));
             } else if (input.type === "TIME") {
                 formData.append(inputName, submitor.$moment(inputValue).format("hh:mm:ss"));
             } else if (input.type === "DURATION") {
@@ -30,7 +29,7 @@ export const inputsToFormDate = (submitor, inputsList, values) => {
             } else if (input.type === "FILE") {
                 if(typeof(inputValue) === "string"){
                     formData.append(inputName, inputValue);
-                }else {
+                } else if (inputValue !== null) {
                     formData.append("files", inputValue, inputName);
                 }
             } else {
@@ -45,7 +44,6 @@ export const inputsToFormDate = (submitor, inputsList, values) => {
             return;
         }
     }
-
     return formData;
 }
 
@@ -85,9 +83,14 @@ export const executeTask = (submitor, flow, values, options) => {
                     })
                 }
             }
+
+            if(options.nextStep) submitor.$tours["guidedTour"]?.nextStep();
+
             return response.data;
         })
         .then((execution) => {
-            submitor.$toast().success(submitor.$t("triggered done", {name: execution.id}));
+            if(!options.nextStep){
+                submitor.$toast().success(submitor.$t("triggered done", {name: execution.id}));
+            }
         })
 }

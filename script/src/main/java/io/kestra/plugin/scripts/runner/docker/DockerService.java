@@ -10,6 +10,7 @@ import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.utils.MapUtils;
+import org.apache.commons.lang3.SystemUtils;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -42,9 +43,14 @@ public class DockerService {
             return "unix:///var/run/docker.sock";
         }
 
+        if (SystemUtils.IS_OS_WINDOWS) {
+            return "npipe:////./pipe/docker_engine";
+        }
+
         return "unix:///dind/docker.sock";
     }
 
+    @SuppressWarnings("unchecked")
     public static Path createConfig(RunContext runContext, @Nullable Object config, @Nullable List<Credentials> credentials, @Nullable String image) throws IllegalVariableEvaluationException, IOException {
         Map<String, Object> finalConfig = new HashMap<>();
 
@@ -52,7 +58,6 @@ public class DockerService {
             if (config instanceof String) {
                 finalConfig = JacksonMapper.toMap(runContext.render(config.toString()));
             } else {
-                //noinspection unchecked
                 finalConfig = runContext.render((Map<String, Object>) config);
             }
         }
@@ -97,7 +102,7 @@ public class DockerService {
             finalConfig = MapUtils.merge(finalConfig, Map.of("auths", Map.of(registry, auths)));
         }
 
-        File docker = runContext.tempDir(true).resolve("config.json").toFile();
+        File docker = runContext.workingDir().path(true).resolve("config.json").toFile();
 
         if (docker.exists()) {
             //noinspection ResultOfMethodCallIgnored

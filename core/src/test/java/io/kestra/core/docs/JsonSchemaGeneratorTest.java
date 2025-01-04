@@ -12,11 +12,11 @@ import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.plugins.RegisteredPlugin;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.tasks.debugs.Echo;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Dag;
-import io.kestra.core.tasks.log.Log;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.plugin.core.debug.Echo;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Dag;
+import io.kestra.plugin.core.log.Log;
+import io.kestra.core.junit.annotations.KestraTest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.inject.Inject;
 import lombok.Builder;
@@ -31,16 +31,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.net.URISyntaxException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class JsonSchemaGeneratorTest {
 
 
@@ -59,7 +56,7 @@ class JsonSchemaGeneratorTest {
     @Test
     void tasks() {
         List<RegisteredPlugin> scan = pluginRegistry.externalPlugins();
-        Class<? extends Task> cls = scan.get(0).getTasks().get(0);
+        Class<? extends Task> cls = scan.getFirst().getTasks().getFirst();
 
         Map<String, Object> generate = jsonSchemaGenerator.properties(Task.class, cls);
         assertThat(((Map<String, Map<String, Object>>) generate.get("properties")).size(), is(5));
@@ -166,7 +163,7 @@ class JsonSchemaGeneratorTest {
             var metrics = (List<Object>) returnTask.get("$metrics");
             assertThat(metrics.size(), is(2));
 
-            var firstMetric = (Map<String, Object>) metrics.get(0);
+            var firstMetric = (Map<String, Object>) metrics.getFirst();
             assertThat(firstMetric.get("name"), is("length"));
             assertThat(firstMetric.get("type"), is("counter"));
             var secondMetric = (Map<String, Object>) metrics.get(1);
@@ -198,6 +195,7 @@ class JsonSchemaGeneratorTest {
         assertThat(((Map<String, Map<String, Object>>) generate.get("properties")).get("stringWithDefault").get("default"), is("default"));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void betaTask() {
         Map<String, Object> generate = jsonSchemaGenerator.properties(Task.class, BetaTask.class);
@@ -212,6 +210,7 @@ class JsonSchemaGeneratorTest {
         return (Map<String, Map<String, Object>>) generate.get("properties");
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> map(Object object) {
         return (Map<String, Object>) object;
     }

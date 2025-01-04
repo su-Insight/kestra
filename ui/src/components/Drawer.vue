@@ -1,5 +1,6 @@
 <template>
     <el-drawer
+        :data-component="dataComponent"
         :model-value="props.modelValue"
         @update:model-value="emit('update:modelValue', $event)"
         destroy-on-close
@@ -32,6 +33,7 @@
 <script setup>
     import {ref} from "vue";
     import Fullscreen from "vue-material-design-icons/Fullscreen.vue"
+    import useDataComponent from "../composables/useDataComponent";
 
     const props = defineProps({
         modelValue: {
@@ -43,11 +45,17 @@
             required: false,
             default: undefined
         },
+        fullScreen: {
+            type: Boolean,
+            required: false,
+            default: false
+        }
     });
 
+    const dataComponent = useDataComponent();
     const emit = defineEmits(["update:modelValue"])
 
-    const fullScreen = ref(false);
+    const fullScreen = ref(props.fullScreen);
 
     const toggleFullScreen = () => {
         fullScreen.value = !fullScreen.value;

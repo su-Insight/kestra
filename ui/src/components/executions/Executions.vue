@@ -29,7 +29,7 @@
             </ul>
         </template>
     </top-nav-bar>
-    <section :class="{'container': topbar}" v-if="ready">
+    <section :data-component="dataComponent" :class="{'container padding-bottom': topbar}" v-if="ready">
         <data-table
             @page-changed="onPageChanged"
             ref="dataTable"
@@ -57,8 +57,8 @@
                 </el-form-item>
                 <el-form-item>
                     <date-filter
-                        @update:is-relative="onDateFilterTypeChange($event)"
-                        @update:filter-value="onDataTableValue($event)"
+                        @update:is-relative="onDateFilterTypeChange"
+                        @update:filter-value="onDataTableValue"
                     />
                 </el-form-item>
                 <el-form-item>
@@ -96,7 +96,7 @@
                         multiple
                         collapse-tags
                         collapse-tags-tooltip
-                        @change="onDisplayColumnsChange($event)"
+                        @change="onDisplayColumnsChange"
                     >
                         <el-option
                             v-for="col in optionalColumns"
@@ -424,8 +424,10 @@
     import LabelInput from "../../components/labels/LabelInput.vue";
     import {ElMessageBox, ElSwitch, ElFormItem, ElAlert} from "element-plus";
     import {h, ref} from "vue";
+    import BaseComponents from "../../components/BaseComponents.vue"
 
     export default {
+        extends: BaseComponents,
         mixins: [RouteContext, RestoreUrl, DataTableActions, SelectTableActions],
         components: {
             Status,
@@ -555,6 +557,7 @@
                 isOpenLabelsModal: false,
                 executionLabels: [],
                 actionOptions: {},
+                refreshDates: false
             };
         },
         created() {
@@ -584,6 +587,7 @@
                 return undefined;
             },
             startDate() {
+                this.refreshDates;
                 if (this.$route.query.startDate) {
                     return this.$route.query.startDate;
                 }
@@ -657,6 +661,9 @@
                     delete queryFilter["timeRange"];
                     delete queryFilter["startDate"];
                     delete queryFilter["endDate"];
+                } else if (queryFilter.timeRange) {
+                    delete queryFilter["startDate"];
+                    delete queryFilter["endDate"];
                 }
 
                 if (this.namespace) {
@@ -670,6 +677,7 @@
                 return _merge(base, queryFilter)
             },
             loadData(callback) {
+                this.refreshDates = !this.refreshDates;
                 if (this.isDisplayedTop) {
                     this.dailyReady = false;
 
@@ -858,3 +866,9 @@
         },
     };
 </script>
+
+<style scoped lang="scss">
+    .padding-bottom {
+        padding-bottom: 4rem;
+    }
+</style>

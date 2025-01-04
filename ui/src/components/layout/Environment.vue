@@ -1,14 +1,16 @@
 <template>
-    <div v-if="name" id="environment">
+    <div :data-component="dataComponent" v-if="name" id="environment">
         <strong>{{ name }}</strong>
     </div>
 </template>
 
 <script>
     import {mapGetters} from "vuex";
-    import {cssVariable} from "../../utils/global";
+    import {cssVariable} from "@kestra-io/ui-libs/src/utils/global";
+    import BaseComponents from "../BaseComponents.vue"
 
     export default {
+        extends: BaseComponents,
         computed: {
             ...mapGetters("layout", ["envName", "envColor"]),
             ...mapGetters("misc", ["configs"]),
