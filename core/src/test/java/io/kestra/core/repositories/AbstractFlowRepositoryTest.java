@@ -17,9 +17,9 @@ import io.kestra.core.schedulers.AbstractSchedulerTest;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.services.FlowService;
 import io.kestra.core.services.TaskDefaultService;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Template;
-import io.kestra.core.tasks.log.Log;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Template;
+import io.kestra.plugin.core.log.Log;
 import io.kestra.core.utils.Await;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.TestsUtils;
@@ -242,6 +242,18 @@ public abstract class AbstractFlowRepositoryTest {
     void findByNamespace() {
         List<Flow> save = flowRepository.findByNamespace(null, "io.kestra.tests");
         assertThat((long) save.size(), is(Helpers.FLOWS_COUNT - 15));
+
+        save = flowRepository.findByNamespace(null, "io.kestra.tests2");
+        assertThat((long) save.size(), is(1L));
+
+        save = flowRepository.findByNamespace(null, "io.kestra.tests.minimal.bis");
+        assertThat((long) save.size(), is(1L));
+    }
+
+    @Test
+    void findByNamespacePrefix() {
+        List<Flow> save = flowRepository.findByNamespacePrefix(null, "io.kestra.tests");
+        assertThat((long) save.size(), is(Helpers.FLOWS_COUNT - 1));
 
         save = flowRepository.findByNamespace(null, "io.kestra.tests2");
         assertThat((long) save.size(), is(1L));

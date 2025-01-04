@@ -13,7 +13,7 @@ import io.kestra.core.models.flows.State;
 import io.kestra.core.models.storage.FileMetas;
 import io.kestra.core.models.tasks.TaskForExecution;
 import io.kestra.core.models.triggers.AbstractTriggerForExecution;
-import io.kestra.core.models.triggers.types.Webhook;
+import io.kestra.plugin.core.trigger.Webhook;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.ExecutionRepositoryInterface;
@@ -103,6 +103,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
         .put("secret", "secret")
         .put("array", """
             ["s1", "s2", "s3"]""")
+        .put("json", "{}")
         .build();
 
     @Test
@@ -144,6 +145,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
             .addPart("secret", "secret")
             .addPart("array", """
             ["s1", "s2", "s3"]""")
+            .addPart("json", "{}")
             .build();
     }
 
@@ -177,7 +179,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
         Execution result = triggerInputsFlowExecution(true);
 
         assertThat(result.getState().getCurrent(), is(State.Type.SUCCESS));
-        assertThat(result.getTaskRunList().size(), is(10));
+        assertThat(result.getTaskRunList().size(), is(12));
     }
 
     @Test
@@ -536,7 +538,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
     @Test
     void downloadFile() throws TimeoutException {
         Execution execution = runnerUtils.runOne(null, TESTS_FLOW_NS, "inputs", null, (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, inputs));
-        assertThat(execution.getTaskRunList(), hasSize(10));
+        assertThat(execution.getTaskRunList(), hasSize(12));
 
         String path = (String) execution.getInputs().get("file");
 
@@ -571,7 +573,7 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
     @Test
     void filePreview() throws TimeoutException {
         Execution defaultExecution = runnerUtils.runOne(null, TESTS_FLOW_NS, "inputs", null, (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, inputs));
-        assertThat(defaultExecution.getTaskRunList(), hasSize(10));
+        assertThat(defaultExecution.getTaskRunList(), hasSize(12));
 
         String defaultPath = (String) defaultExecution.getInputs().get("file");
 
@@ -593,10 +595,11 @@ class ExecutionControllerTest extends JdbcH2ControllerTest {
             .put("secret", "secret")
             .put("array", """
             ["s1", "s2", "s3"]""")
+            .put("json", "{}")
             .build();
 
         Execution latin1Execution = runnerUtils.runOne(null, TESTS_FLOW_NS, "inputs", null, (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, latin1FileInputs));
-        assertThat(latin1Execution.getTaskRunList(), hasSize(10));
+        assertThat(latin1Execution.getTaskRunList(), hasSize(12));
 
         String latin1Path = (String) latin1Execution.getInputs().get("file");
 

@@ -9,9 +9,9 @@ import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.LocalFlowRepositoryLoader;
 import io.kestra.core.runners.*;
-import io.kestra.core.tasks.flows.*;
 import io.kestra.core.utils.TestsUtils;
 import io.kestra.jdbc.JdbcTestUtils;
+import io.kestra.plugin.core.flow.*;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -28,7 +28,6 @@ import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.hamcrest.Matchers.is;
 
 @MicronautTest(transactional = false)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // must be per-class to allow calling once init() which took a lot of time
@@ -75,6 +74,9 @@ public abstract class JdbcRunnerTest {
 
     @Inject
     private ForEachItemCaseTest forEachItemCaseTest;
+
+    @Inject
+    private WaitForCaseTest waitForTestCaseTest;
 
     @Inject
     private FlowConcurrencyCaseTest flowConcurrencyCaseTest;
@@ -189,6 +191,11 @@ public abstract class JdbcRunnerTest {
     @Test
     void multipleConditionTrigger() throws Exception {
         multipleConditionTriggerCaseTest.trigger();
+    }
+
+    @Test
+    void multipleConditionTriggerFailed() throws Exception {
+        multipleConditionTriggerCaseTest.failed();
     }
 
     @RetryingTest(5)
@@ -323,5 +330,35 @@ public abstract class JdbcRunnerTest {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "dynamic-task");
 
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+    }
+
+    @Test
+    void waitFor() throws TimeoutException {
+        waitForTestCaseTest.waitfor();
+    }
+
+    @Test
+    void waitforMaxIterations() throws TimeoutException {
+        waitForTestCaseTest.waitforMaxIterations();
+    }
+
+    @Test
+    void waitforMaxDuration() throws TimeoutException {
+        waitForTestCaseTest.waitforMaxDuration();
+    }
+
+    @Test
+    void waitforNoSuccess() throws TimeoutException {
+        waitForTestCaseTest.waitforNoSuccess();
+    }
+
+    @Test
+    void waitforMultipleTasks() throws TimeoutException {
+        waitForTestCaseTest.waitforMultipleTasks();
+    }
+
+    @Test
+    void waitforMultipleTasksFailed() throws TimeoutException {
+        waitForTestCaseTest.waitforMultipleTasksFailed();
     }
 }

@@ -19,8 +19,8 @@ import io.kestra.core.repositories.MetricRepositoryInterface;
 import io.kestra.core.runners.FlowInputOutput;
 import io.kestra.core.storages.StorageContext;
 import io.kestra.core.storages.StorageInterface;
-import io.kestra.core.tasks.flows.Pause;
-import io.kestra.core.tasks.flows.WorkingDirectory;
+import io.kestra.plugin.core.flow.Pause;
+import io.kestra.plugin.core.flow.WorkingDirectory;
 import io.kestra.core.utils.GraphUtils;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.context.event.ApplicationEventPublisher;
@@ -96,6 +96,40 @@ public class ExecutionService {
             .toList();
 
         return execution.withTaskRunList(newTaskRuns).withState(State.Type.RUNNING);
+    }
+
+    public Execution retryWaitFor(Execution execution, String flowableTaskRunId) {
+        List<TaskRun> newTaskRuns = execution
+            .getTaskRunList()
+            .stream()
+            .map(taskRun -> {
+                if (taskRun.getId().equals(flowableTaskRunId)) {
+                    // Keep only CREATED/RUNNING
+                    // To avoid having large history
+                    return taskRun.replaceState(
+                         new State(
+                            State.Type.RUNNING,
+                            taskRun.getState().getHistories().subList(0,2)
+                        )
+                    );
+                }
+
+                if (flowableTaskRunId.equals(taskRun.getParentTaskRunId())) {
+                    // Clean attempts and only increment iteration
+                    // to avoid having large history
+                    return taskRun.resetAttempts().incrementIteration();
+                }
+
+                return taskRun;
+            })
+            .toList();
+
+        return execution.withTaskRunList(newTaskRuns).withState(State.Type.RUNNING);
+    }
+
+    public Execution pauseFlowable(Execution execution, TaskRun updateFlowableTaskRun) throws InternalException {
+
+        return execution.withTaskRun(updateFlowableTaskRun.withState(State.Type.PAUSED)).withState(State.Type.PAUSED);
     }
 
     public Execution restart(final Execution execution, @Nullable Integer revision) throws Exception {

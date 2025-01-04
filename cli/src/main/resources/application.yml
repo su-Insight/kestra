@@ -73,7 +73,7 @@ jackson:
   serialization:
     writeDatesAsTimestamps: false
     writeDurationsAsTimestamps: false
-  serialization-inclusion: non_default
+  serialization-inclusion: non_null
   deserialization:
     FAIL_ON_UNKNOWN_PROPERTIES: false
 
@@ -114,6 +114,9 @@ flyway:
       out-of-order: true
 
 kestra:
+  tutorial-flows:
+    # Automatically loads all tutorial flows at startup.
+    enabled: true
   retries:
     attempts: 5
     multiplier: 2.0
