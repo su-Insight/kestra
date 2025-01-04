@@ -11,7 +11,7 @@ import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.tasks.flows.Dag;
+import io.kestra.plugin.core.flow.Dag;
 
 import java.util.*;
 import java.util.function.BiFunction;
@@ -82,6 +82,54 @@ public class FlowableUtils {
 
             if (currentTasks.size() > lastIndex + 1) {
                 return Collections.singletonList(currentTasks.get(lastIndex + 1).toNextTaskRun(execution));
+            }
+        }
+
+        return Collections.emptyList();
+    }
+
+    public static List<NextTaskRun> resolveWaitForNext(
+        Execution execution,
+        List<ResolvedTask> tasks,
+        List<ResolvedTask> errors,
+        TaskRun parentTaskRun
+    ) {
+        List<ResolvedTask> currentTasks = execution.findTaskDependingFlowState(tasks, errors, parentTaskRun);
+
+        // nothing
+        if (currentTasks == null || currentTasks.isEmpty() || execution.getState().getCurrent() == State.Type.KILLING) {
+            return Collections.emptyList();
+        }
+
+        // first one
+        List<TaskRun> taskRuns = execution.findTaskRunByTasks(currentTasks, parentTaskRun);
+        if (taskRuns.isEmpty()) {
+            return Collections.singletonList(
+                currentTasks.getFirst().toNextTaskRun(execution)
+            );
+        }
+
+        // first created, leave
+        Optional<TaskRun> lastCreated = execution.findLastCreated(taskRuns);
+        if (lastCreated.isPresent()) {
+            return Collections.emptyList();
+        }
+
+        // have running, leave
+        Optional<TaskRun> lastRunning = execution.findLastRunning(taskRuns);
+        if (lastRunning.isPresent()) {
+            return Collections.emptyList();
+        }
+
+        // last success, find next
+        Optional<TaskRun> lastTerminated = execution.findLastTerminated(taskRuns);
+        if (lastTerminated.isPresent()) {
+            int lastIndex = taskRuns.indexOf(lastTerminated.get());
+
+            if (currentTasks.size() > lastIndex + 1) {
+                return Collections.singletonList(currentTasks.get(lastIndex + 1).toNextTaskRun(execution));
+            } else {
+                return Collections.singletonList(currentTasks.get(0).toNextTaskRun(execution));
             }
         }
 

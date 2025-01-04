@@ -42,7 +42,7 @@
                     :language="lang"
                     :extension="extension"
                     :schema-type="schemaType"
-                    class="position-relative"
+                    :input="input"
                 />
                 <div
                     v-show="showPlaceholder"
@@ -216,12 +216,12 @@
                 this.decorations = this.editor.createDecorationsCollection();
 
                 if (!this.original) {
-                    this.editor.onDidBlurEditorWidget(() => {
+                    this.editor.onDidBlurEditorWidget?.(() => {
                         this.$emit("focusout", editor.getValue());
                         this.focus = false;
                     })
 
-                    this.editor.onDidFocusEditorText(() => {
+                    this.editor.onDidFocusEditorText?.(() => {
                         this.focus = true;
                     })
 
@@ -262,7 +262,7 @@
                 });
 
                 // TabFocus is global to all editor so revert the behavior on non inputs
-                this.editor.onDidFocusEditorText(() => {
+                this.editor.onDidFocusEditorText?.(() => {
                     TabFocus.setTabFocusMode(this.input);
                 })
 
@@ -349,7 +349,7 @@
                         }
                     });
 
-                    this.editor.onDidChangeCursorPosition(() => {
+                    this.editor.onDidChangeCursorPosition?.(() => {
                         let position = this.editor.getPosition();
                         let model = this.editor.getModel();
                         clearTimeout(this.lastTimeout);
@@ -377,8 +377,8 @@
             },
             highlightPebble() {
                 // Highlight code that match pebble content
-                let model = this.editor.getModel();
-                let text = model.getValue();
+                let model = this.editor?.getModel?.();
+                let text = model?.getValue?.();
                 let regex = new RegExp("\\{\\{(.+?)}}", "g");
                 let match;
                 const decorationsToAdd = [];
@@ -406,8 +406,22 @@
 <style lang="scss">
     @import "../../styles/layout/root-dark.scss";
 
-    .ks-editor {
+    :not(.el-drawer__body) > .ks-editor {
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .el-drawer__body .ks-editor {
+        flex: 1;
+    }
+
+    .el-dialog__body .ks-editor {
+        display: flex;
         width: 100%;
+    }
+
+    .ks-editor {
+        display: flex;
 
         .top-nav {
             background-color: var(--bs-white);
@@ -423,7 +437,7 @@
 
         .editor-container {
             display: flex;
-            height: 100%;
+            flex-grow: 1;
 
             &.single-line {
                 min-height: var(--el-component-size);

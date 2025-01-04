@@ -3,8 +3,8 @@ package io.kestra.core.services;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Type;
 import io.kestra.core.models.flows.input.StringInput;
-import io.kestra.core.tasks.debugs.Echo;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Echo;
+import io.kestra.plugin.core.debug.Return;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
@@ -121,7 +121,7 @@ class FlowServiceTest {
 
     @Test
     void aliases() {
-        List<String> warnings = flowService.aliasesPaths("""
+        List<FlowService.Relocation> warnings = flowService.relocations("""
             id: hello-alias
             namespace: myteam
 
@@ -133,7 +133,7 @@ class FlowServiceTest {
                 type: io.kestra.core.runners.test.TaskWithAlias
                 message: Hello, Task
               - id: each
-                type: io.kestra.core.tasks.flows.EachSequential
+                type: io.kestra.plugin.core.flow.EachSequential
                 value:\s
                   - 1
                   - 2
@@ -144,7 +144,8 @@ class FlowServiceTest {
                     message: Hello, {{taskrun.value}}""");
 
         assertThat(warnings.size(), is(2));
-        assertThat(warnings.get(0), is("io.kestra.core.runners.test.task.Alias"));
+        assertThat(warnings.get(0).from(), is("io.kestra.core.runners.test.task.Alias"));
+        assertThat(warnings.get(0).to(), is("io.kestra.core.runners.test.TaskWithAlias"));
     }
 
     @Test
