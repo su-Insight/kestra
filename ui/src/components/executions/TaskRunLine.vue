@@ -189,7 +189,7 @@
             },
             flow: {
                 type: Object,
-                default: null
+                default: undefined
             },
             forcedAttemptNumber: {
                 type: Number,
@@ -263,6 +263,8 @@
                 return this.attempts(taskRun)[this.selectedAttemptNumberByTaskRunId[taskRun.id] ?? 0];
             },
             taskType(taskRun) {
+                if(!taskRun) return undefined;
+
                 const task = FlowUtils.findTaskById(this.flow, taskRun.taskId);
                 const parentTaskRunId = taskRun.parentTaskRunId;
                 if (task === undefined && parentTaskRunId) {
@@ -281,12 +283,19 @@
             },
             deleteLogs(currentTaskRunId) {
                 const params = this.params
-                this.$store.dispatch("execution/deleteLogs", {
-                    executionId: this.followedExecution.id,
-                    params: {...params, taskRunId: currentTaskRunId}
-                }).then((_) => {
-                    this.forwardEvent("update-logs", this.followedExecution.id)
-                });
+                this.$toast().confirm(
+                    this.$t("delete_log"),
+                    () => {
+                        this.$store.dispatch("execution/deleteLogs", {
+                            executionId: this.followedExecution.id,
+                            params: {...params, taskRunId: currentTaskRunId}
+                        }).then((_) => {
+                            this.forwardEvent("update-logs", this.followedExecution.id)
+                        });
+                    },
+                    () => {}
+                )
+
             },
             forwardEvent(type, event) {
                 this.$emit(type, event);
@@ -298,7 +307,7 @@
                 return this.shouldDisplayProgressBar(taskRun) || this.shouldDisplayLogs(taskRun.id)
             },
             shouldDisplayProgressBar(taskRun) {
-                return this.taskType(taskRun) === "io.kestra.core.tasks.flows.ForEachItem$ForEachItemExecutable"
+                return this.taskType(taskRun) === "io.kestra.plugin.core.flow.ForEachItem$ForEachItemExecutable" || this.taskType(taskRun) === "io.kestra.core.tasks.flows.ForEachItem$ForEachItemExecutable"
             },
             shouldDisplayLogs(taskRunId) {
                 return this.logsWithIndexByAttemptUid[this.attemptUid(taskRunId, this.selectedAttemptNumberByTaskRunId[taskRunId])]

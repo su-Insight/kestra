@@ -10,7 +10,6 @@ import io.kestra.core.utils.DateUtils;
 import io.kestra.jdbc.runner.JdbcIndexerInterface;
 import io.micrometer.common.lang.Nullable;
 import io.micronaut.data.model.Pageable;
-import jakarta.inject.Singleton;
 import org.jooq.*;
 import org.jooq.impl.DSL;
 
@@ -24,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-@Singleton
 public abstract class AbstractJdbcMetricRepository extends AbstractJdbcRepository implements MetricRepositoryInterface, JdbcIndexerInterface<MetricEntry> {
     protected io.kestra.jdbc.AbstractJdbcRepository<MetricEntry> jdbcRepository;
 
@@ -206,7 +204,7 @@ public abstract class AbstractJdbcMetricRepository extends AbstractJdbcRepositor
         ZonedDateTime endDate,
         String aggregation
     ) {
-        List<Field<?>> dateFields = new ArrayList<>(groupByFields(Duration.between(startDate, endDate)));
+        List<Field<?>> dateFields = new ArrayList<>(groupByFields(Duration.between(startDate, endDate), true));
         return this.jdbcRepository
             .getDslContextWrapper()
             .transactionResult(configuration -> {
@@ -232,7 +230,9 @@ public abstract class AbstractJdbcMetricRepository extends AbstractJdbcRepositor
 
                 dateFields.add(field("metric_name"));
 
-                var selectGroup = select.groupBy(dateFields);
+                List<Field<?>> groupByFields = new ArrayList<>(groupByFields(Duration.between(startDate, endDate)));
+                groupByFields.add(field("metric_name"));
+                var selectGroup = select.groupBy(groupByFields);
 
                 List<MetricAggregation> result = this.jdbcRepository
                     .fetchMetricStat(selectGroup, DateUtils.groupByType(Duration.between(startDate, endDate)).val());

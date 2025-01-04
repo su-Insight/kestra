@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.CaseFormat;
 import io.kestra.core.exceptions.DeserializationException;
+import io.kestra.core.models.executions.Execution;
 import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.queues.QueueService;
@@ -13,12 +14,12 @@ import io.kestra.core.utils.IdUtils;
 import io.kestra.jdbc.JdbcTableConfigs;
 import io.kestra.jdbc.JdbcMapper;
 import io.kestra.jdbc.JooqDSLContextWrapper;
+import io.kestra.core.queues.MessageTooBigException;
 import io.kestra.jdbc.repository.AbstractJdbcRepository;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.transaction.exceptions.CannotCreateTransactionException;
 import lombok.Getter;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -43,11 +44,15 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import static io.kestra.core.utils.Rethrow.throwRunnable;
+
 @Slf4j
 public abstract class JdbcQueue<T> implements QueueInterface<T> {
+    private static final int MAX_ASYNC_THREADS = Runtime.getRuntime().availableProcessors() * 2;
     protected static final ObjectMapper MAPPER = JdbcMapper.of();
 
     private final ExecutorService poolExecutor;
+    private final ExecutorService asyncPoolExecutor;
 
     protected final QueueService queueService;
 
@@ -57,20 +62,24 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
 
     protected final Configuration configuration;
 
+    protected final MessageProtectionConfiguration messageProtectionConfiguration;
+
     protected final Table<Record> table;
 
     protected final JdbcQueueIndexer jdbcQueueIndexer;
 
-    protected volatile boolean isShutdown = false;
+    private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
     public JdbcQueue(Class<T> cls, ApplicationContext applicationContext) {
         ExecutorsUtils executorsUtils = applicationContext.getBean(ExecutorsUtils.class);
         this.poolExecutor = executorsUtils.cachedThreadPool("jdbc-queue-" + cls.getSimpleName());
+        this.asyncPoolExecutor = executorsUtils.maxCachedThreadPool(MAX_ASYNC_THREADS, "jdbc-queue-async-" + cls.getSimpleName());
 
         this.queueService = applicationContext.getBean(QueueService.class);
         this.cls = cls;
         this.dslContextWrapper = applicationContext.getBean(JooqDSLContextWrapper.class);
         this.configuration = applicationContext.getBean(Configuration.class);
+        this.messageProtectionConfiguration = applicationContext.getBean(MessageProtectionConfiguration.class);
 
         JdbcTableConfigs jdbcTableConfigs = applicationContext.getBean(JdbcTableConfigs.class);
 
@@ -79,12 +88,26 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
         this.jdbcQueueIndexer = applicationContext.getBean(JdbcQueueIndexer.class);
     }
 
-    @SneakyThrows
-    protected Map<Field<Object>, Object> produceFields(String consumerGroup, String key, T message) {
+    protected Map<Field<Object>, Object> produceFields(String consumerGroup, String key, T message) throws QueueException {
+        byte[] bytes;
+        try {
+            bytes = MAPPER.writeValueAsBytes(message);
+        } catch (JsonProcessingException e) {
+            throw new QueueException("Unable to serialize the message", e);
+        }
+
+        if (messageProtectionConfiguration.enabled && bytes.length >= messageProtectionConfiguration.limit) {
+            // we let terminated execution messages to go through anyway
+            if (!(message instanceof Execution execution) || !execution.getState().isTerminated()) {
+                    throw new MessageTooBigException("Message of size " + bytes.length + " has exceeded the configured limit of " + messageProtectionConfiguration.limit);
+            }
+        }
+
+
         Map<Field<Object>, Object> fields = new HashMap<>();
         fields.put(AbstractJdbcRepository.field("type"), this.cls.getName());
         fields.put(AbstractJdbcRepository.field("key"), key != null ? key : IdUtils.create());
-        fields.put(AbstractJdbcRepository.field("value"), JSONB.valueOf(MAPPER.writeValueAsString(message)));
+        fields.put(AbstractJdbcRepository.field("value"), JSONB.valueOf(new String(bytes)));
 
         if (consumerGroup != null) {
             fields.put(AbstractJdbcRepository.field("consumer_group"), consumerGroup);
@@ -93,10 +116,12 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
         return fields;
     }
 
-    private void produce(String consumerGroup, String key, T message, Boolean skipIndexer) {
+    private void produce(String consumerGroup, String key, T message, Boolean skipIndexer) throws QueueException {
         if (log.isTraceEnabled()) {
             log.trace("New message: topic '{}', value {}", this.cls.getName(), message);
         }
+
+        Map<Field<Object>, Object> fields = this.produceFields(consumerGroup, key, message);
 
         dslContextWrapper.transaction(configuration -> {
             DSLContext context = DSL.using(configuration);
@@ -107,23 +132,23 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
 
             context
                 .insertInto(table)
-                .set(this.produceFields(consumerGroup, key, message))
+                .set(fields)
                 .execute();
         });
     }
 
-    public void emitOnly(String consumerGroup, T message) {
+    public void emitOnly(String consumerGroup, T message) throws QueueException{
         this.produce(consumerGroup, queueService.key(message), message, true);
     }
 
     @Override
-    public void emit(String consumerGroup, T message) {
+    public void emit(String consumerGroup, T message) throws QueueException {
         this.produce(consumerGroup, queueService.key(message), message, false);
     }
 
     @Override
     public void emitAsync(String consumerGroup, T message) throws QueueException {
-        this.emit(consumerGroup, message);
+        this.asyncPoolExecutor.submit(throwRunnable(() -> this.emit(consumerGroup, message)));
     }
 
     @Override
@@ -136,14 +161,22 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
         );
     }
 
-    abstract protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, Integer offset);
+    protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, Integer offset) {
+        return this.receiveFetch(ctx, consumerGroup, offset, true);
+    }
 
-    abstract protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, String queueType);
+    abstract protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, Integer offset, boolean forUpdate);
+
+    protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, String queueType) {
+        return this.receiveFetch(ctx, consumerGroup, queueType, true);
+    }
+
+    abstract protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, String queueType, boolean forUpdate);
 
     abstract protected void updateGroupOffsets(DSLContext ctx, String consumerGroup, String queueType, List<Integer> offsets);
 
     @Override
-    public Runnable receive(String consumerGroup, Consumer<Either<T, DeserializationException>> consumer) {
+    public Runnable receive(String consumerGroup, Consumer<Either<T, DeserializationException>> consumer, boolean forUpdate) {
         AtomicInteger maxOffset = new AtomicInteger();
 
         // fetch max offset
@@ -163,12 +196,12 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
             Result<Record> fetch = dslContextWrapper.transactionResult(configuration -> {
                 DSLContext ctx = DSL.using(configuration);
 
-                Result<Record> result = this.receiveFetch(ctx, consumerGroup, maxOffset.get());
+                Result<Record> result = this.receiveFetch(ctx, consumerGroup, maxOffset.get(), forUpdate);
 
                 if (!result.isEmpty()) {
                     List<Integer> offsets = result.map(record -> record.get("offset", Integer.class));
 
-                    maxOffset.set(offsets.get(offsets.size() - 1));
+                    maxOffset.set(offsets.getLast());
                 }
 
                 return result;
@@ -181,14 +214,15 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
     }
 
     @Override
-    public Runnable receive(String consumerGroup, Class<?> queueType, Consumer<Either<T, DeserializationException>> consumer) {
+    public Runnable receive(String consumerGroup, Class<?> queueType, Consumer<Either<T, DeserializationException>> consumer, boolean forUpdate) {
         return this.receiveImpl(
             consumerGroup,
             queueType,
             (dslContext, eithers) -> {
                 eithers.forEach(consumer);
             },
-            false
+            false,
+            forUpdate
         );
     }
 
@@ -197,6 +231,7 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
             consumerGroup,
             queueType,
             consumer,
+            true,
             true
         );
     }
@@ -205,7 +240,8 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
         String consumerGroup,
         Class<?> queueType,
         BiConsumer<DSLContext, List<Either<T, DeserializationException>>> consumer,
-        Boolean inTransaction
+        Boolean inTransaction,
+        boolean forUpdate
     ) {
         String queueName = queueName(queueType);
 
@@ -213,7 +249,7 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
             Result<Record> fetch = dslContextWrapper.transactionResult(configuration -> {
                 DSLContext ctx = DSL.using(configuration);
 
-                Result<Record> result = this.receiveFetch(ctx, consumerGroup, queueName);
+                Result<Record> result = this.receiveFetch(ctx, consumerGroup, queueName, forUpdate);
 
                 if (!result.isEmpty()) {
                     if (inTransaction) {
@@ -253,7 +289,7 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
         AtomicReference<ZonedDateTime> lastPoll = new AtomicReference<>(ZonedDateTime.now());
 
         poolExecutor.execute(() -> {
-            while (running.get() && !this.isShutdown) {
+            while (running.get() && !this.isClosed.get()) {
                 try {
                     Integer count = runnable.get();
                     if (count > 0) {
@@ -278,9 +314,7 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
             }
         });
 
-        return () -> {
-            running.set(false);
-        };
+        return () -> running.set(false);
     }
 
     protected List<Either<T, DeserializationException>> map(Result<Record> fetch) {
@@ -299,15 +333,14 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
             .forEach(consumer);
     }
 
-    @Override
-    public void pause() {
-        this.isShutdown = true;
-    }
 
     @Override
     public void close() throws IOException {
-        this.isShutdown = true;
-        poolExecutor.shutdown();
+        if (!this.isClosed.compareAndSet(false, true)) {
+            return;
+        }
+        this.poolExecutor.shutdown();
+        this.asyncPoolExecutor.shutdown();
     }
 
     @ConfigurationProperties("kestra.jdbc.queues")

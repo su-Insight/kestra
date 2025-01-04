@@ -2,7 +2,7 @@
     <top-nav-bar v-if="!embed && blueprint" :title="blueprint.title" :breadcrumb="breadcrumb" v-loading="!blueprint">
         <template #additional-right>
             <ul v-if="userCanCreateFlow">
-                <router-link :to="{name: 'flows/create'}" @click="asAutoRestoreDraft">
+                <router-link :to="{name: 'flows/create', query: {blueprintId: blueprint.id, blueprintSource: embedFriendlyBlueprintBaseUri.includes('community') ? 'community' : 'custom'}}">
                     <el-button type="primary" v-if="!embed">
                         {{ $t('use') }}
                     </el-button>
@@ -41,13 +41,18 @@
             <el-col :md="24" :lg="embed ? 24 : 18">
                 <h4>{{ $t("source") }}</h4>
                 <el-card>
-                    <editor class="position-relative" :read-only="true" :full-height="false" :minimap="false" :model-value="blueprint.flow" lang="yaml">
-                        <template #nav>
-                            <div class="position-absolute copy-wrapper">
-                                <el-tooltip trigger="click" content="Copied" placement="left" :auto-close="2000" effect="light">
-                                    <el-button text round :icon="icon.ContentCopy" @click="Utils.copy(blueprint.flow)" />
-                                </el-tooltip>
-                            </div>
+                    <editor
+                        class="position-relative"
+                        :read-only="true"
+                        :input="true"
+                        :full-height="false"
+                        :minimap="false"
+                        :model-value="blueprint.flow"
+                        lang="yaml"
+                        :navbar="false"
+                    >
+                        <template #absolute>
+                            <copy-to-clipboard class="position-absolute" :text="blueprint.flow" />
                         </template>
                     </editor>
                 </el-card>
@@ -73,34 +78,29 @@
     import LowCodeEditor from "../../inputs/LowCodeEditor.vue";
     import TaskIcon from  "@kestra-io/ui-libs/src/components/misc/TaskIcon.vue";
     import TopNavBar from "../../layout/TopNavBar.vue";
-    import Utils from "../../../utils/utils";
 </script>
 <script>
     import YamlUtils from "../../../utils/yamlUtils";
-    import {shallowRef} from "vue";
-    import ContentCopy from "vue-material-design-icons/ContentCopy.vue";
     import Markdown from "../../layout/Markdown.vue";
+    import CopyToClipboard from "../../layout/CopyToClipboard.vue";
     import {mapState} from "vuex";
     import permission from "../../../models/permission";
     import action from "../../../models/action";
     import {apiUrl} from "override/utils/route";
 
     export default {
-        components: {Markdown},
+        components: {Markdown, CopyToClipboard},
         emits: ["back"],
         data() {
             return {
                 flowGraph: undefined,
-                icon: {
-                    ContentCopy: shallowRef(ContentCopy)
-                },
                 blueprint: undefined,
                 breadcrumb: [
                     {
                         label: this.$t("blueprints.title"),
                         link: {
                             name: "blueprints",
-                            params: this.$route.params
+                            params: this.$route.params.tab ? this.$route.params.tab : {...this.$route.params, tab: this.tab},
                         }
                     }
                 ]
@@ -118,6 +118,10 @@
             tab: {
                 type: String,
                 default: "community"
+            },
+            blueprintBaseUri: {
+                type: String,
+                default: undefined,
             }
         },
         methods: {
@@ -128,25 +132,23 @@
                     this.$router.push({
                         name: "blueprints",
                         params: {
-                            tenant: this.$route.params.tenant
+                            tenant: this.$route.params.tenant,
+                            tab: this.tab
                         }
                     })
                 }
-            },
-            asAutoRestoreDraft() {
-                localStorage.setItem("autoRestore-creation_draft", this.blueprint.flow);
             }
         },
         async created() {
-            this.blueprint = (await this.$http.get(`${this.blueprintBaseUri}/${this.blueprintId}`)).data
+            this.blueprint = (await this.$http.get(`${this.embedFriendlyBlueprintBaseUri}/${this.blueprintId}`)).data;
 
             try {
-                if (this.blueprintBaseUri.endsWith("community")) {
-                    this.flowGraph = (await this.$http.get(`${this.blueprintBaseUri}/${this.blueprintId}/graph`, {
+                if (this.embedFriendlyBlueprintBaseUri.endsWith("community")) {
+                    this.flowGraph = (await this.$http.get(`${this.embedFriendlyBlueprintBaseUri}/${this.blueprintId}/graph`, {
                         validateStatus: (status) => {
                             return status === 200;
                         }
-                    })).data;
+                    }))?.data;
                 } else {
                     this.flowGraph = await this.$store.dispatch("flow/getGraphFromSourceResponse", {
                         flow: this.blueprint.flow, config: {
@@ -172,8 +174,8 @@
                     source: this.blueprint.flow
                 }
             },
-            blueprintBaseUri() {
-                return `${apiUrl(this.$store)}/blueprints/` + (this.embed ? this.tab : (this.$route?.params?.tab ?? "community"));
+            embedFriendlyBlueprintBaseUri() {
+                return this.blueprintBaseUri ?? (`${apiUrl(this.$store)}/blueprints/` + (this?.$route?.params?.tab ?? "community"))
             }
         }
     };
@@ -214,12 +216,6 @@
                 overflow: hidden;
             }
         }
-    }
-
-    .copy-wrapper {
-        right: $spacer;
-        top: $spacer;
-        z-index: 1
     }
 
     .blueprint-container {

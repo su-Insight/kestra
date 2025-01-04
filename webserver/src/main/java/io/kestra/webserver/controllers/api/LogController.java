@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import jakarta.validation.constraints.Min;
 import org.slf4j.event.Level;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
@@ -31,6 +32,8 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
+import static io.kestra.core.utils.DateUtils.validateTimeline;
 
 @Validated
 @Controller("/api/v1/")
@@ -51,17 +54,20 @@ public class LogController {
     @Operation(tags = {"Logs"}, summary = "Search for logs")
     public PagedResults<LogEntry> find(
         @Parameter(description = "A string filter") @Nullable @QueryValue(value = "q") String query,
-        @Parameter(description = "The current page") @QueryValue(defaultValue = "1") int page,
-        @Parameter(description = "The current page size") @QueryValue(defaultValue = "10") int size,
+        @Parameter(description = "The current page") @QueryValue(defaultValue = "1") @Min(1) int page,
+        @Parameter(description = "The current page size") @QueryValue(defaultValue = "10") @Min(1) int size,
         @Parameter(description = "The sort of current page") @Nullable @QueryValue List<String> sort,
         @Parameter(description = "A namespace filter prefix") @Nullable @QueryValue String namespace,
         @Parameter(description = "A flow id filter") @Nullable @QueryValue String flowId,
+        @Parameter(description = "A trigger id filter") @Nullable @QueryValue String triggerId,
         @Parameter(description = "The min log level filter") @Nullable @QueryValue Level minLevel,
         @Parameter(description = "The start datetime") @Nullable @Format("yyyy-MM-dd'T'HH:mm[:ss][.SSS][XXX]") @QueryValue ZonedDateTime startDate,
         @Parameter(description = "The end datetime") @Nullable @Format("yyyy-MM-dd'T'HH:mm[:ss][.SSS][XXX]") @QueryValue ZonedDateTime endDate
     ) {
+        validateTimeline(startDate, endDate);
+
         return PagedResults.of(
-            logRepository.find(PageableUtils.from(page, size, sort), query, tenantService.resolveTenant(), namespace, flowId, minLevel, startDate, endDate)
+            logRepository.find(PageableUtils.from(page, size, sort), query, tenantService.resolveTenant(), namespace, flowId, triggerId, minLevel, startDate, endDate)
         );
     }
 
@@ -121,7 +127,7 @@ public class LogController {
         @Parameter(description = "The min log level filter") @Nullable @QueryValue Level minLevel
     ) {
         AtomicReference<Runnable> cancel = new AtomicReference<>();
-        List<String> levels = LogEntry.findLevelsByMin(minLevel);
+        List<String> levels = LogEntry.findLevelsByMin(minLevel).stream().map(level -> level.name()).toList();
 
         return Flux
             .<Event<LogEntry>>create(emitter -> {
@@ -170,5 +176,16 @@ public class LogController {
         @Parameter(description = "The attempt number") @Nullable @QueryValue Integer attempt
     ) {
         logRepository.deleteByQuery(tenantService.resolveTenant(), executionId, taskId, taskRunId, minLevel, attempt);
+    }
+
+    @ExecuteOn(TaskExecutors.IO)
+    @Delete(uri = "logs/{namespace}/{flowId}")
+    @Operation(tags = {"Logs"}, summary = "Delete logs for a specific execution, taskrun or task")
+    public void deleteFromFlow(
+        @Parameter(description = "The namespace") @PathVariable String namespace,
+        @Parameter(description = "The flow identifier") @PathVariable String flowId,
+        @Parameter(description = "The trigger id") @Nullable @QueryValue String triggerId
+    ) {
+        logRepository.deleteByQuery(tenantService.resolveTenant(), namespace, flowId, triggerId);
     }
 }

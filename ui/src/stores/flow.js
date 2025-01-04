@@ -37,7 +37,7 @@ export default {
             }).then(response => {
                 commit("setFlows", response.data.results)
                 commit("setTotal", response.data.total)
-                commit("setOverallTotal", response.data.total)
+                commit("setOverallTotal", response.data.results.filter(f => f.namespace !== "tutorial").length)
 
                 return response.data;
             })
@@ -166,11 +166,8 @@ export default {
             if (!flowParsed.id || !flowParsed.namespace) {
                 flowSource = YamlUtils.updateMetadata(flowSource, {id: "default", namespace: "default"})
             }
-            return axios.post(`${apiUrl(this)}/flows/graph`, flowSource, {...config})
+            return axios.post(`${apiUrl(this)}/flows/graph`, flowSource, {...config, withCredentials: true})
                 .then(response => {
-                    if (response.status === 422) {
-                        return response;
-                    }
                     commit("setFlowGraph", response.data)
 
                     let flow = YamlUtils.parse(options.flow);
@@ -188,7 +185,11 @@ export default {
 
                     return response;
                 }).catch(error => {
-                    if(error.response?.status === 404) {
+                    if (error.response?.status === 422 && (!config?.params?.subflows || config?.params?.subflows?.length === 0)) {
+                        return Promise.resolve(error.response);
+                    }
+
+                    if([404, 422].includes(error.response?.status) && config?.params?.subflows?.length > 0) {
                         commit("core/setMessage", {
                             title: "Couldn't expand subflow",
                             message: error.response.data.message,
@@ -251,14 +252,14 @@ export default {
             return this.$http.delete(`${apiUrl(this)}/flows/delete/by-query`, {params: options})
         },
         validateFlow({commit}, options) {
-            return axios.post(`${apiUrl(this)}/flows/validate`, options.flow, textYamlHeader)
+            return axios.post(`${apiUrl(this)}/flows/validate`, options.flow, {...textYamlHeader, withCredentials: true})
                 .then(response => {
                     commit("setFlowValidation", response.data[0])
                     return response.data[0]
                 })
         },
         validateTask({commit}, options) {
-            return axios.post(`${apiUrl(this)}/flows/validate/task`, options.task, {...textYamlHeader, params: {section: options.section}})
+            return axios.post(`${apiUrl(this)}/flows/validate/task`, options.task, {...textYamlHeader, withCredentials: true, params: {section: options.section}})
                 .then(response => {
                     commit("setTaskError", response.data.constraints)
                     return response.data

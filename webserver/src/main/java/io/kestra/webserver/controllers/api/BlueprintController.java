@@ -18,6 +18,7 @@ import io.micronaut.validation.Validated;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.inject.Inject;
+import jakarta.validation.constraints.Min;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
@@ -44,11 +45,11 @@ public class BlueprintController {
         @Parameter(description = "A string filter") @Nullable @QueryValue(value = "q") Optional<String> q,
         @Parameter(description = "The sort of current page") @Nullable @QueryValue(value = "sort") Optional<String> sort,
         @Parameter(description = "A tags filter") @Nullable @QueryValue(value = "tags") Optional<List<String>> tags,
-        @Parameter(description = "The current page") @QueryValue(defaultValue = "1") Integer page,
-        @Parameter(description = "The current page size") @QueryValue(defaultValue = "1") Integer size,
+        @Parameter(description = "The current page") @QueryValue(defaultValue = "1") @Min(1) Integer page,
+        @Parameter(description = "The current page size") @QueryValue(defaultValue = "1") @Min(1) Integer size,
         HttpRequest<?> httpRequest
     ) throws URISyntaxException {
-        return fastForwardToKestraApi(httpRequest, "/v1/blueprints", Argument.of(PagedResults.class, BlueprintItem.class));
+        return fastForwardToKestraApi(httpRequest, "/v1/blueprints", Map.of("ee", false), Argument.of(PagedResults.class, BlueprintItem.class));
     }
 
     @ExecuteOn(TaskExecutors.IO)
@@ -92,14 +93,24 @@ public class BlueprintController {
         return fastForwardToKestraApi(httpRequest, "/v1/blueprints/tags", Argument.of(List.class, BlueprintTagItem.class));
     }
 
-    private <T> T fastForwardToKestraApi(HttpRequest<?> originalRequest, String newPath, Argument<T> returnType) throws URISyntaxException {
+    protected  <T> T fastForwardToKestraApi(HttpRequest<?> originalRequest, String newPath, Argument<T> returnType) throws URISyntaxException {
+        return this.fastForwardToKestraApi(originalRequest, newPath, null, returnType);
+    }
+
+    private <T> T fastForwardToKestraApi(HttpRequest<?> originalRequest, String newPath, Map<String, Object> additionalQueryParams, Argument<T> returnType) throws URISyntaxException {
+        UriBuilder uriBuilder = UriBuilder.of(originalRequest.getUri())
+            .replacePath(originalRequest.getUri().getPath().toString().replaceAll("^[^?]*", newPath));
+
+        if (additionalQueryParams != null) {
+            additionalQueryParams.forEach(uriBuilder::queryParam);
+        }
+
         return httpClient
             .toBlocking()
             .exchange(
                 HttpRequest.create(
                     originalRequest.getMethod(),
-                    UriBuilder.of(originalRequest.getUri())
-                        .replacePath(originalRequest.getUri().getPath().toString().replaceAll("^[^?]*", newPath))
+                    uriBuilder
                         .build()
                         .toString()
                 ),

@@ -1,3 +1,5 @@
+import {apiUrl} from "override/utils/route";
+
 export default {
     namespaced: true,
     state: {
@@ -6,15 +8,12 @@ export default {
         unsavedChange: false,
         guidedProperties: {
             tourStarted: false,
-            flowSource: undefined,
-            saveFlow: false,
-            executeFlow: false,
-            validateInputs: false,
-            monacoRange: undefined,
-            monacoDisableRange: undefined,
+            manuallyContinue: false,
+            template: undefined,
         },
         monacoYamlConfigured: false,
-        autocompletionSource: undefined
+        autocompletionSource: undefined,
+        tutorialFlows: []
     },
     actions: {
         showMessage({commit}, message) {
@@ -25,7 +24,10 @@ export default {
         },
         isUnsaved({commit}, unsavedChange) {
             commit("setUnsavedChange", unsavedChange)
-        }
+        },
+        readTutorialFlows({commit}) {
+            return this.$http.get(`${apiUrl(this)}/flows/tutorial`).then((response) => commit("setTutorialFlows", response.data))
+        },
     },
     mutations: {
         setMessage(state, message) {
@@ -38,14 +40,17 @@ export default {
             state.unsavedChange = unsavedChange
         },
         setGuidedProperties(state, guidedProperties) {
-            state.guidedProperties = guidedProperties
+            state.guidedProperties = {...state.guidedProperties, ...guidedProperties}
         },
         setMonacoYamlConfigured(state, monacoYamlConfigured) {
             state.monacoYamlConfigured = monacoYamlConfigured
         },
         setAutocompletionSource(state, autocompletionSource) {
             state.autocompletionSource = autocompletionSource
-        }
+        },
+        setTutorialFlows(state, flows) {
+            state.tutorialFlows = flows
+        },
     },
     getters: {
         unsavedChange(state) {

@@ -1,6 +1,7 @@
 package io.kestra.core.runners.pebble;
 
 import io.kestra.core.runners.pebble.expression.NullCoalescingExpression;
+import io.kestra.core.runners.pebble.expression.UndefinedCoalescingExpression;
 import io.kestra.core.runners.pebble.filters.*;
 import io.kestra.core.runners.pebble.functions.*;
 import io.kestra.core.runners.pebble.tests.JsonTest;
@@ -25,6 +26,9 @@ import static io.pebbletemplates.pebble.operator.BinaryOperatorType.NORMAL;
 public class Extension extends AbstractExtension {
     @Inject
     private SecretFunction secretFunction;
+
+    @Inject
+    private KvFunction kvFunction;
 
     @Inject
     private ReadFileFunction readFileFunction;
@@ -52,10 +56,12 @@ public class Extension extends AbstractExtension {
         List<BinaryOperator> operators = new ArrayList<>();
 
         operators.add(new BinaryOperatorImpl("??", 120, NullCoalescingExpression::new, NORMAL, Associativity.LEFT));
+        operators.add(new BinaryOperatorImpl("???", 120, UndefinedCoalescingExpression::new, NORMAL, Associativity.LEFT));
 
         return operators;
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public Map<String, Filter> getFilters() {
         Map<String, Filter> filters = new HashMap<>();
@@ -70,6 +76,7 @@ public class Extension extends AbstractExtension {
         filters.put("jq", new JqFilter());
         filters.put("escapeChar", new EscapeCharFilter());
         filters.put("json", new JsonFilter());
+        filters.put("toJson", new ToJsonFilter());
         filters.put("keys", new KeysFilter());
         filters.put("number", new NumberFilter());
         filters.put("urldecode", new UrlDecoderFilter());
@@ -84,6 +91,8 @@ public class Extension extends AbstractExtension {
         filters.put("yaml", new YamlFilter());
         filters.put("startsWith", new StartsWithFilter());
         filters.put("endsWith", new EndsWithFilter());
+        filters.put("values", new ValuesFilter());
+        filters.put("toIon", new ToIonFilter());
         return filters;
     }
 
@@ -96,14 +105,17 @@ public class Extension extends AbstractExtension {
         return tests;
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public Map<String, Function> getFunctions() {
         Map<String, Function> functions = new HashMap<>();
 
         functions.put("now", new NowFunction());
         functions.put("json", new JsonFunction());
+        functions.put("fromJson", new FromJsonFunction());
         functions.put("currentEachOutput", new CurrentEachOutputFunction());
         functions.put("secret", secretFunction);
+        functions.put("kv", kvFunction);
         functions.put("read", readFileFunction);
         if (this.renderFunction != null) {
             functions.put("render", renderFunction);
@@ -115,6 +127,7 @@ public class Extension extends AbstractExtension {
         functions.put("decrypt", new DecryptFunction());
         functions.put("yaml", new YamlFunction());
         functions.put("printContext", new PrintContextFunction());
+        functions.put("fromIon", new FromIonFunction());
 
         return functions;
     }

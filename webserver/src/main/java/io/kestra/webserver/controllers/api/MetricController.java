@@ -11,7 +11,6 @@ import io.kestra.webserver.utils.PageableUtils;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.convert.format.Format;
-import io.micronaut.http.MediaType;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Get;
 import io.micronaut.http.annotation.PathVariable;
@@ -23,9 +22,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import jakarta.validation.constraints.Min;
 
 import java.time.ZonedDateTime;
 import java.util.List;
+
+import static io.kestra.core.utils.DateUtils.validateTimeline;
 
 @Validated
 @Controller("/api/v1/metrics")
@@ -45,8 +47,8 @@ public class MetricController {
     @Get(uri = "/{executionId}")
     @Operation(tags = {"Metrics"}, summary = "Get metrics for a specific execution")
     public PagedResults<MetricEntry> findByExecution(
-        @Parameter(description = "The current page") @QueryValue(defaultValue = "1") int page,
-        @Parameter(description = "The current page size") @QueryValue(defaultValue = "10") int size,
+        @Parameter(description = "The current page") @QueryValue(defaultValue = "1") @Min(1) int page,
+        @Parameter(description = "The current page size") @QueryValue(defaultValue = "10") @Min(1) int size,
         @Parameter(description = "The sort of current page") @Nullable @QueryValue List<String> sort,
         @Parameter(description = "The execution id") @PathVariable String executionId,
         @Parameter(description = "The taskrun id") @Nullable @QueryValue String taskRunId,
@@ -104,6 +106,8 @@ public class MetricController {
         @Parameter(description = "The end datetime, default to now") @Nullable @Format("yyyy-MM-dd'T'HH:mm[:ss][.SSS][XXX]") ZonedDateTime endDate,
         @Parameter(description = "The type of aggregation: avg, sum, min or max") @QueryValue(defaultValue = "sum") String aggregation
     ) {
+        validateTimeline(startDate, endDate);
+
         return metricsRepository.aggregateByFlowId(
             tenantService.resolveTenant(),
             namespace,
@@ -128,6 +132,8 @@ public class MetricController {
         @Parameter(description = "The end datetime, default to now") @Nullable @Format("yyyy-MM-dd'T'HH:mm[:ss][.SSS][XXX]") ZonedDateTime endDate,
         @Parameter(description = "The type of aggregation: avg, sum, min or max") @QueryValue(defaultValue = "sum") String aggregation
     ) {
+        validateTimeline(startDate, endDate);
+
         return metricsRepository.aggregateByFlowId(
             tenantService.resolveTenant(),
             namespace,

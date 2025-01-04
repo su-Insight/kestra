@@ -3,7 +3,17 @@ import {createRouter, createWebHistory} from "vue-router";
 import VueGtag from "vue-gtag";
 import {createI18n} from "vue-i18n";
 import moment from "moment-timezone";
-import "moment/locale/fr"
+import "moment/dist/locale/de"
+import "moment/dist/locale/es"
+import "moment/dist/locale/fr"
+import "moment/dist/locale/hi"
+import "moment/dist/locale/it"
+import "moment/dist/locale/ja"
+import "moment/dist/locale/ko"
+import "moment/dist/locale/pl"
+import "moment/dist/locale/pt"
+import "moment/dist/locale/ru"
+import "moment/dist/locale/zh-cn"
 import {extendMoment} from "moment-range";
 import VueSidebarMenu from "vue-sidebar-menu";
 import {
@@ -47,6 +57,10 @@ import TaskOneOf from "../components/flows/tasks/TaskOneOf.vue";
 import TaskSubflowNamespace from "../components/flows/tasks/TaskSubflowNamespace.vue";
 import TaskSubflowId from "../components/flows/tasks/TaskSubflowId.vue";
 import TaskSubflowInputs from "../components/flows/tasks/TaskSubflowInputs.vue";
+import LeftMenuLink from "../components/LeftMenuLink.vue";
+import RouterMd from "../components/utils/RouterMd.vue";
+import Utils from "./utils";
+import TaskTaskRunner from "../components/flows/tasks/TaskTaskRunner.vue";
 
 export default (app, routes, stores, translations) => {
     // charts
@@ -100,7 +114,7 @@ export default (app, routes, stores, translations) => {
 
 
     // l18n
-    let locale = localStorage.getItem("lang") || "en";
+    let locale = Utils.getLang();
 
     let i18n = createI18n({
         locale: locale,
@@ -148,6 +162,21 @@ export default (app, routes, stores, translations) => {
     app.component("TaskSubflowNamespace", TaskSubflowNamespace)
     app.component("TaskSubflowId", TaskSubflowId)
     app.component("TaskSubflowInputs", TaskSubflowInputs)
+    app.component("TaskTaskRunner", TaskTaskRunner)
+    app.component("LeftMenuLink", LeftMenuLink)
+    app.component("RouterMd", RouterMd);
+    const components = {
+        ...(import.meta.glob("../../node_modules/@nuxtjs/mdc/dist/runtime/components/prose/*.vue", {eager: true})),
+        ...(import.meta.glob("../../node_modules/@kestra-io/ui-libs/src/components/content/*.vue", {eager: true})),
+        ...(import.meta.glob("../components/content/*.vue", {eager: true})),
+    };
+    const componentsByName = Object.entries(components)
+        .map(([path, component]) => [path.replace(/^.*\/(.*)\.vue$/, "$1"), component.default]);
+    const componentsNames = componentsByName.map(([name]) => name);
+    componentsByName.filter(([name], index) => componentsNames.lastIndexOf(name) === index)
+        .forEach(([name, component]) => app.component(name, component));
+
+    app.config.globalProperties.append = (path, pathToAppend) => path + (path.endsWith("/") ? "" : "/") + pathToAppend
 
     return {store, router};
 }

@@ -1,8 +1,11 @@
 <template>
-    <el-tooltip :content="tooltip" effect="light">
+    <el-tooltip :disabled="tooltip === undefined" :content="tooltip" effect="light">
         <el-select
+            data-test-id="time-selector"
             :model-value="value"
+            :placeholder="placeholder"
             @change="$emit('change', $event)"
+            :clearable="clearable"
         >
             <template #prefix>
                 <clock-outline />
@@ -28,9 +31,13 @@
             "change"
         ],
         props: {
+            placeholder: {
+                type: String,
+                default: undefined
+            },
             value: {
                 type: String,
-                required: true
+                default: undefined
             },
             options: {
                 type: Array,
@@ -38,7 +45,11 @@
             },
             tooltip: {
                 type: String,
-                required: true
+                default: undefined
+            },
+            clearable: {
+                type: Boolean,
+                default: false
             }
         }
     }

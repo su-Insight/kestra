@@ -36,8 +36,8 @@
         <el-form>
             <el-form-item :label="$t('execution labels')">
                 <label-input
-                    :key="executionLabels"
                     v-model:labels="executionLabels"
+                    :existing-labels="execution.labels"
                 />
             </el-form-item>
         </el-form>
@@ -53,8 +53,12 @@
     import LabelInput from "../../components/labels/LabelInput.vue";
     import State from "../../utils/state";
 
+    import {filterLabels} from "./utils"
+    import permission from "../../models/permission.js";
+    import action from "../../models/action.js";
+
     export default {
-        components: {LabelInput,},
+        components: {LabelInput},
         props: {
             component: {
                 type: String,
@@ -71,9 +75,16 @@
         },
         methods: {
             setLabels() {
+                const filtered = filterLabels(this.executionLabels)
+
+                if(filtered.error) {
+                    this.$toast().error(this.$t("wrong labels"))
+                    return;
+                }
+
                 this.isOpen = false;
                 this.$store.dispatch("execution/setLabels", {
-                    labels: this.executionLabels,
+                    labels: filtered.labels,
                     executionId: this.execution.id
                 }).then(response => {
                     this.$store.commit("execution/setExecution", response.data)
@@ -84,6 +95,10 @@
         computed: {
             ...mapState("auth", ["user"]),
             enabled() {
+                if (!(this.user && this.user.isAllowed(permission.EXECUTION, action.UPDATE, this.execution.namespace))) {
+                    return false;
+                }
+
                 if (State.isRunning(this.execution.state.current)) {
                     return false;
                 }
@@ -93,12 +108,15 @@
         data() {
             return {
                 isOpen: false,
-                executionLabels: [],
+                executionLabels: []
             };
         },
         watch: {
             isOpen() {
                 this.executionLabels = [];
+                if (this.execution.labels) {
+                    this.executionLabels = this.execution.labels
+                }
             }
         },
     };

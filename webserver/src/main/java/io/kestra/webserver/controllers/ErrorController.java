@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.InvalidTypeIdException;
 import io.kestra.core.exceptions.DeserializationException;
+import io.kestra.core.exceptions.InvalidException;
+import io.kestra.core.exceptions.ResourceExpiredException;
 import io.micronaut.core.convert.exceptions.ConversionErrorException;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
@@ -12,6 +14,7 @@ import io.micronaut.http.HttpStatus;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Error;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
+import io.micronaut.http.exceptions.HttpStatusException;
 import io.micronaut.http.hateoas.JsonError;
 import io.micronaut.http.hateoas.Link;
 import io.micronaut.web.router.exceptions.UnsatisfiedBodyRouteException;
@@ -24,6 +27,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import jakarta.validation.ConstraintViolationException;
 
@@ -131,10 +135,20 @@ public class ErrorController {
         return jsonError(request, e, HttpStatus.UNPROCESSABLE_ENTITY, "Invalid format");
     }
 
-
     @Error(global = true)
     public HttpResponse<JsonError> error(HttpRequest<?> request, UnsatisfiedBodyRouteException e) {
         return jsonError(request, e, HttpStatus.UNPROCESSABLE_ENTITY, "Invalid route params");
+    }
+
+    @Error(global = true)
+    public HttpResponse<JsonError> error(HttpRequest<?> request, InvalidException e) {
+        String entity = Optional.ofNullable(e.invalidObject()).map(Object::getClass).map(Class::getSimpleName).orElse("entity");
+        return jsonError(request, e, HttpStatus.UNPROCESSABLE_ENTITY, "Invalid " + entity);
+    }
+
+    @Error(global = true)
+    public HttpResponse<JsonError> error(HttpRequest<?> request, HttpStatusException e) {
+        return jsonError(request, e, e.getStatus(), e.getStatus().getReason());
     }
 
     @Error(global = true)
@@ -165,6 +179,11 @@ public class ErrorController {
     @Error(global = true)
     public HttpResponse<JsonError> serialization(HttpRequest<?> request, DeserializationException e) {
         return jsonError(request, e, HttpStatus.LOCKED, "Locked");
+    }
+
+    @Error(global = true)
+    public HttpResponse<JsonError> serialization(HttpRequest<?> request, ResourceExpiredException e) {
+        return jsonError(request, e, HttpStatus.GONE, "Resource has expired");
     }
 
     @Error(global = true)

@@ -3,11 +3,12 @@ package io.kestra.core.runners;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.ExecutionRepositoryInterface;
 import io.kestra.core.services.SkipExecutionService;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -15,6 +16,7 @@ import jakarta.inject.Singleton;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -35,9 +37,9 @@ public class SkipExecutionCaseTest {
     @Inject
     private SkipExecutionService skipExecutionService;
 
-    public void skipExecution() throws TimeoutException, InterruptedException {
+    public void skipExecution() throws TimeoutException, QueueException, InterruptedException {
         Flow flow = createFlow();
-        Execution execution1 = Execution.newExecution(flow, null, null);
+        Execution execution1 = Execution.newExecution(flow, null, null, Optional.empty());
         String execution1Id = execution1.getId();
         skipExecutionService.setSkipExecutions(List.of(execution1Id));
 

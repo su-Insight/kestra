@@ -50,6 +50,7 @@ public interface LogRepositoryInterface extends SaveRepositoryInterface<LogEntry
         @Nullable String tenantId,
         @Nullable String namespace,
         @Nullable String flowId,
+        @Nullable String triggerId,
         @Nullable Level minLevel,
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate
@@ -71,4 +72,8 @@ public interface LogRepositoryInterface extends SaveRepositoryInterface<LogEntry
     Integer purge(Execution execution);
 
     void deleteByQuery(String tenantId, String executionId, String taskId, String taskRunId, Level minLevel, Integer attempt);
+
+    void deleteByQuery(String tenantId, String namespace, String flowId, String triggerId);
+
+    int deleteByQuery(String tenantId, String namespace, String flowId, List<Level> logLevels, ZonedDateTime startDate, ZonedDateTime endDate);
 }

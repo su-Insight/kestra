@@ -25,6 +25,10 @@ public class VersionEndpoint {
     public static final boolean DEFAULT_SENSITIVE = false;
     private static final String VERSION_SUFFIX = "-oss";
 
+    protected String versionSuffix() {
+        return "-oss";
+    }
+
     @Value("${kestra.server-type}")
     private String serverType;
 
@@ -37,6 +41,7 @@ public class VersionEndpoint {
         return Mono.just(new ServerInfo(
             version.getVersion() + VERSION_SUFFIX,
             version.getRevision(),
+            version.getDate(),
             serverType
         ));
     }

@@ -2,17 +2,19 @@ package io.kestra.core.runners.pebble.expression;
 
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.runners.VariableRenderer;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import jakarta.inject.Inject;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@MicronautTest
+@KestraTest
 class NullCoalescingExpressionTest {
     @Inject
     VariableRenderer variableRenderer;
@@ -62,5 +64,31 @@ class NullCoalescingExpressionTest {
         assertThrows(IllegalVariableEvaluationException.class, () -> {
             variableRenderer.render("{{ missing ?? missing2 }}", vars);
         });
+    }
+
+
+    @Test
+    void emptyObject() throws IllegalVariableEvaluationException {
+        ImmutableMap<String, Object> vars = ImmutableMap.of(
+            "block", Map.of()
+        );
+
+        String render = variableRenderer.render("{{ block ?? 'UNDEFINED' }}", vars);
+
+        assertThat(render, is("{}"));
+    }
+
+    @Test
+    void nullOrUndefined() throws IllegalVariableEvaluationException {
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("null", null);
+
+        String render = variableRenderer.render("{{ null ?? 'IS NULL' }}", vars);
+
+        assertThat(render, is("IS NULL"));
+
+        render = variableRenderer.render("{{ undefined ?? 'IS UNDEFINED' }}", vars);
+
+        assertThat(render, is("IS UNDEFINED"));
     }
 }

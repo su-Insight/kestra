@@ -1,3 +1,4 @@
+import axios from "axios";
 import {apiUrl} from "override/utils/route";
 
 export default {
@@ -21,12 +22,6 @@ export default {
         flowsExecutable: []
     },
     actions: {
-        loadExecutions({commit}, options) {
-            return this.$http.get(`${apiUrl(this)}/executions`, {params: options}).then(response => {
-                commit("setExecutions", response.data.results)
-                commit("setTotal", response.data.total)
-            })
-        },
         restartExecution(_, options) {
             return this.$http.post(
                 `${apiUrl(this)}/executions/${options.executionId}/restart`,
@@ -69,9 +64,27 @@ export default {
                 options.executionsId
             )
         },
+        bulkChangeExecutionStatus(_, options) {
+            return this.$http.post(
+                `${apiUrl(this)}/executions/change-status/by-ids`,
+                options.executionsId,
+                {
+                    params: {
+                        newStatus: options.newStatus
+                    }
+                }
+            )
+        },
         queryReplayExecution(_, options) {
             return this.$http.post(
                 `${apiUrl(this)}/executions/replay/by-query`,
+                {},
+                {params: options}
+            )
+        },
+        queryChangeExecutionStatus(_, options) {
+            return this.$http.post(
+                `${apiUrl(this)}/executions/change-status/by-query`,
                 {},
                 {params: options}
             )
@@ -84,6 +97,16 @@ export default {
                     params: {
                         taskRunId: options.taskRunId,
                         revision: options.revision
+                    }
+                })
+        },
+        changeExecutionStatus(_, options) {
+            return this.$http.post(
+                `${apiUrl(this)}/executions/${options.executionId}/change-status`,
+                null,
+                {
+                    params: {
+                        status: options.state
                     }
                 })
         },
@@ -112,7 +135,14 @@ export default {
                 }
             });
         },
-
+        validateResume(_, options) {
+            return this.$http.post(`${apiUrl(this)}/executions/${options.id}/resume/validate`, options.formData, {
+                timeout: 60 * 60 * 1000,
+                headers: {
+                    "content-type": "multipart/form-data"
+                }
+            });
+        },
         loadExecution({commit}, options) {
             return this.$http.get(`${apiUrl(this)}/executions/${options.id}`).then(response => {
                 commit("setExecution", response.data)
@@ -130,6 +160,18 @@ export default {
                 return response.data
             })
         },
+        validateExecution(_, options) {
+            return this.$http.post(`${apiUrl(this)}/executions/${options.namespace}/${options.id}/validate`, options.formData, {
+                timeout: 60 * 60 * 1000,
+                headers: {
+                    "content-type": "multipart/form-data"
+                },
+                params: {
+                    labels: options.labels ?? [],
+                    scheduleDate: options.scheduleDate
+                }
+            })
+        },
         triggerExecution(_, options) {
             return this.$http.post(`${apiUrl(this)}/executions/${options.namespace}/${options.id}`, options.formData, {
                 timeout: 60 * 60 * 1000,
@@ -137,17 +179,21 @@ export default {
                     "content-type": "multipart/form-data"
                 },
                 params: {
-                    labels: options.labels ?? []
+                    labels: options.labels ?? [],
+                    scheduleDate: options.scheduleDate
                 }
             })
         },
         deleteExecution({commit}, options) {
-            return this.$http.delete(`${apiUrl(this)}/executions/${options.id}`).then(() => {
+            const {id, deleteLogs, deleteMetrics, deleteStorage} = options
+            const qs = Object.entries({deleteLogs, deleteMetrics, deleteStorage}).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join("&");
+
+            return this.$http.delete(`${apiUrl(this)}/executions/${id}?${qs}`).then(() => {
                 commit("setExecution", null)
             })
         },
         bulkDeleteExecution({_commit}, options) {
-            return this.$http.delete(`${apiUrl(this)}/executions/by-ids`, {data: options.executionsId, params: {includeNonTerminated: options.includeNonTerminated}})
+            return this.$http.delete(`${apiUrl(this)}/executions/by-ids`, {data: options.executionsId, params: {...options}})
         },
         queryDeleteExecution({_commit}, options) {
             return this.$http.delete(`${apiUrl(this)}/executions/by-query`, {params: options})
@@ -165,11 +211,7 @@ export default {
                 if (options.store === false) {
                     return response.data
                 }
-                if(options.params.page !== 1) {
-                    commit("appendLogs", response.data)
-                } else {
-                    commit("setLogs", response.data)
-                }
+                commit("setLogs", response.data)
 
                 return response.data
             });
@@ -205,7 +247,19 @@ export default {
             return this.$http.get(`${apiUrl(this)}/executions/${options.executionId}/file/preview`, {
                 params: options
             }).then(response => {
-                commit("setFilePreview", response.data)
+                let data = {...response.data}
+
+                // WORKAROUND, related to https://github.com/kestra-io/plugin-aws/issues/456
+                if(data.extension === "ion") {
+                    const notObjects = data.content.some(e => typeof e !== "object");
+
+                    if(notObjects) {
+                        const content = data.content.length === 1 ? data.content[0] : data.content.join("\n");
+                        data = {...data, type: "TEXT", content}
+                    }
+                }
+
+                commit("setFilePreview", data)
             })
         },
         setLabels(_, options) {
@@ -229,16 +283,19 @@ export default {
             return this.$http.get(`${apiUrl(this)}/executions/flows/${options.namespace}/${options.flowId}`, {params: {revision: options.revision}})
                 .then(response => {
                     commit("setFlow", response.data)
+                    return response.data;
                 });
         },
         loadFlowForExecutionByExecutionId({commit}, options) {
             return this.$http.get(`${apiUrl(this)}/executions/${options.id}/flow`)
                 .then(response => {
                     commit("setFlow", response.data)
+                    return response.data;
                 });
         },
         loadGraph({commit}, options) {
-            return this.$http.get(`${apiUrl(this)}/executions/${options.id}/graph`)
+            const params = options.params ? options.params : {};
+            return axios.get(`${apiUrl(this)}/executions/${options.id}/graph`, {params, withCredentials: true, paramsSerializer: {indexes: null}})
                 .then(response => {
                     commit("setFlowGraph", response.data)
                 })

@@ -7,7 +7,7 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.tasks.retrys.AbstractRetry;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.tasks.flows.WorkingDirectory;
+import io.kestra.plugin.core.flow.WorkingDirectory;
 import jakarta.validation.Valid;
 import lombok.Builder;
 import lombok.Getter;
@@ -47,6 +47,9 @@ abstract public class Task implements TaskInterface {
 
     @Builder.Default
     private boolean allowFailure = false;
+
+    @Builder.Default
+    private boolean logToFile = false;
 
     public Optional<Task> findById(String id) {
         if (this.getId().equals(id)) {

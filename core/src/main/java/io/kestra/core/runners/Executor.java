@@ -7,6 +7,7 @@ import io.kestra.core.models.executions.ExecutionKilledExecution;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithException;
+import io.kestra.core.models.flows.State;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -34,6 +35,14 @@ public class Executor {
     private ExecutionRunning executionRunning;
     private ExecutionResumed executionResumed;
     private ExecutionResumed joinedExecutionResumed;
+    private final List<WorkerTrigger> workerTriggers = new ArrayList<>();
+    private WorkerJob workerJobToResubmit;
+    private State.Type originalState;
+
+    /**
+     * The sequence id should be incremented each time the execution is persisted after mutation.
+     */
+    private long seqId = 0L;
 
     /**
      * List of {@link ExecutionKilled} to be propagated part of the execution.
@@ -43,6 +52,14 @@ public class Executor {
     public Executor(Execution execution, Long offset) {
         this.execution = execution;
         this.offset = offset;
+        this.originalState = execution.getState().getCurrent();
+    }
+
+    public Executor(Execution execution, Long offset, long seqId) {
+        this.execution = execution;
+        this.offset = offset;
+        this.seqId = seqId;
+        this.originalState = execution.getState().getCurrent();
     }
 
     public Executor(WorkerTaskResult workerTaskResult) {
@@ -51,6 +68,10 @@ public class Executor {
 
     public Executor(SubflowExecutionResult subflowExecutionResult) {
         this.joinedSubflowExecutionResult = subflowExecutionResult;
+    }
+
+    public Executor(WorkerJob workerJob) {
+        this.workerJobToResubmit = workerJob;
     }
 
     public Executor(ExecutionResumed executionResumed) {
@@ -96,6 +117,13 @@ public class Executor {
 
     public Executor withWorkerTasks(List<WorkerTask> workerTasks, String from) {
         this.workerTasks.addAll(workerTasks);
+        this.from.add(from);
+
+        return this;
+    }
+
+    public Executor withWorkerTriggers(List<WorkerTrigger> workerTriggers, String from) {
+        this.workerTriggers.addAll(workerTriggers);
         this.from.add(from);
 
         return this;
@@ -148,7 +176,18 @@ public class Executor {
     public Executor serialize() {
         return new Executor(
             this.execution,
-            this.offset
+            this.offset,
+            this.seqId
         );
+    }
+
+    /**
+     * Increments and returns the execution sequence id.
+     *
+     * @return the sequence id.
+     */
+    public long incrementAndGetSeqId() {
+        this.seqId++;
+        return seqId;
     }
 }

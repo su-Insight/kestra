@@ -44,7 +44,8 @@
     import OnboardingBottom from "./OnboardingBottom.vue";
     import onboardingImage from "../../assets/onboarding/onboarding-dark.svg"
     import onboardingImageLight from "../../assets/onboarding/onboarding-light.svg"
-    import codeImage from "../../assets/onboarding/onboarding-code-dark.svg"
+    import codeImageDark from "../../assets/onboarding/onboarding-code-dark.svg"
+    import codeImageLight from "../../assets/onboarding/onboarding-code-light.svg"
 
     export default {
         name: "CreateFlow",
@@ -55,7 +56,6 @@
         data() {
             return {
                 onboardingImage,
-                codeImage
             }
         },
         computed: {
@@ -63,6 +63,9 @@
             logo() {
                 // get theme
                 return (localStorage.getItem("theme") || "light") === "light" ? onboardingImageLight : onboardingImage;
+            },
+            codeImage() {
+                return (localStorage.getItem("theme") || "light") === "light" ? codeImageLight : codeImageDark;
             }
         }
     }
@@ -70,18 +73,18 @@
 
 <style scoped lang="scss">
     .main {
-        margin-left: 5em;
-        margin-right: 5em;
-        margin-top: 10em;
+        margin: 3rem 1rem 1rem;
 
         @media (min-width: 768px) {
-            margin-left: 8em;
-            margin-right: 8em;
+            margin: 3rem 2rem 1rem;
         }
 
-        @media (min-width: 1200px) {
-            margin-left: 13em;
-            margin-right: 13em;
+        @media (min-width: 992px) {
+            margin: 3rem 3rem 1rem;
+        }
+
+        @media (min-width: 1920px) {
+            margin: 3rem 10rem 1rem;
         }
     }
 

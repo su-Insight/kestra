@@ -16,11 +16,11 @@
             clearable
         />
     </el-row>
-    <section class="container plugins-container pb-2">
-        <el-tooltip v-for="(plugin, index) in pluginsList" :key="index" effect="light">
+    <section class="container plugins-container">
+        <el-tooltip v-for="(plugin, index) in pluginsList" :show-after="1000" :key="index" effect="light">
             <template #content>
                 <div class="tasks-tooltips">
-                    <p v-if="plugin?.tasks.filter(t => t.toLowerCase().includes(searchInput)).length > 0">
+                    <p v-if="plugin?.tasks.filter(t => t.toLowerCase().includes(searchInput)).length > 0" class="mb-0">
                         Tasks
                     </p>
                     <ul>
@@ -31,7 +31,7 @@
                             <span @click="openPlugin(task)">{{ task }}</span>
                         </li>
                     </ul>
-                    <p v-if="plugin?.triggers.filter(t => t.toLowerCase().includes(searchInput)).length > 0">
+                    <p v-if="plugin?.triggers.filter(t => t.toLowerCase().includes(searchInput)).length > 0" class="mb-0">
                         Triggers
                     </p>
                     <ul>
@@ -42,7 +42,7 @@
                             <span @click="openPlugin(trigger)">{{ trigger }}</span>
                         </li>
                     </ul>
-                    <p v-if="plugin?.conditions.filter(t => t.toLowerCase().includes(searchInput)).length > 0">
+                    <p v-if="plugin?.conditions.filter(t => t.toLowerCase().includes(searchInput)).length > 0" class="mb-0">
                         Conditions
                     </p>
                     <ul>
@@ -53,7 +53,7 @@
                             <span @click="openPlugin(condition)">{{ condition }}</span>
                         </li>
                     </ul>
-                    <p v-if="plugin?.taskRunners.filter(t => t.toLowerCase().includes(searchInput)).length > 0">
+                    <p v-if="plugin?.taskRunners.filter(t => t.toLowerCase().includes(searchInput)).length > 0" class="mb-0">
                         Task
                         Runners
                     </p>
@@ -68,7 +68,12 @@
                 </div>
             </template>
             <div v-if="isVisible(plugin)" class="plugin-card" @click="openGroup(plugin)">
-                <task-icon class="size" :only-icon="true" :cls="hasIcon(plugin.subGroup) ? plugin.subGroup : plugin.group" :icons="icons" />
+                <task-icon
+                    class="size"
+                    :only-icon="true"
+                    :cls="hasIcon(plugin.subGroup) ? plugin.subGroup : plugin.group"
+                    :icons="icons"
+                />
                 <span class="text-truncate">{{ plugin.title.capitalize() }}</span>
             </div>
         </el-tooltip>
@@ -135,8 +140,8 @@
                             plugin.conditions.some(condition => condition.toLowerCase().includes(this.searchInput.toLowerCase())) ||
                             plugin.taskRunners.some(taskRunner => taskRunner.toLowerCase().includes(this.searchInput.toLowerCase()))
                     }).sort((a, b) => {
-                        const nameA = a.group.toLowerCase(),
-                              nameB = b.group.toLowerCase();
+                        const nameA = a.manifest["X-Kestra-Title"].toLowerCase(),
+                              nameB = b.manifest["X-Kestra-Title"].toLowerCase();
 
                         return (nameA < nameB ? -1 : (nameA > nameB ? 1 : 0));
                     })
@@ -144,11 +149,17 @@
         },
         methods: {
             openGroup(plugin) {
-                if (plugin.tasks.length > 0) {
-                    this.openPlugin(plugin.tasks[0])
-                }
+                this.openPlugin(
+                    plugin.tasks?.[0] ??
+                        plugin.triggers?.[0] ??
+                        plugin.conditions?.[0] ??
+                        plugin.taskRunners?.[0]
+                )
             },
             openPlugin(cls) {
+                if (!cls) {
+                    return;
+                }
                 this.$router.push({name: "plugins/view", params: {cls: cls}})
             },
             isVisible(plugin) {
@@ -186,6 +197,7 @@
         margin: 0 auto;
         justify-content: center;
         align-items: flex-start;
+        padding-bottom: 4rem;
     }
 
     .tasks-tooltips {

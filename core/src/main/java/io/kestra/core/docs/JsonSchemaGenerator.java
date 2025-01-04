@@ -16,39 +16,32 @@ import com.github.victools.jsonschema.module.jakarta.validation.JakartaValidatio
 import com.github.victools.jsonschema.module.jakarta.validation.JakartaValidationOption;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
 import com.google.common.collect.ImmutableMap;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.conditions.Condition;
 import io.kestra.core.models.conditions.ScheduleCondition;
-import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.tasks.Output;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.plugins.RegisteredPlugin;
 import io.kestra.core.serializers.JacksonMapper;
 import io.micronaut.core.annotation.Nullable;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
 
 @Singleton
 public class JsonSchemaGenerator {
@@ -63,6 +56,10 @@ public class JsonSchemaGenerator {
     Map<Class<?>, Object> defaultInstances = new HashMap<>();
 
     public <T> Map<String, Object> schemas(Class<? extends T> cls) {
+        return this.schemas(cls, false);
+    }
+
+    public <T> Map<String, Object> schemas(Class<? extends T> cls, boolean arrayOf) {
         SchemaGeneratorConfigBuilder builder = new SchemaGeneratorConfigBuilder(
             SchemaVersion.DRAFT_7,
             OptionPreset.PLAIN_JSON
@@ -75,6 +72,9 @@ public class JsonSchemaGenerator {
         SchemaGenerator generator = new SchemaGenerator(schemaGeneratorConfig);
         try {
             ObjectNode objectNode = generator.generateSchema(cls);
+            if (arrayOf) {
+                objectNode.put("type", "array");
+            }
             replaceAnyOfWithOneOf(objectNode);
 
             return JacksonMapper.toMap(objectNode);
@@ -152,7 +152,6 @@ public class JsonSchemaGenerator {
 
     protected void build(SchemaGeneratorConfigBuilder builder, boolean draft7) {
         builder
-
             .with(new JakartaValidationModule(
                 JakartaValidationOption.NOT_NULLABLE_METHOD_IS_REQUIRED,
                 JakartaValidationOption.NOT_NULLABLE_FIELD_IS_REQUIRED,
@@ -212,6 +211,39 @@ public class JsonSchemaGenerator {
                 }
             });
 
+        // resolve dynamic types from Property
+        builder.forFields().withTargetTypeOverridesResolver(target -> {
+            ResolvedType javaType = target.getType();
+            if (javaType.isInstanceOf(Property.class)) {
+                TypeContext context = target.getContext();
+                Class<?> erasedType = javaType.getTypeParameters().getFirst().getErasedType();
+                if(String.class.isAssignableFrom(erasedType)) {
+                    return List.of(
+                        context.resolve(String.class)
+                    );
+                } else if(Object.class.equals(erasedType)) {
+                    return List.of(
+                        context.resolve(Object.class)
+                    );
+                } else if (erasedType.isEnum()) {
+                    return List.of(
+                        javaType.getTypeParameters().getFirst()
+                    );
+                } else if (List.class.isAssignableFrom(erasedType) || Map.class.isAssignableFrom(erasedType)) {
+                    return List.of(
+                        javaType.getTypeParameters().getFirst()
+                    );
+                } else {
+                    return List.of(
+                        javaType.getTypeParameters().getFirst(),
+                        context.resolve(String.class)
+                    );
+                }
+            }
+
+            return null;
+        });
+
         // PluginProperty $dynamic && deprecated swagger properties
         builder.forFields().withInstanceAttributeOverride((memberAttributes, member, context) -> {
             PluginProperty pluginPropertyAnnotation = member.getAnnotationConsideringFieldAndGetter(PluginProperty.class);
@@ -231,6 +263,15 @@ public class JsonSchemaGenerator {
             if (deprecated != null) {
                 memberAttributes.put("$deprecated", true);
             }
+
+            if (member.getDeclaredType().isInstanceOf(Property.class)) {
+                memberAttributes.put("$dynamic", true);
+                // if we are in the String definition of a Property but the target type is not String: we configure the format
+                Class<?> targetType = member.getDeclaredType().getTypeParameters().getFirst().getErasedType();
+                if (!String.class.isAssignableFrom(targetType) && String.class.isAssignableFrom(member.getType().getErasedType())) {
+                    memberAttributes.put("format", ".*{{.*}}.*");
+                }
+            }
         });
 
         // Add Plugin annotation special docs
@@ -246,7 +287,7 @@ public class JsonSchemaGenerator {
                             .put("lang", example.lang())
                             .put("title", example.title())
                         )
-                        .collect(Collectors.toList());
+                        .toList();
 
                     if (!examples.isEmpty()) {
                         collectedTypeAttributes.set("$examples", context.getGeneratorConfig().createArrayNode().addAll(examples));
@@ -260,7 +301,7 @@ public class JsonSchemaGenerator {
                             .put("unit", metric.unit())
                             .put("description", metric.description())
                         )
-                        .collect(Collectors.toList());
+                        .toList();
 
                     if (!metrics.isEmpty()) {
                         collectedTypeAttributes.set("$metrics", context.getGeneratorConfig().createArrayNode().addAll(metrics));
@@ -288,6 +329,8 @@ public class JsonSchemaGenerator {
 
             return Object.class;
         });
+
+        // Subtype resolver for all plugins
         if(builder.build().getSchemaVersion() != SchemaVersion.DRAFT_2019_09) {
             builder.forTypesInGeneral()
                 .withSubtypeResolver((declaredType, context) -> {
@@ -297,41 +340,41 @@ public class JsonSchemaGenerator {
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getTasks().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
-                            .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .flatMap(clz -> safelyResolveSubtype(declaredType, clz, typeContext).stream())
+                            .toList();
                     } else if (declaredType.getErasedType() == AbstractTrigger.class) {
                         return getRegisteredPlugins()
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getTriggers().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
-                            .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .flatMap(clz -> safelyResolveSubtype(declaredType, clz, typeContext).stream())
+                            .toList();
                     } else if (declaredType.getErasedType() == Condition.class) {
                         return getRegisteredPlugins()
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getConditions().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
-                            .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .flatMap(clz -> safelyResolveSubtype(declaredType, clz, typeContext).stream())
+                            .toList();
                     } else if (declaredType.getErasedType() == ScheduleCondition.class) {
                         return getRegisteredPlugins()
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getConditions().stream())
                             .filter(ScheduleCondition.class::isAssignableFrom)
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
-                            .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .flatMap(clz -> safelyResolveSubtype(declaredType, clz, typeContext).stream())
+                            .toList();
                     } else if (declaredType.getErasedType() == TaskRunner.class) {
                         return getRegisteredPlugins()
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getTaskRunners().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
-                            .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .flatMap(clz -> safelyResolveSubtype(declaredType, clz, typeContext).stream())
+                            .toList();
                     }
-
                     return null;
                 });
+
             // description as Markdown
             builder.forTypesInGeneral().withTypeAttributeOverride((collectedTypeAttributes, scope, context) -> {
                 this.mutateDescription(collectedTypeAttributes);
@@ -414,6 +457,16 @@ public class JsonSchemaGenerator {
         }
     }
 
+    private static Optional<ResolvedType> safelyResolveSubtype(ResolvedType declaredType, Class<?> clz, TypeContext typeContext) {
+        try {
+            return Optional.ofNullable(typeContext.resolveSubtype(declaredType, clz));
+        } catch (Exception e) {
+            // exception can be thrown when resolving a plugin-type depending on
+            // a non-backward compatible kestra (e.g., java.lang.TypeNotPresentException).
+            return Optional.empty();
+        }
+    }
+
     protected List<RegisteredPlugin> getRegisteredPlugins() {
         return pluginRegistry.plugins();
     }
@@ -457,7 +510,7 @@ public class JsonSchemaGenerator {
     }
 
     protected Object defaults(FieldScope target) {
-        if (target.getOverriddenType() != null) {
+        if (!target.getDeclaredType().isInstanceOf(Property.class) && target.getOverriddenType() != null) {
             return null;
         }
 

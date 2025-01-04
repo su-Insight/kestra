@@ -4,27 +4,33 @@ import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.executions.statistics.DailyExecutionStatistics;
 import io.kestra.core.models.executions.statistics.ExecutionCount;
+import io.kestra.core.models.executions.statistics.ExecutionCountStatistics;
 import io.kestra.core.models.executions.statistics.Flow;
+import io.kestra.core.models.flows.FlowScope;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.utils.DateUtils;
 import io.micronaut.data.model.Pageable;
+import jakarta.annotation.Nullable;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
+import reactor.core.publisher.Flux;
 
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
-import jakarta.annotation.Nullable;
-import jakarta.validation.constraints.NotNull;
-import reactor.core.publisher.Flux;
 
 public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Execution> {
     Boolean isTaskRunEnabled();
 
-    Optional<Execution> findById(String tenantId, String id);
+    default Optional<Execution> findById(String tenantId, String id) {
+        return findById(tenantId, id, false);
+    }
+
+    Optional<Execution> findById(String tenantId, String id, boolean allowDeleted);
 
     ArrayListTotal<Execution> findByFlowId(String tenantId, String namespace, String id, Pageable pageable);
 
@@ -41,6 +47,7 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         Pageable pageable,
         @Nullable String query,
         @Nullable String tenantId,
+        @Nullable List<FlowScope> scope,
         @Nullable String namespace,
         @Nullable String flowId,
         @Nullable ZonedDateTime startDate,
@@ -51,9 +58,10 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ChildFilter childFilter
     );
 
-    Flux<Execution> find(
+    default Flux<Execution> find(
         @Nullable String query,
         @Nullable String tenantId,
+        @Nullable List<FlowScope> scope,
         @Nullable String namespace,
         @Nullable String flowId,
         @Nullable ZonedDateTime startDate,
@@ -62,6 +70,23 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable Map<String, String> labels,
         @Nullable String triggerExecutionId,
         @Nullable ChildFilter childFilter
+    ) {
+        return find(query, tenantId, scope, namespace, flowId, startDate, endDate, state, labels, triggerExecutionId, childFilter, false);
+    }
+
+    Flux<Execution> find(
+        @Nullable String query,
+        @Nullable String tenantId,
+        @Nullable List<FlowScope> scope,
+        @Nullable String namespace,
+        @Nullable String flowId,
+        @Nullable ZonedDateTime startDate,
+        @Nullable ZonedDateTime endDate,
+        @Nullable List<State.Type> state,
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId,
+        @Nullable ChildFilter childFilter,
+        boolean allowDeleted
     );
 
     ArrayListTotal<TaskRun> findTaskRun(
@@ -97,11 +122,13 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
     List<DailyExecutionStatistics> dailyStatistics(
         @Nullable String query,
         @Nullable String tenantId,
+        @Nullable List<FlowScope> scope,
         @Nullable String namespace,
         @Nullable String flowId,
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable DateUtils.GroupType groupBy,
+        List<State.Type> state,
         boolean isTaskRun
     );
 
@@ -121,6 +148,13 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         boolean groupByNamespaceOnly
     );
 
+    Map<String, ExecutionCountStatistics> executionCountsGroupedByNamespace(
+        @Nullable String tenantId,
+        @Nullable String namespace,
+        @Nullable ZonedDateTime startDate,
+        @Nullable ZonedDateTime endDate
+    );
+
     @Getter
     @SuperBuilder
     @NoArgsConstructor
@@ -133,11 +167,11 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
 
     List<ExecutionCount> executionCounts(
         @Nullable String tenantId,
-        List<Flow> flows,
+        @Nullable List<Flow> flows,
         @Nullable List<State.Type> states,
         @Nullable ZonedDateTime startDate,
-        @Nullable ZonedDateTime endDate
-    );
+        @Nullable ZonedDateTime endDate,
+        @Nullable List<String> namespaces);
 
     Execution save(Execution execution);
 

@@ -27,7 +27,7 @@
                 </div>
             </slot>
         </nav>
-
+        <slot name="absolute" />
         <div class="editor-container" ref="container" :class="containerClass">
             <div ref="editorContainer" class="editor-wrapper position-relative">
                 <monaco-editor
@@ -42,7 +42,8 @@
                     :language="lang"
                     :extension="extension"
                     :schema-type="schemaType"
-                    class="position-relative"
+                    :input="input"
+                    :creating="creating"
                 />
                 <div
                     v-show="showPlaceholder"
@@ -95,7 +96,7 @@
         components: {
             MonacoEditor,
         },
-        emits: ["save", "execute", "focusout", "tab", "update:modelValue", "cursor"],
+        emits: ["save", "execute", "focusout", "tab", "update:modelValue", "cursor", "confirm"],
         editor: undefined,
         data() {
             return {
@@ -154,10 +155,13 @@
                         vertical: "hidden",
                         horizontal: "hidden",
                         alwaysConsumeMouseWheel: false,
-                        handleMouseWheel: false,
+                        handleMouseWheel: true,
                         horizontalScrollbarSize: 0,
                         verticalScrollbarSize: 0,
                         useShadows: false,
+                    };
+                    options.stickyScroll = {
+                        enabled: false
                     };
                     options.find = {
                         addExtraSpaceOnTop: false,
@@ -216,12 +220,12 @@
                 this.decorations = this.editor.createDecorationsCollection();
 
                 if (!this.original) {
-                    this.editor.onDidBlurEditorWidget(() => {
+                    this.editor.onDidBlurEditorWidget?.(() => {
                         this.$emit("focusout", editor.getValue());
                         this.focus = false;
                     })
 
-                    this.editor.onDidFocusEditorText(() => {
+                    this.editor.onDidFocusEditorText?.(() => {
                         this.focus = true;
                     })
 
@@ -261,8 +265,21 @@
                     }
                 });
 
+                this.editor.addAction({
+                    id: "confirm",
+                    label: "Confirm",
+                    keybindings: [
+                        KeyMod.CtrlCmd | KeyCode.Enter,
+                    ],
+                    contextMenuGroupId: "navigation",
+                    contextMenuOrder: 1.5,
+                    run: (ed) => {
+                        this.$emit("confirm", ed.getValue())
+                    }
+                });
+
                 // TabFocus is global to all editor so revert the behavior on non inputs
-                this.editor.onDidFocusEditorText(() => {
+                this.editor.onDidFocusEditorText?.(() => {
                     TabFocus.setTabFocusMode(this.input);
                 })
 
@@ -315,6 +332,7 @@
 
                 if (!this.fullHeight) {
                     editor.onDidContentSizeChange(e => {
+                        if(!this.$refs.container) return;                    
                         this.$refs.container.style.height = (e.contentHeight + this.customHeight) + "px";
                     });
                 }
@@ -349,7 +367,7 @@
                         }
                     });
 
-                    this.editor.onDidChangeCursorPosition(() => {
+                    this.editor.onDidChangeCursorPosition?.(() => {
                         let position = this.editor.getPosition();
                         let model = this.editor.getModel();
                         clearTimeout(this.lastTimeout);
@@ -377,8 +395,8 @@
             },
             highlightPebble() {
                 // Highlight code that match pebble content
-                let model = this.editor.getModel();
-                let text = model.getValue();
+                let model = this.editor?.getModel?.();
+                let text = model?.getValue?.();
                 let regex = new RegExp("\\{\\{(.+?)}}", "g");
                 let match;
                 const decorationsToAdd = [];
@@ -406,8 +424,26 @@
 <style lang="scss">
     @import "../../styles/layout/root-dark.scss";
 
-    .ks-editor {
+    :not(.namespace-form, .el-drawer__body) > .ks-editor{
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .el-drawer__body .ks-editor {
+        flex: 1;
+    }
+
+    .el-dialog__body .ks-editor {
+        display: flex;
         width: 100%;
+    }
+
+    .el-dialog__body .el-form {
+        width: 100%;
+    }
+
+    .ks-editor {
+        display: flex;
 
         .top-nav {
             background-color: var(--bs-white);
@@ -423,7 +459,7 @@
 
         .editor-container {
             display: flex;
-            height: 100%;
+            flex-grow: 1;
 
             &.single-line {
                 min-height: var(--el-component-size);

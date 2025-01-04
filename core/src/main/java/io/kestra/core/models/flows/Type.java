@@ -10,6 +10,7 @@ import io.micronaut.core.annotation.Introspected;
 public enum Type {
     STRING(StringInput.class.getName()),
     ENUM(EnumInput.class.getName()),
+    SELECT(SelectInput.class.getName()),
     INT(IntInput.class.getName()),
     FLOAT(FloatInput.class.getName()),
     BOOLEAN(BooleanInput.class.getName()),
@@ -21,7 +22,9 @@ public enum Type {
     JSON(JsonInput.class.getName()),
     URI(URIInput.class.getName()),
     SECRET(SecretInput.class.getName()),
-    ARRAY(ArrayInput.class.getName());
+    ARRAY(ArrayInput.class.getName()),
+    MULTISELECT(MultiselectInput.class.getName()),
+    YAML(YamlInput.class.getName());
 
     private final String clsName;
 
@@ -30,7 +33,11 @@ public enum Type {
     }
 
     @SuppressWarnings("unchecked")
-    public Class<? extends Input<?>> cls() throws ClassNotFoundException {
-        return (Class<? extends Input<?>>) Class.forName(this.clsName);
+    public Class<? extends Input<?>> cls() {
+        try {
+            return (Class<? extends Input<?>>) Class.forName(this.clsName);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

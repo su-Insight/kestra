@@ -1,5 +1,6 @@
 package io.kestra.cli.commands.templates.namespaces;
 
+import io.kestra.cli.AbstractValidateCommand;
 import io.kestra.cli.commands.AbstractServiceNamespaceUpdateCommand;
 import io.kestra.cli.commands.templates.TemplateValidateCommand;
 import io.kestra.core.models.templates.Template;
@@ -39,7 +40,7 @@ public class TemplateNamespaceUpdateCommand extends AbstractServiceNamespaceUpda
                 .filter(Files::isRegularFile)
                 .filter(YamlFlowParser::isValidExtension)
                 .map(path -> yamlFlowParser.parse(path.toFile(), Template.class))
-                .collect(Collectors.toList());
+                .toList();
 
             if (templates.isEmpty()) {
                 stdOut("No template found on '{}'", directory.toFile().getAbsolutePath());
@@ -57,12 +58,12 @@ public class TemplateNamespaceUpdateCommand extends AbstractServiceNamespaceUpda
                 stdOut(updated.size() + " template(s) for namespace '" + namespace + "' successfully updated !");
                 updated.forEach(template -> stdOut("- " + template.getNamespace() + "." + template.getId()));
             } catch (HttpClientResponseException e) {
-                TemplateValidateCommand.handleHttpException(e, "template");
+                AbstractValidateCommand.handleHttpException(e, "template");
 
                 return 1;
             }
         } catch (ConstraintViolationException e) {
-            TemplateValidateCommand.handleException(e, "template");
+            AbstractValidateCommand.handleException(e, "template");
 
             return 1;
         }

@@ -6,27 +6,28 @@ import io.kestra.core.models.executions.*;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
+import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.tasks.flows.Pause;
-import io.kestra.core.tasks.flows.WorkingDirectory;
+import io.kestra.plugin.core.flow.Pause;
+import io.kestra.plugin.core.flow.WorkingDirectory;
 import io.kestra.core.tasks.test.Sleep;
 import io.kestra.core.utils.Await;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.TestsUtils;
 import io.micronaut.context.ApplicationContext;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -35,7 +36,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
-@MicronautTest
+@KestraTest
 class WorkerTest {
     @Inject
     ApplicationContext applicationContext;
@@ -60,12 +61,12 @@ class WorkerTest {
     RunContextFactory runContextFactory;
 
     @Test
-    void success() throws TimeoutException {
+    void success() throws TimeoutException, QueueException {
         Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, null);
         worker.run();
 
         AtomicReference<WorkerTaskResult> workerTaskResult = new AtomicReference<>(null);
-        workerTaskResultQueue.receive(either -> workerTaskResult.set(either.getLeft()));
+        Flux<WorkerTaskResult> receive = TestsUtils.receive(workerTaskResultQueue, either -> workerTaskResult.set(either.getLeft()));
 
         workerTaskQueue.emit(workerTask(1000));
 
@@ -74,6 +75,8 @@ class WorkerTest {
             Duration.ofMillis(100),
             Duration.ofMinutes(1)
         );
+        receive.blockLast();
+        worker.shutdown();
 
         assertThat(workerTaskResult.get().getTaskRun().getState().getHistories().size(), is(3));
     }
@@ -85,12 +88,12 @@ class WorkerTest {
     }
 
     @Test
-    void failOnWorkerTaskWithFlowable() throws TimeoutException, JsonProcessingException {
+    void failOnWorkerTaskWithFlowable() throws TimeoutException, QueueException, JsonProcessingException {
         Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, null);
         worker.run();
 
         AtomicReference<WorkerTaskResult> workerTaskResult = new AtomicReference<>(null);
-        workerTaskResultQueue.receive(either -> workerTaskResult.set(either.getLeft()));
+        Flux<WorkerTaskResult> receive = TestsUtils.receive(workerTaskResultQueue, either -> workerTaskResult.set(either.getLeft()));
 
         Pause pause = Pause.builder()
             .type(Pause.class.getName())
@@ -131,20 +134,21 @@ class WorkerTest {
             Duration.ofMillis(100),
             Duration.ofMinutes(1)
         );
+        receive.blockLast();
+        worker.shutdown();
 
         assertThat(workerTaskResult.get().getTaskRun().getState().getHistories().size(), is(3));
     }
 
     @Test
-    void killed() throws InterruptedException, TimeoutException {
-        List<LogEntry> logs = new CopyOnWriteArrayList<>();
-        workerTaskLogQueue.receive(either -> logs.add(either.getLeft()));
+    void killed() throws InterruptedException, TimeoutException, QueueException {
+        Flux<LogEntry> receiveLogs = TestsUtils.receive(workerTaskLogQueue);
 
         Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, null);
         worker.run();
 
         List<WorkerTaskResult> workerTaskResult = new ArrayList<>();
-        workerTaskResultQueue.receive(either -> workerTaskResult.add(either.getLeft()));
+        Flux<WorkerTaskResult> receiveWorkerTaskResults = TestsUtils.receive(workerTaskResultQueue, either -> workerTaskResult.add(either.getLeft()));
 
         WorkerTask workerTask = workerTask(999000);
 
@@ -165,6 +169,7 @@ class WorkerTest {
             Duration.ofMillis(100),
             Duration.ofMinutes(1)
         );
+        receiveWorkerTaskResults.blockLast();
 
         WorkerTaskResult oneKilled = workerTaskResult.stream()
             .filter(r -> r.getTaskRun().getState().getCurrent() == State.Type.KILLED)
@@ -182,12 +187,13 @@ class WorkerTest {
 
         // child process is stopped and we never received 3 logs
         Thread.sleep(1000);
-        assertThat(logs.stream().filter(logEntry -> logEntry.getMessage().equals("3")).count(), is(0L));
+        worker.shutdown();
+        assertThat(receiveLogs.toStream().filter(logEntry -> logEntry.getMessage().equals("3")).count(), is(0L));
     }
 
     @Test
     void shouldCreateInstanceGivenApplicationContext() {
-        Assertions.assertDoesNotThrow(() -> new Worker(applicationContext, 8, null));
+        Assertions.assertDoesNotThrow(() -> applicationContext.createBean(Worker.class, IdUtils.create(), 8, null));
 
     }
 

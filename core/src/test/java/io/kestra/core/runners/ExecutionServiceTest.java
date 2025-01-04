@@ -1,20 +1,27 @@
 package io.kestra.core.runners;
 
 import com.google.common.collect.ImmutableMap;
-import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.queues.QueueException;
+import io.kestra.core.repositories.ExecutionRepositoryInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
+import io.kestra.core.repositories.LogRepositoryInterface;
+import io.kestra.core.repositories.MetricRepositoryInterface;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.services.ExecutionService;
-import io.kestra.core.services.TaskDefaultService;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.core.services.PluginDefaultService;
+import io.kestra.plugin.core.debug.Return;
+import io.micronaut.data.model.Pageable;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import org.junitpioneer.jupiter.RetryingTest;
+import org.slf4j.event.Level;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -29,7 +36,13 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
     FlowRepositoryInterface flowRepository;
 
     @Inject
-    TaskDefaultService taskDefaultService;
+    PluginDefaultService pluginDefaultService;
+
+    @Inject
+    ExecutionRepositoryInterface executionRepository;
+
+    @Inject
+    LogRepositoryInterface logRepository;
 
     @Test
     void restartSimple() throws Exception {
@@ -67,7 +80,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
                     .build()
             ),
             JacksonMapper.ofYaml().writeValueAsString(flow),
-            taskDefaultService.injectDefaults(flow)
+            pluginDefaultService.injectDefaults(flow)
         );
 
 
@@ -94,7 +107,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
         assertThat(restart.getState().getHistories(), hasSize(4));
         assertThat(restart.getTaskRunList().stream().filter(taskRun -> taskRun.getState().getCurrent() == State.Type.RESTARTED).count(), greaterThan(1L));
         assertThat(restart.getTaskRunList().stream().filter(taskRun -> taskRun.getState().getCurrent() == State.Type.RUNNING).count(), greaterThan(1L));
-        assertThat(restart.getTaskRunList().get(0).getId(), is(restart.getTaskRunList().get(0).getId()));
+        assertThat(restart.getTaskRunList().getFirst().getId(), is(restart.getTaskRunList().getFirst().getId()));
     }
 
     @RetryingTest(5)
@@ -108,7 +121,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
         assertThat(restart.getState().getHistories(), hasSize(4));
         assertThat(restart.getTaskRunList().stream().filter(taskRun -> taskRun.getState().getCurrent() == State.Type.RESTARTED).count(), greaterThan(1L));
         assertThat(restart.getTaskRunList().stream().filter(taskRun -> taskRun.getState().getCurrent() == State.Type.RUNNING).count(), greaterThan(1L));
-        assertThat(restart.getTaskRunList().get(0).getId(), is(restart.getTaskRunList().get(0).getId()));
+        assertThat(restart.getTaskRunList().getFirst().getId(), is(restart.getTaskRunList().getFirst().getId()));
     }
 
     @Test
@@ -121,8 +134,8 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
         assertThat(restart.getState().getCurrent(), is(State.Type.RESTARTED));
         assertThat(restart.getState().getHistories(), hasSize(4));
 
-        assertThat(restart.getTaskRunList().get(0).getState().getCurrent(), is(State.Type.RESTARTED));
-        assertThat(restart.getTaskRunList().get(0).getState().getHistories(), hasSize(4));
+        assertThat(restart.getTaskRunList().getFirst().getState().getCurrent(), is(State.Type.RESTARTED));
+        assertThat(restart.getTaskRunList().getFirst().getState().getHistories(), hasSize(4));
     }
 
     @Test
@@ -139,7 +152,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
 
         assertThat(restart.getState().getCurrent(), is(State.Type.CREATED));
         assertThat(restart.getState().getHistories(), hasSize(1));
-        assertThat(restart.getState().getHistories().get(0).getDate(), not(is(execution.getState().getStartDate())));
+        assertThat(restart.getState().getHistories().getFirst().getDate(), not(is(execution.getState().getStartDate())));
         assertThat(restart.getTaskRunList(), hasSize(0));
 
         assertThat(restart.getId(), not(execution.getId()));
@@ -279,7 +292,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
         assertThat(restart.findTaskRunByTaskIdAndValue("2-1_seq", List.of("value 1")).getState().getCurrent(), is(State.Type.RUNNING));
         assertThat(restart.findTaskRunByTaskIdAndValue("2-1-2_t2", List.of("value 1")).getState().getCurrent(), is(State.Type.FAILED));
         assertThat(restart.findTaskRunByTaskIdAndValue("2-1-2_t2", List.of("value 1")).getState().getHistories(), hasSize(4));
-        assertThat(restart.findTaskRunByTaskIdAndValue("2-1-2_t2", List.of("value 1")).getAttempts().get(0).getState().getCurrent(), is(State.Type.FAILED));
+        assertThat(restart.findTaskRunByTaskIdAndValue("2-1-2_t2", List.of("value 1")).getAttempts().getFirst().getState().getCurrent(), is(State.Type.FAILED));
     }
 
     @Test
@@ -295,7 +308,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
         assertThat(resume.getState().getCurrent(), is(State.Type.RESTARTED));
         assertThat(resume.getState().getHistories(), hasSize(4));
 
-        IllegalArgumentException e = assertThrows(
+        assertThrows(
             IllegalArgumentException.class,
             () -> executionService.resume(resume, flow, State.Type.RUNNING)
         );
@@ -313,5 +326,27 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
 
         assertThat(resume.getState().getCurrent(), is(State.Type.RESTARTED));
         assertThat(resume.getState().getHistories(), hasSize(4));
+    }
+
+    @Test
+    void deleteExecution() throws TimeoutException, QueueException, IOException {
+        Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
+        assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+
+        executionService.delete(execution, true, true, true);
+
+        assertThat(executionRepository.findById(execution.getTenantId(),execution.getId()), is(Optional.empty()));
+        assertThat(logRepository.findByExecutionId(execution.getTenantId(),execution.getId(), Level.INFO), hasSize(0));
+    }
+
+    @Test
+    void deleteExecutionKeepLogs() throws TimeoutException, QueueException, IOException {
+        Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
+        assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+
+        executionService.delete(execution, false, false, false);
+
+        assertThat(executionRepository.findById(execution.getTenantId(),execution.getId()), is(Optional.empty()));
+        assertThat(logRepository.findByExecutionId(execution.getTenantId(),execution.getId(), Level.INFO), hasSize(4));
     }
 }

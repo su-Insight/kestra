@@ -5,18 +5,18 @@ description: >
 
 tasks:
   - id: keepFailingWithRetry
-    type: io.kestra.core.tasks.executions.Fail
+    type: io.kestra.plugin.core.execution.Fail
     description: Keep retrying with a simple retry defined.
     retry:
       type: constant
-      maxAttempt: 5
-      interval: PT2S
+      maxAttempt: 3
+      interval: PT1S
 
   - id: thisTaskShouldNotBeExecuted
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     message: "The previous task should fail"
 
 errors:
   - id: error
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     message: once

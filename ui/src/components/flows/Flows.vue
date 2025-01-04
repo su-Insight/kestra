@@ -36,7 +36,7 @@
             </ul>
         </template>
     </top-nav-bar>
-    <section class="container" v-if="ready">
+    <section data-component="FILENAME_PLACEHOLDER" class="container" v-if="ready">
         <div>
             <data-table
                 @page-changed="onPageChanged"
@@ -52,6 +52,13 @@
                             data-type="flow"
                             :value="$route.query.namespace"
                             @update:model-value="onDataTableValue('namespace', $event)"
+                        />
+                    </el-form-item>
+                    <el-form-item>
+                        <scope-filter-buttons
+                            :label="$t('flows')"
+                            :value="$route.query.scope"
+                            @update:model-value="onDataTableValue('scope', $event)"
                         />
                     </el-form-item>
                     <el-form-item>
@@ -118,16 +125,19 @@
                                 :label="$t('id')"
                             >
                                 <template #default="scope">
-                                    <router-link
-                                        :to="{name: 'flows/update', params: {namespace: scope.row.namespace, id: scope.row.id}}"
-                                    >
-                                        {{ $filters.invisibleSpace(scope.row.id) }}
-                                    </router-link>
-                                    &nbsp;<markdown-tooltip
-                                        :id="scope.row.namespace + '-' + scope.row.id"
-                                        :description="scope.row.description"
-                                        :title="scope.row.namespace + '.' + scope.row.id"
-                                    />
+                                    <div class="flow-id">
+                                        <router-link
+                                            :to="{name: 'flows/update', params: {namespace: scope.row.namespace, id: scope.row.id}}"
+                                            class="me-1"
+                                        >
+                                            {{ $filters.invisibleSpace(scope.row.id) }}
+                                        </router-link>
+                                        <markdown-tooltip
+                                            :id="scope.row.namespace + '-' + scope.row.id"
+                                            :description="scope.row.description"
+                                            :title="scope.row.namespace + '.' + scope.row.id"
+                                        />
+                                    </div>
                                 </template>
                             </el-table-column>
 
@@ -243,6 +253,7 @@
     import Labels from "../layout/Labels.vue"
     import Upload from "vue-material-design-icons/Upload.vue";
     import LabelFilter from "../labels/LabelFilter.vue";
+    import ScopeFilterButtons from "../layout/ScopeFilterButtons.vue"
     import {storageKeys} from "../../utils/constants";
 
     export default {
@@ -262,6 +273,7 @@
             Labels,
             Upload,
             LabelFilter,
+            ScopeFilterButtons,
             TopNavBar
         },
         data() {
@@ -296,7 +308,7 @@
                 return this.canRead || this.canDelete || this.canUpdate;
             },
             canCreate() {
-                return this.user && this.user.isAllowed(permission.FLOW, action.CREATE, this.$route.query.namespace);
+                return this.user && this.user.hasAnyActionOnAnyNamespace(permission.FLOW, action.CREATE);
             },
             canRead() {
                 return this.user && this.user.isAllowed(permission.FLOW, action.READ, this.$route.query.namespace);
@@ -306,6 +318,11 @@
             },
             canUpdate() {
                 return this.user && this.user.isAllowed(permission.FLOW, action.UPDATE, this.$route.query.namespace);
+            }
+        },
+        beforeCreate(){
+            if(!this.$route.query.scope) {
+                this.$route.query.scope = ["USER"]
             }
         },
         methods: {
@@ -523,7 +540,7 @@
             rowClasses(row) {
                 return row && row.row && row.row.disabled ? "disabled" : "";
             }
-        }
+        }        
     };
 </script>
 
@@ -531,5 +548,9 @@
     :deep(nav .dropdown-menu) {
         display: flex;
         width: 20rem;
+    }
+
+    .flow-id {
+        min-width: 200px;
     }
 </style>

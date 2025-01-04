@@ -11,30 +11,29 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
 import java.util.List;
-import java.util.Set;
-import java.util.regex.Pattern;
 
 @SuperBuilder
 @Getter
 @NoArgsConstructor
+@Deprecated
 public class EnumInput extends Input<String> {
     @Schema(
-        title = "List of values."
+        title = "List of values.",
+        description = "DEPRECATED; use 'SELECT' instead."
     )
     @NotNull
     List<@Regex String> values;
 
     @Override
     public void validate(String input) throws ConstraintViolationException {
-        if (!values.contains(input)) {
-            throw new ConstraintViolationException("Invalid input '" + input + "', it must match the values '" + values + "'",
-                Set.of(ManualConstraintViolation.of(
-                    "Invalid input",
-                    this,
-                    EnumInput.class,
-                    getId(),
-                    input
-                )));
+        if (!values.contains(input) && this.getRequired()) {
+            throw ManualConstraintViolation.toConstraintViolationException(
+                "it must match the values `" + values + "`",
+                this,
+                EnumInput.class,
+                getId(),
+                input
+            );
         }
     }
 }

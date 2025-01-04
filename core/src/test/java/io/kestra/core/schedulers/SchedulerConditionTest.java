@@ -1,17 +1,17 @@
 package io.kestra.core.schedulers;
 
-import io.kestra.core.models.conditions.types.DayWeekInMonthCondition;
+import io.kestra.core.utils.TestsUtils;
+import io.kestra.jdbc.runner.JdbcScheduler;
+import io.kestra.plugin.core.condition.DayWeekInMonthCondition;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.triggers.Trigger;
-import io.kestra.core.models.triggers.types.Schedule;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.runners.FlowListeners;
-import io.kestra.core.runners.TestMethodScopedWorker;
-import io.kestra.core.runners.Worker;
-import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 import java.time.DayOfWeek;
 import java.time.ZonedDateTime;
@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static io.kestra.core.utils.Rethrow.throwConsumer;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.doReturn;
@@ -65,7 +66,6 @@ class SchedulerConditionTest extends AbstractSchedulerTest {
         triggerState.create(Trigger.builder()
             .namespace(flow.getNamespace())
             .flowId(flow.getId())
-            .flowRevision(flow.getRevision())
             .triggerId("hourly")
             .date(ZonedDateTime.parse("2021-09-06T02:00:00+01:00[Europe/Paris]"))
             .build()
@@ -76,13 +76,12 @@ class SchedulerConditionTest extends AbstractSchedulerTest {
             .flows();
 
         // scheduler
-        try (AbstractScheduler scheduler = new DefaultScheduler(
+        try (AbstractScheduler scheduler = new JdbcScheduler(
             applicationContext,
-            flowListenersServiceSpy,
-            triggerState);
-             Worker worker = applicationContext.createBean(TestMethodScopedWorker.class, IdUtils.create(), 8, null)) {
+            flowListenersServiceSpy
+        )) {
             // wait for execution
-            Runnable assertionStop = executionQueue.receive(SchedulerConditionTest.class, either -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, throwConsumer(either -> {
                 Execution execution = either.getLeft();
                 if (execution.getState().getCurrent() == State.Type.CREATED) {
                     executionQueue.emit(execution.withState(State.Type.SUCCESS));
@@ -93,12 +92,12 @@ class SchedulerConditionTest extends AbstractSchedulerTest {
                     }
                 }
                 assertThat(execution.getFlowId(), is(flow.getId()));
-            });
+            }));
 
             scheduler.run();
-            queueCount.await(15, TimeUnit.SECONDS);
-            // needed for RetryingTest to work since there is no context cleaning between method => we have to clear assertion receiver manually
-            assertionStop.run();
+            queueCount.await(30, TimeUnit.SECONDS);
+
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
         }

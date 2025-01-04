@@ -6,6 +6,7 @@ import io.kestra.cli.commands.servers.ServerCommandInterface;
 import io.kestra.cli.services.StartupHookInterface;
 import io.kestra.core.contexts.KestraContext;
 import io.kestra.core.plugins.PluginRegistry;
+import io.kestra.webserver.services.FlowAutoLoaderService;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.env.yaml.YamlPropertySourceLoader;
 import io.micronaut.core.annotation.Introspected;
@@ -23,11 +24,13 @@ import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.MessageFormat;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import jakarta.inject.Inject;
 
 @CommandLine.Command(
+    versionProvider = VersionProvider.class,
     mixinStandardHelpOptions = true,
     showDefaultValues = true
 )
@@ -42,9 +45,12 @@ abstract public class AbstractCommand implements Callable<Integer> {
 
     @Inject
     private StartupHookInterface startupHook;
-    
+
+    @Inject
+    private io.kestra.core.utils.VersionProvider versionProvider;
+
     private PluginRegistry pluginRegistry;
-    
+
     @CommandLine.Option(names = {"-v", "--verbose"}, description = "Change log level. Multiple -v options increase the verbosity.", showDefaultValue = CommandLine.Help.Visibility.NEVER)
     private boolean[] verbose = new boolean[0];
 
@@ -85,7 +91,7 @@ abstract public class AbstractCommand implements Callable<Integer> {
         startWebserver();
         return 0;
     }
-    
+
     /**
      * Specifies whether external plugins must be loaded.
      * This method can be overridden by concrete commands.
@@ -95,7 +101,7 @@ abstract public class AbstractCommand implements Callable<Integer> {
     protected boolean loadExternalPlugins() {
         return true;
     }
-    
+
     protected PluginRegistry pluginRegistry() {
         return KestraContext.getContext().getPluginRegistry(); // Lazy init
     }
@@ -121,8 +127,25 @@ abstract public class AbstractCommand implements Callable<Integer> {
             this.logLevel = LogLevel.TRACE;
         }
 
+
         if (this instanceof ServerCommandInterface) {
-            log.info("Starting Kestra with environments {}", applicationContext.getEnvironment().getActiveNames());
+            String buildInfo = "";
+            if (versionProvider.getRevision() != null) {
+                buildInfo += " [revision " + versionProvider.getRevision();
+
+                if (versionProvider.getDate() != null) {
+                    buildInfo += " / " + versionProvider.getDate().toLocalDateTime().truncatedTo(ChronoUnit.MINUTES);
+                }
+
+                buildInfo += "]";
+            }
+
+            log.info(
+                "Starting Kestra {} with environments {}{}",
+                versionProvider.getVersion(),
+                applicationContext.getEnvironment().getActiveNames(),
+                buildInfo
+            );
         }
 
         ((LoggerContext) org.slf4j.LoggerFactory.getILoggerFactory())
@@ -171,7 +194,17 @@ abstract public class AbstractCommand implements Callable<Integer> {
                 } else {
                     log.info("Server Running: {}", server.getURL());
                 }
+
+                if (isFlowAutoLoadEnabled()) {
+                    applicationContext
+                        .findBean(FlowAutoLoaderService.class)
+                        .ifPresent(FlowAutoLoaderService::load);
+                }
             });
+    }
+
+    public boolean isFlowAutoLoadEnabled() {
+        return false;
     }
 
     protected void shutdownHook(Rethrow.RunnableChecked<Exception> run) {

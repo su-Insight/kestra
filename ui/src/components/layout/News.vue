@@ -1,10 +1,10 @@
 <template>
-    <el-button class="news-link" @click="show">
+    <el-button data-component="FILENAME_PLACEHOLDER#button" class="news-link" @click="show">
         <bell title="" />
         <CheckboxBlankCircle v-if="hasUnread" class="new" title="" />
     </el-button>
 
-    <drawer v-if="isOpen" v-model="isOpen" :title="$t('feeds.title')">
+    <drawer data-component="FILENAME_PLACEHOLDER#drawer" v-if="isOpen" v-model="isOpen" :title="$t('feeds.title')">
         <div class="post" v-for="(feed, index) in feeds" :key="feed.id">
             <div v-if="feed.image" class="mt-2">
                 <img class="float-end" :src="feed.image" alt="">
@@ -12,7 +12,7 @@
             <h5>
                 {{ feed.title }}
             </h5>
-            <date-ago class-name="text-muted small" :inverted="true" :date="feed.publicationDate" format="LL" />
+            <date-ago class-name="news-date small" :inverted="true" :date="feed.publicationDate" format="LL" />
 
             <markdown class="markdown-tooltip mt-3" :source="feed.description" />
 
@@ -33,6 +33,7 @@
     import Markdown from "./Markdown.vue";
     import DateAgo from "./DateAgo.vue";
     import Drawer from "../Drawer.vue";
+    import {pageFromRoute} from "../../utils/eventsRouter";
 
     export default {
         components: {
@@ -63,6 +64,12 @@
         methods: {
             show(event) {
                 event.preventDefault();
+
+                this.$store.dispatch("api/events", {
+                    type: "PAGE", 
+                    news: {opened: true, hasUnread: this.isUnread()}, 
+                    page: pageFromRoute(this.$router.currentRoute.value)
+                });
 
                 localStorage.setItem("feeds", this.feeds[0].publicationDate)
                 this.hasUnread = this.isUnread();
@@ -137,4 +144,10 @@
             font-weight: bold;
         }
     }
+</style>
+
+<style style="scss">
+.news-date {
+    color: var(--bs-gray-700);
+}
 </style>

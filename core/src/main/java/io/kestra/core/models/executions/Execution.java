@@ -26,21 +26,26 @@ import io.micronaut.core.annotation.Nullable;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import lombok.Builder;
-import lombok.Value;
-import lombok.With;
+import lombok.*;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.chrono.ChronoZonedDateTime;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.CRC32;
 
-@Value
 @Builder(toBuilder = true)
 @Slf4j
+@Getter
+@FieldDefaults(makeFinal=true, level=AccessLevel. PRIVATE)
+@AllArgsConstructor
+@ToString
+@EqualsAndHashCode
 public class Execution implements DeletedInterface, TenantInterface {
     @With
     @Hidden
@@ -96,6 +101,21 @@ public class Execution implements DeletedInterface, TenantInterface {
     @With
     ExecutionMetadata metadata;
 
+    @With
+    @Nullable
+    Instant scheduleDate;
+
+    /**
+     * Factory method for constructing a new {@link Execution} object for the given {@link Flow}.
+     *
+     * @param flow   The Flow.
+     * @param labels The Flow labels.
+     * @return a new {@link Execution}.
+     */
+    public static Execution newExecution(final Flow flow, final List<Label> labels) {
+        return newExecution(flow, null, labels, Optional.empty());
+    }
+
     /**
      * Factory method for constructing a new {@link Execution} object for the given {@link Flow} and inputs.
      *
@@ -106,7 +126,8 @@ public class Execution implements DeletedInterface, TenantInterface {
      */
     public static Execution newExecution(final Flow flow,
                                          final BiFunction<Flow, Execution, Map<String, Object>> inputs,
-                                         final List<Label> labels) {
+                                         final List<Label> labels,
+                                         final Optional<ZonedDateTime> scheduleDate) {
         Execution execution = builder()
             .id(IdUtils.create())
             .tenantId(flow.getTenantId())
@@ -114,21 +135,23 @@ public class Execution implements DeletedInterface, TenantInterface {
             .flowId(flow.getId())
             .flowRevision(flow.getRevision())
             .state(new State())
+            .scheduleDate(scheduleDate.map(ChronoZonedDateTime::toInstant).orElse(null))
             .build();
-
-        if (inputs != null) {
-            execution = execution.withInputs(inputs.apply(flow, execution));
-        }
 
         List<Label> executionLabels = new ArrayList<>();
         if (flow.getLabels() != null) {
             executionLabels.addAll(flow.getLabels());
         }
+
         if (labels != null) {
             executionLabels.addAll(labels);
         }
         if (!executionLabels.isEmpty()) {
             execution = execution.withLabels(executionLabels);
+        }
+
+        if (inputs != null) {
+            execution = execution.withInputs(inputs.apply(flow, execution));
         }
 
         return execution;
@@ -172,7 +195,8 @@ public class Execution implements DeletedInterface, TenantInterface {
             this.originalId,
             this.trigger,
             this.deleted,
-            this.metadata
+            this.metadata,
+            this.scheduleDate
         );
     }
 
@@ -205,7 +229,8 @@ public class Execution implements DeletedInterface, TenantInterface {
             this.originalId,
             this.trigger,
             this.deleted,
-            this.metadata
+            this.metadata,
+            this.scheduleDate
         );
     }
 
@@ -226,7 +251,8 @@ public class Execution implements DeletedInterface, TenantInterface {
             this.originalId,
             this.trigger,
             this.deleted,
-            this.metadata
+            this.metadata,
+            this.scheduleDate
         );
     }
 
@@ -238,7 +264,7 @@ public class Execution implements DeletedInterface, TenantInterface {
         return this.taskRunList
             .stream()
             .filter(taskRun -> taskRun.getTaskId().equals(id))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public TaskRun findTaskRunByTaskRunId(String id) throws InternalException {
@@ -324,7 +350,7 @@ public class Execution implements DeletedInterface, TenantInterface {
         return tasks
             .stream()
             .filter(resolvedTask -> !resolvedTask.getTask().getDisabled())
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public List<TaskRun> findTaskRunByTasks(List<ResolvedTask> resolvedTasks, TaskRun parentTaskRun) {
@@ -339,7 +365,7 @@ public class Execution implements DeletedInterface, TenantInterface {
                 .stream()
                 .anyMatch(resolvedTask -> FlowableUtils.isTaskRunFor(resolvedTask, t, parentTaskRun))
             )
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public Optional<TaskRun> findFirstByState(State.Type state) {
@@ -568,7 +594,7 @@ public class Execution implements DeletedInterface, TenantInterface {
      * {@code RUNNING} taskRun, on the lastAttempts.
      * If no Attempt is found, we create one (must be nominal case).
      * The executor will catch the {@code FAILED} taskRun emitted and will failed the execution.
-     * In the worst case, we FAILED the execution (only from {@link io.kestra.core.models.triggers.types.Flow}).
+     * In the worst case, we FAILED the execution (only from {@link io.kestra.plugin.core.trigger.Flow}).
      *
      * @param e the exception throw from Executor
      * @return a new execution with taskrun failed if possible or execution failed is other case
@@ -652,7 +678,7 @@ public class Execution implements DeletedInterface, TenantInterface {
                             Stream.of(lastAttempt
                                 .withState(State.Type.FAILED))
                         )
-                        .collect(Collectors.toList())
+                        .toList()
                 )
                 .withState(State.Type.FAILED),
             RunContextLogger.logEntries(loggingEventFromException(e), LogEntry.of(taskRun))
@@ -759,7 +785,7 @@ public class Execution implements DeletedInterface, TenantInterface {
                 current.put("taskrun", Map.of("value", childTaskRun.getValue()));
             }
 
-            if (childTaskRun.getOutputs() != null) {
+            if (childTaskRun.getOutputs() != null && !childTaskRun.getOutputs().isEmpty()) {
                 current.put("outputs", childTaskRun.getOutputs());
             }
 
@@ -843,7 +869,7 @@ public class Execution implements DeletedInterface, TenantInterface {
         )
             .filter(t -> t.getValue() != null)
             .map(TaskRun::getValue)
-            .collect(Collectors.toList());
+            .toList();
     }
 
 

@@ -3,6 +3,7 @@ package io.kestra.jdbc.repository;
 import io.kestra.core.events.CrudEvent;
 import io.kestra.core.events.CrudEventType;
 import io.kestra.core.models.templates.Template;
+import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.ArrayListTotal;
@@ -11,7 +12,6 @@ import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.inject.qualifiers.Qualifiers;
-import jakarta.inject.Singleton;
 import org.jooq.*;
 import org.jooq.impl.DSL;
 
@@ -20,7 +20,6 @@ import java.util.Optional;
 import jakarta.annotation.Nullable;
 import jakarta.validation.ConstraintViolationException;
 
-@Singleton
 public abstract class AbstractJdbcTemplateRepository extends AbstractJdbcRepository implements TemplateRepositoryInterface {
     private final QueueInterface<Template> templateQueue;
     private final ApplicationEventPublisher<CrudEvent<Template>> eventPublisher;
@@ -97,7 +96,7 @@ public abstract class AbstractJdbcTemplateRepository extends AbstractJdbcReposit
                     .select(
                         field("value")
                     )
-                    .hint(configuration.dialect() == SQLDialect.MYSQL ? "SQL_CALC_FOUND_ROWS" : null)
+                    .hint(context.configuration().dialect().supports(SQLDialect.MYSQL) ? "SQL_CALC_FOUND_ROWS" : null)
                     .from(this.jdbcRepository.getTable())
                     .where(this.defaultFilter(tenantId));
 
@@ -124,7 +123,7 @@ public abstract class AbstractJdbcTemplateRepository extends AbstractJdbcReposit
                     .select(
                         field("value")
                     )
-                    .hint(configuration.dialect() == SQLDialect.MYSQL ? "SQL_CALC_FOUND_ROWS" : null)
+                    .hint(context.configuration().dialect().supports(SQLDialect.MYSQL) ? "SQL_CALC_FOUND_ROWS" : null)
                     .from(this.jdbcRepository.getTable())
                     .where(this.defaultFilter(tenantId));
 
@@ -160,11 +159,16 @@ public abstract class AbstractJdbcTemplateRepository extends AbstractJdbcReposit
     public Template create(Template template) throws ConstraintViolationException {
         this.jdbcRepository.persist(template);
 
-        templateQueue.emit(template);
-        eventPublisher.publishEvent(new CrudEvent<>(template, CrudEventType.CREATE));
+        try {
+            templateQueue.emit(template);
+            eventPublisher.publishEvent(new CrudEvent<>(template, CrudEventType.CREATE));
 
-        return template;
+            return template;
+        } catch (QueueException e) {
+            throw new RuntimeException(e);
+        }
     }
+
 
     public Template update(Template template, Template previous) throws ConstraintViolationException {
         this
@@ -178,10 +182,14 @@ public abstract class AbstractJdbcTemplateRepository extends AbstractJdbcReposit
 
         this.jdbcRepository.persist(template);
 
-        templateQueue.emit(template);
-        eventPublisher.publishEvent(new CrudEvent<>(template, CrudEventType.UPDATE));
+        try {
+            templateQueue.emit(template);
+            eventPublisher.publishEvent(new CrudEvent<>(template, CrudEventType.UPDATE));
 
-        return template;
+            return template;
+        } catch (QueueException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -194,8 +202,12 @@ public abstract class AbstractJdbcTemplateRepository extends AbstractJdbcReposit
 
         this.jdbcRepository.persist(deleted);
 
-        templateQueue.emit(deleted);
-        eventPublisher.publishEvent(new CrudEvent<>(deleted, CrudEventType.DELETE));
+        try {
+            templateQueue.emit(deleted);
+            eventPublisher.publishEvent(new CrudEvent<>(deleted, CrudEventType.DELETE));
+        } catch (QueueException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override

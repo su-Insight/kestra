@@ -33,8 +33,22 @@
                 :full-height="false"
                 :input="true"
                 lang="text"
+                @update:model-value="(value) => newMetadata.description = value"
             />
             <markdown v-else :source="newMetadata.description" />
+        </el-form-item>
+        <el-form-item>
+            <template #label>
+                <code>retry</code>
+            </template>
+            <editor
+                :model-value="newMetadata.retry"
+                :navbar="false"
+                :full-height="false"
+                :input="true"
+                lang="yaml"
+                @update:model-value="(value) => newMetadata.retry = value"
+            />
         </el-form-item>
         <el-form-item>
             <template #label>
@@ -73,30 +87,51 @@
         </el-form-item>
         <el-form-item>
             <template #label>
+                <code>outputs</code>
+            </template>
+            <editor
+                :model-value="newMetadata.outputs"
+                :navbar="false"
+                :full-height="false"
+                :input="true"
+                lang="yaml"
+                @update:model-value="(value) => newMetadata.outputs = value"
+            />
+        </el-form-item>
+        <el-form-item>
+            <template #label>
                 <code>variables</code>
             </template>
             <metadata-variables v-model="newMetadata.variables" :variables="newMetadata.variables" />
         </el-form-item>
+        <el-switch
+            :model-value="showConcurrency"
+            @update:model-value="updateConcurrency"
+            :active-text="$t('enable concurrency')"
+        />
         <el-form-item v-if="concurrencySchema">
             <template #label>
                 <code>concurrency</code>
+                <br>
                 <task-basic
                     :schema="concurrencySchema"
                     v-model="newMetadata.concurrency"
+                    root="concurrency"
+                    v-if="showConcurrency"
                 />
             </template>
         </el-form-item>
         <el-form-item>
             <template #label>
-                <code>taskDefaults</code>
+                <code>pluginDefaults</code>
             </template>
             <editor
-                v-if="!preview"
-                :v-model-value="newMetadata.taskDefaults"
+                :model-value="newMetadata.pluginDefaults"
                 :navbar="false"
                 :full-height="false"
                 :input="true"
                 lang="yaml"
+                @update:model-value="(value) => newMetadata.pluginDefaults = value"
             />
         </el-form-item>
         <el-form-item>
@@ -104,7 +139,7 @@
                 <code>disabled</code>
             </template>
             <div>
-                <el-switch active-color="green" v-model="newMetadata.disabled" />
+                <el-switch active-color="green" v-model="newMetadata.disabled" @change="update" />
             </div>
         </el-form-item>
     </el-form>
@@ -160,16 +195,19 @@
                     id: "",
                     namespace: "",
                     description: "",
+                    retry: "",
                     labels: [["", undefined]],
                     inputs: [],
                     variables: [["", undefined]],
                     concurrency: {},
-                    taskDefaults: [],
+                    pluginDefaults: "",
+                    outputs: "",
                     disabled: false
                 },
                 concurrencySchema: null,
                 schemas: {},
-                preview: false
+                preview: false,
+                showConcurrency: false
             };
         },
         watch: {
@@ -189,8 +227,11 @@
                 this.newMetadata.inputs = this.metadata.inputs || []
                 this.newMetadata.variables = this.metadata.variables ? Object.entries(toRaw(this.metadata.variables)) : [["", undefined]]
                 this.newMetadata.concurrency = this.metadata.concurrency || {}
-                this.newMetadata.taskDefaults = yamlUtils.stringify(this.metadata.taskDefaults) || []
+                this.newMetadata.pluginDefaults = yamlUtils.stringify(this.metadata.pluginDefaults) || ""
+                this.newMetadata.outputs = yamlUtils.stringify(this.metadata.outputs) || ""
                 this.newMetadata.disabled = this.metadata.disabled || false
+                this.newMetadata.retry = yamlUtils.stringify(this.metadata.retry) || ""
+                this.showConcurrency = !!this.metadata.concurrency
             },
             addItem() {
                 const local = this.newMetadata.labels || [];
@@ -231,23 +272,36 @@
                     return null
                 }
                 return concurrency
+            },
+            updateConcurrency(value) {
+                if (value) {
+                    this.newMetadata.concurrency = this.newMetadata.concurrency || {}
+                } else {
+                    this.newMetadata.concurrency = null
+                }
+                this.showConcurrency = value;
             }
         },
         computed: {
             ...mapState("plugin", ["inputSchema", "inputsType"]),
             cleanMetadata() {
-                const taskDefaults = yamlUtils.parse(this.newMetadata.taskDefaults);
+                const pluginDefaults = yamlUtils.parse(this.newMetadata.pluginDefaults);
+                const outputs = yamlUtils.parse(this.newMetadata.outputs);
+                const retry = yamlUtils.parse(this.newMetadata.retry);
                 const metadata = {
                     id: this.newMetadata.id,
                     namespace: this.newMetadata.namespace,
                     description: this.newMetadata.description,
+                    retry: retry,
                     labels: this.arrayToObject(this.newMetadata.labels),
                     inputs: this.newMetadata.inputs.filter(e => e.id && e.type),
                     variables: this.arrayToObject(this.newMetadata.variables),
                     concurrency: this.cleanConcurrency(this.newMetadata.concurrency),
-                    taskDefaults: taskDefaults,
+                    pluginDefaults: pluginDefaults,
+                    outputs: outputs,
                     disabled: this.newMetadata.disabled
                 }
+
                 return metadata;
             }
         }

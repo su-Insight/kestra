@@ -17,8 +17,8 @@ export default {
             dblClickRouteName: undefined,
             loadInit: true,
             ready: false,
-            internalPageSize: undefined,
-            internalPageNumber: undefined,
+            internalPageSize: 25,
+            internalPageNumber: 1,
             internalSort: undefined,
         };
     },
@@ -74,7 +74,7 @@ export default {
             let query = {...this.$route.query};
 
             for (const [key, value] of Object.entries(values)) {
-                if (value === undefined || value === "" || value === null) {
+                if (value === undefined || value === "" || value === null || value.length === 0) {
                     delete query[key]
                 } else {
                     query[key] = value;
@@ -86,6 +86,8 @@ export default {
             this.$router.push({query: query})
         },
         onPageChanged(item) {
+            if(this.internalPageSize === item.size && this.internalPageNumber === item.page) return;
+
             this.internalPageSize = item.size;
             this.internalPageNumber = item.page;
 

@@ -13,11 +13,11 @@ import javax.annotation.Nullable;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,7 +47,6 @@ public final class ScriptService {
     public static String replaceInternalStorage(
         RunContext runContext,
         @Nullable String command,
-        BiConsumer<String, String> internalStorageToLocalFileConsumer,
         boolean replaceWithRelativePath
     ) throws IOException {
         if (command == null) {
@@ -57,15 +56,13 @@ public final class ScriptService {
         return INTERNAL_STORAGE_PATTERN
             .matcher(command)
             .replaceAll(throwFunction(matchResult -> {
-                String localFile = saveOnLocalStorage(runContext, matchResult.group());
-
-                internalStorageToLocalFileConsumer.accept(matchResult.group(), localFile);
+                String localFile = saveOnLocalStorage(runContext, matchResult.group()).replace("\\", "/");
 
                 if (!replaceWithRelativePath) {
                     return localFile;
                 }
 
-                return localFile.startsWith("/") ? localFile.substring(1) : localFile;
+                return runContext.workingDir().path().relativize(Path.of(localFile)).toString();
             }));
     }
 
@@ -73,28 +70,26 @@ public final class ScriptService {
         RunContext runContext,
         Map<String, Object> additionalVars,
         String command,
-        BiConsumer<String, String> internalStorageToLocalFileConsumer,
         boolean replaceWithRelativePath
     ) throws IOException, IllegalVariableEvaluationException {
         if (command == null) {
             return null;
         }
 
-        return ScriptService.replaceInternalStorage(runContext, additionalVars, List.of(command), internalStorageToLocalFileConsumer, replaceWithRelativePath).get(0);
+        return ScriptService.replaceInternalStorage(runContext, additionalVars, List.of(command), replaceWithRelativePath).getFirst();
     }
 
     public static List<String> replaceInternalStorage(
         RunContext runContext,
         Map<String, Object> additionalVars,
         List<String> commands,
-        BiConsumer<String, String> internalStorageToLocalFileConsumer,
         boolean replaceWithRelativePath
     ) throws IOException, IllegalVariableEvaluationException {
         return commands
             .stream()
             .map(throwFunction(c -> runContext.render(c, additionalVars)))
-            .map(throwFunction(c -> ScriptService.replaceInternalStorage(runContext, c, internalStorageToLocalFileConsumer, replaceWithRelativePath)))
-            .collect(Collectors.toList());
+            .map(throwFunction(c -> ScriptService.replaceInternalStorage(runContext, c, replaceWithRelativePath)))
+            .toList();
 
     }
 
@@ -102,14 +97,15 @@ public final class ScriptService {
         RunContext runContext,
         List<String> commands
     ) throws IOException, IllegalVariableEvaluationException {
-        return ScriptService.replaceInternalStorage(runContext, Collections.emptyMap(), commands, (ignored, file) -> {}, false);
+        return ScriptService.replaceInternalStorage(runContext, Collections.emptyMap(), commands, false);
     }
 
     private static String saveOnLocalStorage(RunContext runContext, String uri) throws IOException {
-        try(InputStream inputStream = runContext.storage().getFile(URI.create(uri))) {
-            Path path = runContext.tempFile();
+        Path path = runContext.workingDir().createTempFile();
 
-            IOUtils.copyLarge(inputStream, new FileOutputStream(path.toFile()));
+        try (InputStream inputStream = runContext.storage().getFile(URI.create(uri));
+            OutputStream outputStream = new FileOutputStream(path.toFile())) {
+            IOUtils.copyLarge(inputStream, outputStream);
 
             return path.toString();
         }
@@ -136,11 +132,20 @@ public final class ScriptService {
         return uploaded;
     }
 
+
     public static List<String> scriptCommands(List<String> interpreter, List<String> beforeCommands, String command) {
-        return scriptCommands(interpreter, beforeCommands, List.of(command));
+        return scriptCommands(interpreter, beforeCommands, List.of(command), TargetOS.LINUX);
     }
 
     public static List<String> scriptCommands(List<String> interpreter, List<String> beforeCommands, List<String> commands) {
+        return scriptCommands(interpreter, beforeCommands, commands, TargetOS.LINUX);
+    }
+
+    public static List<String> scriptCommands(List<String> interpreter, List<String> beforeCommands, String command, TargetOS targetOS) {
+        return scriptCommands(interpreter, beforeCommands, List.of(command), targetOS);
+    }
+
+    public static List<String> scriptCommands(List<String> interpreter, List<String> beforeCommands, List<String> commands, TargetOS targetOS) {
         ArrayList<String> commandsArgs = new ArrayList<>(interpreter);
         commandsArgs.add(
             Stream
@@ -148,7 +153,7 @@ public final class ScriptService {
                     ListUtils.emptyOnNull(beforeCommands).stream(),
                     commands.stream()
                 )
-                .collect(Collectors.joining(System.lineSeparator()))
+                .collect(Collectors.joining(targetOS.lineSeparator))
         );
 
         return commandsArgs;
@@ -167,6 +172,7 @@ public final class ScriptService {
      * If a prefix is set, label names will be generated as 'prefix/name'.
      * If normalizeValue is true, label values will normalize it based on the DNS Subdomain Names (RFC 1123) with a limit of 63 characters as used by Kubernetes.
      */
+    @SuppressWarnings("unchecked")
     public static Map<String, String> labels(RunContext runContext, String prefix, boolean normalizeValue, boolean lowerCase) {
         Map<String, String> flow = (Map<String, String>) runContext.getVariables().get("flow");
         Map<String, String> task = (Map<String, String>) runContext.getVariables().get("task");
@@ -218,6 +224,7 @@ public final class ScriptService {
      * Create a job name like {namespace}-{flowId}-{taskId}-{random} with random being 5 alphanumerical characters.
      * The Job name will be normalized based on the DNS Subdomain Names (RFC 1123) with a limit of 63 characters as used by Kubernetes
      */
+    @SuppressWarnings("unchecked")
     public static String jobName(RunContext runContext) {
         Map<String, String> flow = (Map<String, String>) runContext.getVariables().get("flow");
         Map<String, String> task = (Map<String, String>) runContext.getVariables().get("task");
@@ -234,7 +241,7 @@ public final class ScriptService {
         }
 
         // we add a suffix of 5 chars, this should be enough as it's the standard k8s way
-        String suffix = RandomStringUtils.randomAlphanumeric(5).toLowerCase();
+        String suffix = RandomStringUtils.secure().nextAlphanumeric(5).toLowerCase();
         return normalized + "-" + suffix;
     }
 }

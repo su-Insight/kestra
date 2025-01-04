@@ -5,18 +5,19 @@ import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.executions.statistics.LogStatistics;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.data.model.Pageable;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import org.slf4j.event.Level;
 
 import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@MicronautTest(transactional = false)
+@KestraTest
 public abstract class AbstractLogRepositoryTest {
     @Inject
     protected LogRepositoryInterface logRepository;
@@ -39,49 +40,49 @@ public abstract class AbstractLogRepositoryTest {
     void all() {
         LogEntry.LogEntryBuilder builder = logEntry(Level.INFO);
 
-        ArrayListTotal<LogEntry> find = logRepository.find(Pageable.UNPAGED, null, null, null, null, null, null, null);
+        ArrayListTotal<LogEntry> find = logRepository.find(Pageable.UNPAGED, null, null, null, null, null, null, null, null);
         assertThat(find.size(), is(0));
 
         LogEntry save = logRepository.save(builder.build());
 
-        find = logRepository.find(Pageable.UNPAGED, "doe", null, null, null, null, null, null);
+        find = logRepository.find(Pageable.UNPAGED, "doe", null, null, null, null, null, null, null);
         assertThat(find.size(), is(1));
-        assertThat(find.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(find.getFirst().getExecutionId(), is(save.getExecutionId()));
 
-        find = logRepository.find(Pageable.UNPAGED,  "doe", null, null, null, Level.WARN,null,  null);
+        find = logRepository.find(Pageable.UNPAGED,  "doe", null, null, null, null, Level.WARN,null,  null);
         assertThat(find.size(), is(0));
 
-        find = logRepository.find(Pageable.UNPAGED, null, null, null, null, null, null, null);
+        find = logRepository.find(Pageable.UNPAGED, null, null, null, null, null, null, null, null);
         assertThat(find.size(), is(1));
-        assertThat(find.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(find.getFirst().getExecutionId(), is(save.getExecutionId()));
 
-        logRepository.find(Pageable.UNPAGED, "kestra-io/kestra", null, null, null, null, null, null);
+        logRepository.find(Pageable.UNPAGED, "kestra-io/kestra", null, null, null, null, null, null, null);
         assertThat(find.size(), is(1));
-        assertThat(find.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(find.getFirst().getExecutionId(), is(save.getExecutionId()));
 
         List<LogEntry> list = logRepository.findByExecutionId(null, save.getExecutionId(), null);
         assertThat(list.size(), is(1));
-        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(list.getFirst().getExecutionId(), is(save.getExecutionId()));
 
         list = logRepository.findByExecutionId(null, "io.kestra.unittest", "flowId", save.getExecutionId(), null);
         assertThat(list.size(), is(1));
-        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(list.getFirst().getExecutionId(), is(save.getExecutionId()));
 
         list = logRepository.findByExecutionIdAndTaskId(null, save.getExecutionId(), save.getTaskId(), null);
         assertThat(list.size(), is(1));
-        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(list.getFirst().getExecutionId(), is(save.getExecutionId()));
 
         list = logRepository.findByExecutionIdAndTaskId(null, "io.kestra.unittest", "flowId", save.getExecutionId(), save.getTaskId(), null);
         assertThat(list.size(), is(1));
-        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(list.getFirst().getExecutionId(), is(save.getExecutionId()));
 
         list = logRepository.findByExecutionIdAndTaskRunId(null, save.getExecutionId(), save.getTaskRunId(), null);
         assertThat(list.size(), is(1));
-        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(list.getFirst().getExecutionId(), is(save.getExecutionId()));
 
         list = logRepository.findByExecutionIdAndTaskRunIdAndAttempt(null, save.getExecutionId(), save.getTaskRunId(), null, 0);
         assertThat(list.size(), is(1));
-        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+        assertThat(list.getFirst().getExecutionId(), is(save.getExecutionId()));
 
         Integer countDeleted = logRepository.purge(Execution.builder().id(save.getExecutionId()).build());
         assertThat(countDeleted, is(1));
@@ -141,9 +142,34 @@ public abstract class AbstractLogRepositoryTest {
         LogEntry log1 = logEntry(Level.INFO).build();
         logRepository.save(log1);
 
-        logRepository.deleteByQuery(null, log1.getExecutionId(), null, null, null, null);
+        logRepository.deleteByQuery(null, log1.getExecutionId(), null, (String) null, null, null);
 
         ArrayListTotal<LogEntry> find = logRepository.findByExecutionId(null, log1.getExecutionId(), null, Pageable.from(1, 50));
+        assertThat(find.size(), is(0));
+
+        logRepository.save(log1);
+
+        logRepository.deleteByQuery(null, "io.kestra.unittest", "flowId", List.of(Level.TRACE, Level.DEBUG, Level.INFO), null, ZonedDateTime.now().plusMinutes(1));
+
+        find = logRepository.findByExecutionId(null, log1.getExecutionId(), null, Pageable.from(1, 50));
+        assertThat(find.size(), is(0));
+    }
+
+    @Test
+    void deleteByQuery() {
+        LogEntry log1 = logEntry(Level.INFO).build();
+        logRepository.save(log1);
+
+        logRepository.deleteByQuery(null, log1.getExecutionId(), null, (String) null, null, null);
+
+        ArrayListTotal<LogEntry> find = logRepository.findByExecutionId(null, log1.getExecutionId(), null, Pageable.from(1, 50));
+        assertThat(find.size(), is(0));
+
+        logRepository.save(log1);
+
+        logRepository.deleteByQuery(null, "io.kestra.unittest", "flowId", null);
+
+        find = logRepository.findByExecutionId(null, log1.getExecutionId(), null, Pageable.from(1, 50));
         assertThat(find.size(), is(0));
     }
 

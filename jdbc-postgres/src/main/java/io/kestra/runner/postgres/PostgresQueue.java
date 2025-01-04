@@ -1,10 +1,13 @@
 package io.kestra.runner.postgres;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import io.kestra.core.exceptions.DeserializationException;
+import io.kestra.core.queues.QueueException;
+import io.kestra.core.utils.Either;
 import io.kestra.jdbc.repository.AbstractJdbcRepository;
 import io.kestra.jdbc.runner.JdbcQueue;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.core.annotation.NonNull;
-import lombok.SneakyThrows;
 import org.jooq.*;
 import org.jooq.Record;
 import org.jooq.impl.DSL;
@@ -27,8 +30,7 @@ public class PostgresQueue<T> extends JdbcQueue<T> {
     }
 
     @Override
-    @SneakyThrows
-    protected Map<Field<Object>, Object> produceFields(String consumerGroup, String key, T message) {
+    protected Map<Field<Object>, Object> produceFields(String consumerGroup, String key, T message) throws QueueException {
         Map<Field<Object>, Object> map = super.produceFields(consumerGroup, key, message);
 
         map.put(
@@ -40,7 +42,7 @@ public class PostgresQueue<T> extends JdbcQueue<T> {
     }
 
     @Override
-    protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, @NonNull Integer offset) {
+    protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, @NonNull Integer offset, boolean forUpdate) {
         var select = ctx.select(
                 AbstractJdbcRepository.field("value"),
                 AbstractJdbcRepository.field("offset")
@@ -58,17 +60,22 @@ public class PostgresQueue<T> extends JdbcQueue<T> {
             select = select.and(AbstractJdbcRepository.field("consumer_group").isNull());
         }
 
-        return select
+        var limitSelect = select
             .orderBy(AbstractJdbcRepository.field("offset").asc())
-            .limit(configuration.getPollSize())
-            .forUpdate()
-            .skipLocked()
+            .limit(configuration.getPollSize());
+        ResultQuery<Record2<Object, Object>> configuredSelect = limitSelect;
+
+        if (forUpdate) {
+            configuredSelect = limitSelect.forUpdate().skipLocked();
+        }
+
+        return configuredSelect
             .fetchMany()
-            .get(0);
+            .getFirst();
     }
 
     @Override
-    protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, String queueType) {
+    protected Result<Record> receiveFetch(DSLContext ctx, String consumerGroup, String queueType, boolean forUpdate) {
         if (disableSeqScan) {
             ctx.setLocal(name("enable_seqscan"), val("off")).execute();
         }
@@ -87,12 +94,18 @@ public class PostgresQueue<T> extends JdbcQueue<T> {
             select = select.and(AbstractJdbcRepository.field("consumer_group").isNull());
         }
 
-        return select.orderBy(AbstractJdbcRepository.field("offset").asc())
-            .limit(configuration.getPollSize())
-            .forUpdate()
-            .skipLocked()
+        var limitSelect = select
+            .orderBy(AbstractJdbcRepository.field("offset").asc())
+            .limit(configuration.getPollSize());
+        ResultQuery<Record2<Object, Object>> configuredSelect = limitSelect;
+
+        if (forUpdate) {
+            configuredSelect = limitSelect.forUpdate().skipLocked();
+        }
+
+        return configuredSelect
             .fetchMany()
-            .get(0);
+            .getFirst();
     }
 
     @SuppressWarnings("RedundantCast")
@@ -112,5 +125,17 @@ public class PostgresQueue<T> extends JdbcQueue<T> {
         }
 
         update.execute();
+    }
+
+    @Override
+    protected List<Either<T, DeserializationException>> map(Result<Record> fetch) {
+        return fetch
+            .map(record -> {
+                try {
+                    return Either.left(MAPPER.readValue(record.get("value", JSONB.class).data(), cls));
+                } catch (JsonProcessingException e) {
+                    return Either.right(new DeserializationException(e, record.get("value", String.class)));
+                }
+            });
     }
 }

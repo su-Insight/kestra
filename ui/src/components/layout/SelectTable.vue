@@ -1,3 +1,16 @@
+<template>
+    <div data-component="FILENAME_PLACEHOLDER" class="position-relative">
+        <div v-if="hasSelection" class="bulk-select-header">
+            <slot name="select-actions" />
+        </div>
+        <el-table ref="table" v-bind="$attrs" :data="data" @selection-change="selectionChanged">
+            <slot name="expand" v-if="expandable" />
+            <el-table-column type="selection" v-if="selectable" />
+            <slot name="default" />
+        </el-table>
+    </div>
+</template>
+
 <script>
     export default {
         data() {
@@ -21,6 +34,10 @@
                 type: Boolean,
                 default: true
             },
+            expandable: {
+                type: Boolean,
+                default: false
+            },
             data: {
                 type: Array,
                 default: () => []
@@ -40,18 +57,6 @@
         }
     }
 </script>
-
-<template>
-    <div class="position-relative">
-        <div v-if="hasSelection" class="bulk-select-header">
-            <slot name="select-actions" />
-        </div>
-        <el-table ref="table" v-bind="$attrs" :data="data" @selection-change="selectionChanged">
-            <el-table-column type="selection" v-if="selectable" />
-            <slot name="default" />
-        </el-table>
-    </div>
-</template>
 
 <style scoped lang="scss">
     .bulk-select-header {

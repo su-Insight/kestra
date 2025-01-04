@@ -1,55 +1,31 @@
-import _mapValues from "lodash/mapValues";
-import {cssVariable} from "./global";
+import {cssVariable} from "@kestra-io/ui-libs/src/utils/global";
 
-const LEVELS = Object.freeze({
-    ERROR: {
-        name: "ERROR",
-        colorClass: "red",
-    },
-    WARN: {
-        name: "WARN",
-        colorClass: "orange",
-    },
-    INFO: {
-        name: "INFO",
-        colorClass: "cyan",
-    },
-    DEBUG: {
-        name: "DEBUG",
-        colorClass: "purple",
-    },
-    TRACE: {
-        name: "TRACE",
-        colorClass: "gray",
-    },
-});
+const LEVELS = [
+    "ERROR",
+    "WARN",
+    "INFO",
+    "DEBUG",
+    "TRACE"
+];
 
 export default class Logs {
-    static get ERROR() {
-        return LEVELS.ERROR.name;
-    }
-
-    static get WARN() {
-        return LEVELS.WARN.name;
-    }
-
-    static get INFO() {
-        return LEVELS.INFO.name;
-    }
-
-    static get DEBUG() {
-        return LEVELS.DEBUG.name;
-    }
-
-    static get TRACE() {
-        return LEVELS.TRACE.name;
-    }
-
     static color() {
-        return _mapValues(LEVELS, level => cssVariable("--bs-" + level.colorClass));
+        return Object.fromEntries(LEVELS.map(level => [level, cssVariable("--log-chart-" + level.toLowerCase())]));
     }
 
-    static backgroundFromLevel(level, alpha = 1) {
+    static graphColors(state) {
+        const COLORS = {
+            ERROR: "#AB0009",
+            WARN: "#DD5F00",
+            INFO: "#029E73",
+            DEBUG: "#1761FD",
+            TRACE: "#8405FF",
+        };
+
+        return COLORS[state];
+    }
+
+    static chartColorFromLevel(level, alpha = 1) {
         const hex = Logs.color()[level];
         if (!hex) {
             return null;
@@ -60,11 +36,9 @@ export default class Logs {
     }
 
     static sort(value) {
-        const SORT_FIELDS = Object.keys(LEVELS)
-
         return Object.keys(value)
             .sort((a, b) => {
-                return Logs.index(SORT_FIELDS, a) - Logs.index(SORT_FIELDS, b);
+                return Logs.index(LEVELS, a) - Logs.index(LEVELS, b);
             })
             .reduce(
                 (obj, key) => {
@@ -79,5 +53,16 @@ export default class Logs {
         const index = based.indexOf(value);
 
         return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+    }
+
+    static levelOrLower(level) {
+        const levels = [];
+        for (const currentLevel of LEVELS) {
+            levels.push(currentLevel);
+            if (currentLevel === level) {
+                break;
+            }
+        }
+        return levels.reverse();
     }
 }

@@ -9,6 +9,7 @@
                     </el-form-item>
                     <el-form-item>
                         <namespace-select
+                            data-test-id="logs-namespace-selector"
                             data-type="flow"
                             v-if="$route.name !== 'flows/update'"
                             :value="$route.query.namespace"
@@ -17,15 +18,15 @@
                     </el-form-item>
                     <el-form-item>
                         <log-level-selector
+                            data-test-id="logs-log-level-selector"
                             :value="selectedLogLevel"
                             @update:model-value="onDataTableValue('level', $event)"
                         />
                     </el-form-item>
                     <el-form-item>
-                        <date-range
-                            :start-date="startDate"
-                            :end-date="endDate"
-                            @update:model-value="onDataTableValue($event)"
+                        <date-filter
+                            @update:is-relative="onDateFilterTypeChange"
+                            @update:filter-value="onDataTableValue"
                         />
                     </el-form-item>
                     <el-form-item>
@@ -36,7 +37,7 @@
                     </el-form-item>
                 </template>
 
-                <template #top>
+                <template v-if="charts" #top>
                     <el-card shadow="never" class="mb-3" v-loading="!statsReady">
                         <div class="state-global-charts">
                             <template v-if="hasStatsData">
@@ -89,7 +90,7 @@
     import DataTableActions from "../../mixins/dataTableActions";
     import NamespaceSelect from "../namespace/NamespaceSelect.vue";
     import SearchField from "../layout/SearchField.vue";
-    import DateRange from "../layout/DateRange.vue";
+    import DateFilter from "../executions/date-select/DateFilter.vue";
     import LogLevelSelector from "./LogLevelSelector.vue";
     import DataTable from "../../components/layout/DataTable.vue";
     import RefreshButton from "../../components/layout/RefreshButton.vue";
@@ -97,26 +98,44 @@
     import LogChart from "../stats/LogChart.vue";
     import Filters from "../saved-filters/Filters.vue";
     import {storageKeys} from "../../utils/constants";
+    
 
     export default {
         mixins: [RouteContext, RestoreUrl, DataTableActions],
         components: {
             Filters,
-            DataTable, LogLine, NamespaceSelect, DateRange, SearchField, LogLevelSelector, RefreshButton, TopNavBar, LogChart},
+            DataTable, LogLine, NamespaceSelect, DateFilter, SearchField, LogLevelSelector, RefreshButton, TopNavBar, LogChart},
         props: {
             logLevel: {
                 type: String,
                 default: undefined
-            }
+            },
+            embed: {
+                type: Boolean,
+                default: false
+            },
+            charts: {
+                type: Boolean,
+                default: true
+            },
+            filters: {
+                type: Object,
+                default: null
+            },
+            purgeFilters: {
+                type: Boolean,
+                default: false
+            },
         },
         data() {
             return {
                 isDefaultNamespaceAllow: true,
                 task: undefined,
                 isLoading: false,
-                recomputeInterval: false,
+                refreshDates: false,
                 statsReady: false,
-                statsData: []
+                statsData: [],
+                canAutoRefresh: false
             };
         },
         computed: {
@@ -133,25 +152,35 @@
             isFlowEdit() {
                 return this.$route.name === "flows/update"
             },
+            isNamespaceEdit() {
+                return this.$route.name === "namespaces/update"
+            },
             selectedLogLevel() {
                 return this.logLevel || this.$route.query.level || localStorage.getItem("defaultLogLevel") || "INFO";
             },
             endDate() {
-                // used to be able to force refresh the base interval when auto-reloading
-                this.recomputeInterval;
-                return this.$route.query.endDate ? this.$route.query.endDate : undefined;
+                if (this.$route.query.endDate) {
+                    return this.$route.query.endDate;
+                }
+                return undefined;
+            },
+            startDate() {
+                this.refreshDates;
+                if (this.$route.query.startDate) {
+                    return this.$route.query.startDate;
+                }
+                if (this.$route.query.timeRange) {
+                    return this.$moment().subtract(this.$moment.duration(this.$route.query.timeRange).as("milliseconds")).toISOString(true);
+                }
+
+                // the default is PT30D
+                return this.$moment().subtract(7, "days").toISOString(true);
             },
             namespace() {
-                return this.$route.params.namespace;
+                return this.$route.params.namespace ?? this.$route.params.id;
             },
             flowId() {
                 return this.$route.params.id;
-            },
-            startDate() {
-                // used to be able to force refresh the base interval when auto-reloading
-                this.recomputeInterval;
-                return this.$route.query.startDate ? this.$route.query.startDate : this.$moment(this.endDate)
-                    .add(-7, "days").toISOString(true);
             },
             countStats() {
                 return [...this.logDaily || []].reduce((a, b) => {
@@ -163,16 +192,23 @@
             },
         },
         methods: {
+            onDateFilterTypeChange(event) {
+                this.canAutoRefresh = event;
+            },
             refresh() {
-                this.recomputeInterval = !this.recomputeInterval;
+                this.refreshDates = !this.refreshDates;
                 this.load();
             },
             loadQuery(base) {
-                let queryFilter = this.queryWithFilter();
+                // eslint-disable-next-line no-unused-vars
+                const {triggerId, ...rest} = this.filters || {};
+                let queryFilter = this.filters ? (this.purgeFilters ? rest : this.filters) : this.queryWithFilter();
 
                 if (this.isFlowEdit) {
                     queryFilter["namespace"] = this.namespace;
                     queryFilter["flowId"] = this.flowId;
+                } else if (this.isNamespaceEdit) {
+                    queryFilter["namespace"] = this.namespace;
                 }
 
                 if (!queryFilter["startDate"] || !queryFilter["endDate"]) {
@@ -186,11 +222,19 @@
             },
             load() {
                 this.isLoading = true
+
+                // eslint-disable-next-line no-unused-vars
+                const {triggerId, ...rest} = this.filters || {};
+                const data = {
+                    page: this.filters ? this.internalPageNumber : this.$route.query.page || this.internalPageNumber,
+                    size: this.filters ? this.internalPageSize : this.$route.query.size || this.internalPageSize,
+                    ...(this.purgeFilters ? rest : this.filters)
+                };
+
                 this.$store
                     .dispatch("log/findLogs", this.loadQuery({
-                        page: this.$route.query.page || this.internalPageNumber,
-                        size: this.$route.query.size || this.internalPageSize,
-                        minLevel: this.selectedLogLevel,
+                        ...data,
+                        minLevel: this.filters ? null : this.selectedLogLevel,
                         sort: "timestamp:desc"
                     }))
                     .finally(() => {
@@ -230,6 +274,7 @@
             border-radius: var(--bs-border-radius-lg);
             overflow: hidden;
             padding: $spacer;
+            padding-top: calc($spacer/2);
             background-color: var(--bs-white);
             border: 1px solid var(--bs-border-color);
 
@@ -237,7 +282,7 @@
                 background-color: var(--bs-gray-100);
             }
 
-            * + * {
+            > * + * {
                 border-top: 1px solid var(--bs-border-color);
             }
         }

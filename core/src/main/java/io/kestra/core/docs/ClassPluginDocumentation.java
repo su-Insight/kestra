@@ -12,8 +12,10 @@ import java.util.stream.Collectors;
 public class ClassPluginDocumentation<T> extends AbstractClassDocumentation<T> {
     private String icon;
     private String group;
+    protected String docLicense;
     private String pluginTitle;
     private String subGroup;
+    private String replacement;
     private List<MetricDoc> docMetrics;
     private Map<String, Object> outputs = new TreeMap<>();
     private Map<String, Object> outputsSchema;
@@ -25,14 +27,18 @@ public class ClassPluginDocumentation<T> extends AbstractClassDocumentation<T> {
         // plugins metadata
         this.cls = alias == null ? cls.getName() : alias;
         this.group = plugin.group();
+        this.docLicense = plugin.license();
         this.pluginTitle = plugin.title();
         this.icon = plugin.icon(cls);
+        if (alias != null) {
+            replacement = cls.getName();
+        }
 
         if (this.group != null && cls.getPackageName().startsWith(this.group) && cls.getPackageName().length() > this.group.length() && cls.getPackageName().charAt(this.group.length()) == '.') {
             this.subGroup = cls.getPackageName().substring(this.group.length() + 1);
         }
 
-        this.shortName = cls.getSimpleName();
+        this.shortName = alias == null ? cls.getSimpleName() : alias.substring(alias.lastIndexOf('.') + 1);
 
         // outputs
         this.outputsSchema = jsonSchemaGenerator.outputs(baseCls, cls);
@@ -58,7 +64,7 @@ public class ClassPluginDocumentation<T> extends AbstractClassDocumentation<T> {
                     (String) r.get("unit"),
                     (String) r.get("description")
                 ))
-                .collect(Collectors.toList());
+                .toList();
         }
 
         if (alias != null) {

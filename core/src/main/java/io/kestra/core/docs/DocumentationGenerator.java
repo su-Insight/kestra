@@ -27,7 +27,6 @@ import lombok.Getter;
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
-import java.io.StringWriter;
 import java.io.Writer;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -53,7 +52,7 @@ public class DocumentationGenerator {
                 @Override
                 public Map<String, Filter> getFilters() {
                     Map<String, Filter> filters = new HashMap<>();
-                    filters.put("json", new JsonFilter());
+                    filters.put("json", new ToJsonFilter());
                     return filters;
                 }
             })
@@ -91,6 +90,10 @@ public class DocumentationGenerator {
 
         if (plugin.description() != null) {
             builder.put("description", plugin.description());
+        }
+
+        if (plugin.license() != null) {
+            builder.put("docLicense", plugin.license());
         }
 
         if (plugin.longDescription() != null) {
@@ -202,7 +205,7 @@ public class DocumentationGenerator {
                 e.getValue(),
                 null
             )))
-            .collect(Collectors.toList());
+            .toList();
     }
 
 
@@ -221,7 +224,7 @@ public class DocumentationGenerator {
                     throw new RuntimeException(e);
                 }
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static String docPath(RegisteredPlugin registeredPlugin) {
@@ -254,7 +257,7 @@ public class DocumentationGenerator {
 
         PebbleTemplate compiledTemplate = pebbleEngine.getLiteralTemplate(pebbleTemplate);
 
-        Writer writer = new JsonWriter(new StringWriter());
+        Writer writer = new JsonWriter();
         compiledTemplate.evaluate(writer, vars);
         String renderer = writer.toString();
 

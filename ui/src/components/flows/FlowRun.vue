@@ -6,7 +6,8 @@
         </el-alert>
 
         <el-form label-position="top" :model="inputs" ref="form" @submit.prevent="false">
-            <inputs-form :inputs-list="flow.inputs" v-model="inputs" />
+            <inputs-form :initial-inputs="flow.inputs" :flow="flow" v-model="inputs" :execute-clicked="executeClicked" @confirm="onSubmit($refs.form)" />
+
             <el-collapse class="mt-4" v-model="collapseName">
                 <el-collapse-item :title="$t('advanced configuration')" name="advanced">
                     <el-form-item
@@ -17,6 +18,17 @@
                             v-model:labels="executionLabels"
                         />
                     </el-form-item>
+                    <el-form-item
+                        :label="$t('scheduleDate')"
+                    >
+                        <el-date-picker
+                            v-model="scheduleDate"
+                            type="datetime"
+                        />
+                    </el-form-item>
+                </el-collapse-item>
+                <el-collapse-item :title="$t('curl.command')" name="curl">
+                    <curl :flow="flow" :execution-labels="executionLabels" :inputs="inputs" />
                 </el-collapse-item>
             </el-collapse>
 
@@ -30,7 +42,16 @@
                 </div>
                 <div class="right-align">
                     <el-form-item class="submit">
-                        <el-button :icon="Flash" class="flow-run-trigger-button" @click="onSubmit($refs.form)" type="primary" native-type="submit" :disabled="flow.disabled || haveBadLabels">
+                        <el-button
+                            data-test-id="execute-dialog-button"
+                            :icon="Flash"
+                            class="flow-run-trigger-button"
+                            :class="{'onboarding-glow': guidedProperties.tourStarted}"
+                            @click="onSubmit($refs.form); executeClicked = true;"
+                            type="primary"
+                            native-type="submit"
+                            :disabled="!flowCanBeExecuted"
+                        >
                             {{ $t('launch execution') }}
                         </el-button>
                         <el-text v-if="haveBadLabels" type="danger" size="small">
@@ -53,12 +74,14 @@
     import {executeTask} from "../../utils/submitTask"
     import InputsForm from "../../components/inputs/InputsForm.vue";
     import LabelInput from "../../components/labels/LabelInput.vue";
-    import {pageFromRoute} from "../../utils/eventsRouter";
+    import Curl from "./Curl.vue";
     import {executeFlowBehaviours, storageKeys} from "../../utils/constants";
     import Inputs from "../../utils/inputs";
+    import {TIMEZONE_STORAGE_KEY} from "../settings/BasicSettings.vue";
+    import moment from "moment-timezone";
 
     export default {
-        components: {LabelInput, InputsForm},
+        components: {LabelInput, InputsForm, Curl},
         props: {
             redirect: {
                 type: Boolean,
@@ -74,18 +97,23 @@
                 inputs: {},
                 inputNewLabel: "",
                 executionLabels: [],
+                scheduleDate: undefined,
                 inputVisible: false,
                 collapseName: undefined,
-                newTab: localStorage.getItem(storageKeys.EXECUTE_FLOW_BEHAVIOUR) === executeFlowBehaviours.NEW_TAB
+                newTab: localStorage.getItem(storageKeys.EXECUTE_FLOW_BEHAVIOUR) === executeFlowBehaviours.NEW_TAB,
+                executeClicked: false,
             };
         },
         emits: ["executionTrigger", "updateInputs", "updateLabels"],
         computed: {
-            ...mapState("core", ["guidedProperties"]),
             ...mapState("execution", ["flow", "execution"]),
+            ...mapState("core", ["guidedProperties"]),
             haveBadLabels() {
                 return this.executionLabels.some(label => (label.key && !label.value) || (!label.key && label.value));
             },
+            flowCanBeExecuted() {
+                return this.flow && !this.flow.disabled && !this.haveBadLabels;
+            }
         },
         methods: {
             getExecutionLabels() {
@@ -115,66 +143,41 @@
                     .filter(input => nonEmptyInputNames.includes(input.id))
                     .forEach(input => {
                         let value = this.execution.inputs[input.id];
-                        this.inputs[input.id] =  Inputs.normalize(input.type, value);
+                        this.inputs[input.id] = Inputs.normalize(input.type, value);
                     });
             },
-            onSubmit(formRef) {
-                if (this.$tours["guidedTour"].isRunning.value) {
-                    this.finishTour();
+            purgeInputs(inputs){
+                for (let input in inputs) {
+                    if (inputs[input] === undefined || inputs[input] === "") {
+                        delete inputs[input];
+                    }
                 }
-                if (formRef) {
+                return inputs;
+            },
+            onSubmit(formRef) {
+                if (formRef && this.flowCanBeExecuted) {
                     formRef.validate((valid) => {
                         if (!valid) {
                             return false;
                         }
 
-                        executeTask(this, this.flow, this.inputs, {
+                        const inputs = this.purgeInputs(this.inputs)
+
+                        executeTask(this, this.flow, inputs, {
                             redirect: this.redirect,
                             newTab: this.newTab,
                             id: this.flow.id,
                             namespace: this.flow.namespace,
                             labels: this.executionLabels
                                 .filter(label => label.key && label.value)
-                                .map(label => `${label.key}:${label.value}`)
+                                .map(label => `${label.key}:${label.value}`),
+                            scheduleDate: this.$moment(this.scheduleDate).tz(localStorage.getItem(TIMEZONE_STORAGE_KEY) ?? moment.tz.guess()).toISOString(true),
+                            nextStep: true
                         })
                         this.$emit("executionTrigger");
                     });
                 }
             },
-            finishTour() {
-                this.$store.dispatch("api/events", {
-                    type: "ONBOARDING",
-                    onboarding: {
-                        step: this.$tours["guidedTour"].currentStep._value,
-                        action: "execute",
-                    },
-                    page: pageFromRoute(this.$router.currentRoute.value)
-                });
-
-                this.$store.dispatch("api/events", {
-                    type: "ONBOARDING",
-                    onboarding: {
-                        step: this.$tours["guidedTour"].currentStep._value,
-                        action: "finish",
-                    },
-                    page: pageFromRoute(this.$router.currentRoute.value)
-                });
-
-                localStorage.setItem("tourDoneOrSkip", "true");
-
-                this.$store.commit("core/setGuidedProperties", {
-                    tourStarted: false,
-                    flowSource: undefined,
-                    saveFlow: false,
-                    executeFlow: false,
-                    validateInputs: false,
-                    monacoRange: undefined,
-                    monacoDisableRange: undefined
-                });
-
-                return this.$tours["guidedTour"].finish();
-            },
-
             state(input) {
                 const required = input.required === undefined ? true : input.required;
 
@@ -201,14 +204,6 @@
                     this.$emit("updateLabels", this.executionLabels);
                 },
                 deep: true
-            },
-            guidedProperties: {
-                handler() {
-                    if (this.guidedProperties.validateInputs) {
-                        this.onSubmit(this.$refs.form);
-                    }
-                },
-                deep: true
             }
         }
     };
@@ -221,6 +216,19 @@
             border: 0;
             font-size: var(--el-font-size-extra-small);
             background: transparent;
+        }
+    }
+
+    .onboarding-glow {
+        animation: glowAnimation 1s infinite alternate;
+    }
+
+    @keyframes glowAnimation {
+        0% {
+            box-shadow: 0px 0px 0px 0px #8405FF;
+        }
+        100% {
+            box-shadow: 0px 0px 50px 2px #8405FF;
         }
     }
 </style>

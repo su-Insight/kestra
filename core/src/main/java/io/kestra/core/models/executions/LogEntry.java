@@ -61,15 +61,14 @@ public class LogEntry implements DeletedInterface, TenantInterface {
     @Builder.Default
     boolean deleted = false;
 
-    public static List<String> findLevelsByMin(Level minLevel) {
+    public static List<Level> findLevelsByMin(Level minLevel) {
         if (minLevel == null) {
-            return Arrays.stream(Level.values()).map(Enum::name).collect(Collectors.toList());
+            return Arrays.asList(Level.values());
         }
 
         return Arrays.stream(Level.values())
             .filter(level -> level.toInt() >= minLevel.toInt())
-            .map(Enum::name)
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static LogEntry of(Execution execution) {

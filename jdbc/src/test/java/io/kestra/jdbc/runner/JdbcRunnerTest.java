@@ -1,36 +1,39 @@
 package io.kestra.jdbc.runner;
 
-import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.queues.MessageTooBigException;
 import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.LocalFlowRepositoryLoader;
 import io.kestra.core.runners.*;
-import io.kestra.core.tasks.flows.*;
 import io.kestra.core.utils.TestsUtils;
 import io.kestra.jdbc.JdbcTestUtils;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.plugin.core.flow.*;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junitpioneer.jupiter.RetryingTest;
+import org.slf4j.event.Level;
+import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.time.Duration;
-import java.util.Objects;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@MicronautTest(transactional = false)
+@KestraTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // must be per-class to allow calling once init() which took a lot of time
 public abstract class JdbcRunnerTest {
     @Inject
@@ -59,7 +62,7 @@ public abstract class JdbcRunnerTest {
     private MultipleConditionTriggerCaseTest multipleConditionTriggerCaseTest;
 
     @Inject
-    private TaskDefaultsCaseTest taskDefaultsCaseTest;
+    private PluginDefaultsCaseTest pluginDefaultsCaseTest;
 
     @Inject
     private FlowCaseTest flowCaseTest;
@@ -77,7 +80,16 @@ public abstract class JdbcRunnerTest {
     private ForEachItemCaseTest forEachItemCaseTest;
 
     @Inject
+    private WaitForCaseTest waitForTestCaseTest;
+
+    @Inject
     private FlowConcurrencyCaseTest flowConcurrencyCaseTest;
+
+    @Inject
+    private ScheduleDateCaseTest scheduleDateCaseTest;
+
+    @Inject
+    private FlowInputOutput flowIO;
 
     @BeforeAll
     void init() throws IOException, URISyntaxException {
@@ -90,16 +102,16 @@ public abstract class JdbcRunnerTest {
     }
 
     @Test
-    void full() throws TimeoutException, QueueException, InternalException {
+    void full() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "full", null, null, Duration.ofSeconds(60));
 
         assertThat(execution.getTaskRunList(), hasSize(13));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
-        assertThat((String) execution.findTaskRunsByTaskId("t2").get(0).getOutputs().get("value"), containsString("value1"));
+        assertThat((String) execution.findTaskRunsByTaskId("t2").getFirst().getOutputs().get("value"), containsString("value1"));
     }
 
     @Test
-    void logs() throws TimeoutException {
+    void logs() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs", null, null, Duration.ofSeconds(60));
 
         assertThat(execution.getTaskRunList(), hasSize(5));
@@ -134,7 +146,7 @@ public abstract class JdbcRunnerTest {
     }
 
     @Test
-    void eachParallelWithSubflowMissing() throws TimeoutException {
+    void eachParallelWithSubflowMissing() throws TimeoutException, QueueException {
         Execution execution =  runnerUtils.runOne(null, "io.kestra.tests", "each-parallel-subflow-notfound");
 
         assertThat(execution, notNullValue());
@@ -146,21 +158,21 @@ public abstract class JdbcRunnerTest {
     }
 
     @Test
-    void eachSequentialNested() throws TimeoutException {
+    void eachSequentialNested() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "each-sequential-nested", null, null, Duration.ofSeconds(60));
 
         assertThat(execution.getTaskRunList(), hasSize(23));
     }
 
     @Test
-    void eachParallel() throws TimeoutException {
+    void eachParallel() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "each-parallel", null, null, Duration.ofSeconds(60));
 
         assertThat(execution.getTaskRunList(), hasSize(8));
     }
 
     @Test
-    void eachParallelNested() throws TimeoutException {
+    void eachParallelNested() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "each-parallel-nested", null, null, Duration.ofSeconds(60));
 
         assertThat(execution.getTaskRunList(), hasSize(11));
@@ -187,8 +199,18 @@ public abstract class JdbcRunnerTest {
     }
 
     @Test
+    void flowTriggerWithPause() throws Exception {
+        flowTriggerCaseTest.triggerWithPause();
+    }
+
+    @Test
     void multipleConditionTrigger() throws Exception {
         multipleConditionTriggerCaseTest.trigger();
+    }
+
+    @Test
+    void multipleConditionTriggerFailed() throws Exception {
+        multipleConditionTriggerCaseTest.failed();
     }
 
     @RetryingTest(5)
@@ -197,9 +219,9 @@ public abstract class JdbcRunnerTest {
     }
 
     @Test
-    void taskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/task-defaults.yaml")));
-        taskDefaultsCaseTest.taskDefaults();
+    void taskDefaults() throws TimeoutException, QueueException, IOException, URISyntaxException {
+        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/plugin-defaults.yaml")));
+        pluginDefaultsCaseTest.taskDefaults();
     }
 
     @RetryingTest(5)
@@ -253,75 +275,188 @@ public abstract class JdbcRunnerTest {
     }
 
     @RetryingTest(5)
-    void executionDate() throws TimeoutException {
+    void executionDate() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "execution-start-date", null, null, Duration.ofSeconds(60));
 
-        assertThat((String) execution.getTaskRunList().get(0).getOutputs().get("value"), matchesPattern("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
+        assertThat((String) execution.getTaskRunList().getFirst().getOutputs().get("value"), matchesPattern("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
     }
 
     @Test
-    void skipExecution() throws TimeoutException, InterruptedException {
+    void skipExecution() throws TimeoutException, QueueException, InterruptedException {
         skipExecutionCaseTest.skipExecution();
     }
 
     @RetryingTest(5)
-    void forEachItem() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
+    protected void forEachItem() throws URISyntaxException, IOException, InterruptedException, TimeoutException, QueueException {
         forEachItemCaseTest.forEachItem();
     }
 
     @RetryingTest(5)
-    void forEachItemNoWait() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
+    protected void forEachItemEmptyItems() throws URISyntaxException, IOException, TimeoutException, QueueException {
+        forEachItemCaseTest.forEachItemEmptyItems();
+    }
+
+    @RetryingTest(5)
+    protected void forEachItemNoWait() throws URISyntaxException, IOException, InterruptedException, TimeoutException, QueueException {
         forEachItemCaseTest.forEachItemNoWait();
     }
 
-    @Test
-    void forEachItemFailed() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
+    @RetryingTest(5)
+    protected void forEachItemFailed() throws URISyntaxException, IOException, InterruptedException, TimeoutException, QueueException {
         forEachItemCaseTest.forEachItemFailed();
     }
 
     @RetryingTest(5)
-    void forEachItemSubflowOutputs() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
+    protected void forEachItemSubflowOutputs() throws URISyntaxException, IOException, InterruptedException, TimeoutException, QueueException {
         forEachItemCaseTest.forEachItemWithSubflowOutputs();
     }
 
     @Test
-    void concurrencyCancel() throws TimeoutException, InterruptedException {
+    void concurrencyCancel() throws TimeoutException, QueueException, InterruptedException {
         flowConcurrencyCaseTest.flowConcurrencyCancel();
     }
 
     @Test
-    void concurrencyFail() throws TimeoutException, InterruptedException  {
+    void concurrencyFail() throws TimeoutException, QueueException, InterruptedException  {
         flowConcurrencyCaseTest.flowConcurrencyFail();
     }
 
     @Test
-    void concurrencyQueue() throws TimeoutException, InterruptedException  {
+    void concurrencyQueue() throws TimeoutException, QueueException, InterruptedException  {
         flowConcurrencyCaseTest.flowConcurrencyQueue();
     }
 
     @Test
-    void concurrencyQueuePause() throws TimeoutException, InterruptedException  {
+    void concurrencyQueuePause() throws TimeoutException, QueueException, InterruptedException  {
         flowConcurrencyCaseTest.flowConcurrencyQueuePause();
     }
 
     @Test
-    void concurrencyCancelPause() throws TimeoutException, InterruptedException  {
+    void concurrencyCancelPause() throws TimeoutException, QueueException, InterruptedException  {
         flowConcurrencyCaseTest.flowConcurrencyCancelPause();
     }
 
     @Test
-    void badExecutable() throws TimeoutException {
+    void badExecutable() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "executable-fail");
 
         assertThat(execution.getTaskRunList().size(), is(1));
-        assertThat(execution.getTaskRunList().get(0).getState().getCurrent(), is(State.Type.FAILED));
+        assertThat(execution.getTaskRunList().getFirst().getState().getCurrent(), is(State.Type.FAILED));
         assertThat(execution.getState().getCurrent(), is(State.Type.FAILED));
     }
 
     @Test
-    void dynamicTask() throws TimeoutException {
+    void dynamicTask() throws TimeoutException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "dynamic-task");
 
+        assertThat(execution.getTaskRunList().size(), is(2));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+    }
+
+    @Test
+    void waitFor() throws TimeoutException, QueueException{
+        waitForTestCaseTest.waitfor();
+    }
+
+    @Test
+    void waitforMaxIterations() throws TimeoutException, QueueException{
+        waitForTestCaseTest.waitforMaxIterations();
+    }
+
+    @Test
+    void waitforMaxDuration() throws TimeoutException, QueueException{
+        waitForTestCaseTest.waitforMaxDuration();
+    }
+
+    @Test
+    void waitforNoSuccess() throws TimeoutException, QueueException{
+        waitForTestCaseTest.waitforNoSuccess();
+    }
+
+    @Test
+    void waitforMultipleTasks() throws TimeoutException, QueueException{
+        waitForTestCaseTest.waitforMultipleTasks();
+    }
+
+    @Test
+    void waitforMultipleTasksFailed() throws TimeoutException, QueueException{
+        waitForTestCaseTest.waitforMultipleTasksFailed();
+    }
+
+    @Test
+    void flowTooLarge() throws TimeoutException, IOException, URISyntaxException, QueueException {
+        char[] chars = new char[200000];
+        Arrays.fill(chars, 'a');
+
+        Map<String, Object> inputs = new HashMap<>(InputsTest.inputs);
+        inputs.put("string", new String(chars));
+
+        Execution execution = runnerUtils.runOne(
+            null,
+            "io.kestra.tests",
+            "inputs-large",
+            null,
+            (flow, execution1) -> flowIO.readExecutionInputs(flow, execution1, inputs),
+            Duration.ofSeconds(120)
+        );
+
+        assertThat(execution.getTaskRunList().size(), greaterThanOrEqualTo(6)); // the exact number is test-run-dependent.
+        assertThat(execution.getState().getCurrent(), is(State.Type.FAILED));
+
+        // To avoid flooding the database with big messages, we re-init it
+        init();
+    }
+
+    @Test
+    void queueMessageTooLarge() {
+        char[] chars = new char[1100000];
+        Arrays.fill(chars, 'a');
+
+        Map<String, Object> inputs = new HashMap<>(InputsTest.inputs);
+        inputs.put("string", new String(chars));
+
+        var exception = assertThrows(QueueException.class, () -> runnerUtils.runOne(
+            null,
+            "io.kestra.tests",
+            "inputs-large",
+            null,
+            (flow, execution1) -> flowIO.readExecutionInputs(flow, execution1, inputs),
+            Duration.ofSeconds(60)
+        ));
+
+        // the size is different on all runs, so we cannot assert on the exact message size
+        assertThat(exception.getMessage(), containsString("Message of size"));
+        assertThat(exception.getMessage(), containsString("has exceeded the configured limit of 1048576"));
+        assertThat(exception, instanceOf(MessageTooBigException.class));
+    }
+
+    @Test
+    void workerTaskResultTooLarge() throws TimeoutException, QueueException {
+        List<LogEntry> logs = new CopyOnWriteArrayList<>();
+        Flux<LogEntry> receive = TestsUtils.receive(logsQueue, either -> logs.add(either.getLeft()));
+
+        Execution execution = runnerUtils.runOne(
+            null,
+            "io.kestra.tests",
+            "workertask-result-too-large"
+        );
+
+        LogEntry matchingLog = TestsUtils.awaitLog(logs, log -> log.getMessage().startsWith("Unable to emit the worker task result to the queue"));
+        receive.blockLast();
+
+        assertThat(matchingLog, notNullValue());
+        assertThat(matchingLog.getLevel(), is(Level.ERROR));
+        // the size is different on all runs, so we cannot assert on the exact message size
+        assertThat(matchingLog.getMessage(), containsString("Message of size"));
+        assertThat(matchingLog.getMessage(), containsString("has exceeded the configured limit of 1048576"));
+
+        assertThat(execution.getState().getCurrent(), is(State.Type.FAILED));
+        assertThat(execution.getTaskRunList().size(), is(1));
+
+    }
+
+    @Test
+    void shouldScheduleOnDate() throws QueueException, InterruptedException {
+        scheduleDateCaseTest.shouldScheduleOnDate();
     }
 }

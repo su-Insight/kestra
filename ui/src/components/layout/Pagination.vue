@@ -1,5 +1,6 @@
 <template>
-    <div class="d-flex pagination" :class="{'top': top}">
+    <div :data-component="'FILENAME_PLACEHOLDER' + (top ? '#top' : '#not-top')" class="d-flex pagination" :class="{'top': top}">
+        <slot name="search" />
         <div class="flex-grow-1 d-sm-none d-md-inline-block page-size">
             <el-select
                 v-if="!top"
@@ -20,7 +21,7 @@
                 v-model:current-page="internalPage"
                 :page-size="internalSize"
                 v-model:page-size="internalSize"
-                small
+                size="small"
                 layout="prev, pager, next"
                 :pager-count="5"
                 :total="Math.min((max || total ),total)"

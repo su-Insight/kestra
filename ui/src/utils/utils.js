@@ -21,6 +21,16 @@ const humanizeDurationLanguages = {
         m: () => "m",
         s: () => "s",
         ms: () => "ms",
+    },
+    "zh_CN" : {
+        y: () => "年",
+        mo: () => "月",
+        w: () => "周",
+        d: () => "天",
+        h: () => "小时",
+        m: () => "分钟",
+        s: () => "秒",
+        ms: () => "毫秒",
     }
 }
 
@@ -120,7 +130,7 @@ export default class Utils {
     static humanDuration(value, options) {
         options = options || {maxDecimalPoints: 2};
         options.spacer = "";
-        options.language = localStorage.getItem("lang") || "en";
+        options.language = Utils.getLang();
         options.languages = humanizeDurationLanguages;
         options.largest = 2;
 
@@ -187,6 +197,10 @@ export default class Utils {
         return localStorage.getItem("theme") || "light";
     }
 
+    static getLang() {
+        return localStorage.getItem("lang") || "en";
+    }
+
     static splitFirst(str, separator){
         return str.split(separator).slice(1).join(separator);
     }
@@ -215,5 +229,9 @@ export default class Utils {
         document.execCommand("copy");
 
         document.body.removeChild(node);
+    }
+
+    static distinctFilter(value, index, array) {
+        return array.indexOf(value) === index;
     }
 }

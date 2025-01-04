@@ -1,21 +1,24 @@
 package io.kestra.plugin.scripts.exec;
 
-import com.google.common.annotations.Beta;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.tasks.*;
+import io.kestra.core.models.tasks.runners.TargetOS;
 import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.runners.RunContext;
+import io.kestra.plugin.core.runner.Process;
 import io.kestra.plugin.scripts.exec.scripts.models.DockerOptions;
 import io.kestra.plugin.scripts.exec.scripts.models.RunnerType;
 import io.kestra.plugin.scripts.exec.scripts.models.ScriptOutput;
 import io.kestra.plugin.scripts.exec.scripts.runners.CommandsWrapper;
+import io.kestra.plugin.scripts.runner.docker.Docker;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import org.apache.commons.lang3.SystemUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,23 +30,25 @@ import java.util.Map;
 @Getter
 @NoArgsConstructor
 public abstract class AbstractExecScript extends Task implements RunnableTask<ScriptOutput>, NamespaceFilesInterface, InputFilesInterface, OutputFilesInterface {
-    @Builder.Default
     @Schema(
-        title = "The task runner to use — by default, Kestra runs all scripts in `DOCKER`.",
-        description = "Only used if the `taskRunner` property is not set"
+        title = "Deprecated - use the 'taskRunner' property instead.",
+        description = "Only used if the `taskRunner` property is not set",
+        deprecated = true
     )
     @PluginProperty
-    @NotNull
-    protected RunnerType runner = RunnerType.DOCKER;
+    @Deprecated
+    protected RunnerType runner;
 
     @Schema(
         title = "The task runner to use.",
         description = "Task runners are provided by plugins, each have their own properties."
     )
     @PluginProperty
-    @Beta
+    @Builder.Default
     @Valid
-    protected TaskRunner taskRunner;
+    protected TaskRunner taskRunner = Docker.builder()
+        .type(Docker.class.getName())
+        .build();
 
     @Schema(
         title = "A list of commands that will run before the `commands`, allowing to set up the environment e.g. `pip install -r requirements.txt`."
@@ -80,7 +85,8 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
     @Builder.Default
     @Schema(
         title = "Fail the task on the first command with a non-zero status.",
-        description = "If set to `false` all commands will be executed one after the other. The final state of task execution is determined by the last command. Note that this property maybe be ignored if a non compatible interpreter is specified."
+        description = "If set to `false` all commands will be executed one after the other. The final state of task execution is determined by the last command. Note that this property maybe be ignored if a non compatible interpreter is specified." +
+            "\nYou can also disable it if your interpreter does not support the `set -e`option."
     )
     @PluginProperty
     protected Boolean failFast = true;
@@ -100,7 +106,19 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
     @Deprecated
     private Boolean outputDirectory;
 
-    abstract public DockerOptions getDocker();
+    @Schema(
+        title = "The target operating system where the script will run."
+    )
+    @Builder.Default
+    protected TargetOS targetOS = TargetOS.AUTO;
+
+    @Schema(
+        title = "Deprecated - use the 'taskRunner' property instead.",
+        description = "Only used if the `taskRunner` property is not set",
+        deprecated = true
+    )
+    @Deprecated
+    protected DockerOptions docker;
 
     @Schema(
         title = "The task runner container image, only used if the task runner is container-based."
@@ -127,26 +145,31 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
     }
 
     protected CommandsWrapper commands(RunContext runContext) throws IllegalVariableEvaluationException {
+        if (this.getRunner() == null) {
+            runContext.logger().debug("Using task runner '{}'", this.getTaskRunner().getType());
+        }
+
         return new CommandsWrapper(runContext)
             .withEnv(this.getEnv())
             .withWarningOnStdErr(this.getWarningOnStdErr())
-            .withRunnerType(this.taskRunner == null ? this.getRunner() : null)
-            .withContainerImage(this.getContainerImage())
-            .withTaskRunner(this.taskRunner)
-            .withDockerOptions(this.injectDefaults(getDocker()))
-            .withNamespaceFiles(this.namespaceFiles)
-            .withInputFiles(this.inputFiles)
-            .withOutputFiles(this.outputFiles)
+            .withRunnerType(this.getRunner())
+            .withContainerImage(runContext.render(this.getContainerImage()))
+            .withTaskRunner(this.getTaskRunner())
+            .withDockerOptions(this.getDocker() != null ? this.injectDefaults(this.getDocker()) : null)
+            .withNamespaceFiles(this.getNamespaceFiles())
+            .withInputFiles(this.getInputFiles())
+            .withOutputFiles(this.getOutputFiles())
             .withEnableOutputDirectory(this.getOutputDirectory())
-            .withTimeout(this.getTimeout());
+            .withTimeout(this.getTimeout())
+            .withTargetOS(this.getTargetOS());
     }
 
     protected List<String> getBeforeCommandsWithOptions() {
-        return mayAddExitOnErrorCommands(this.beforeCommands);
+        return mayAddExitOnErrorCommands(this.getBeforeCommands());
     }
 
     protected List<String> mayAddExitOnErrorCommands(List<String> commands) {
-        if (!failFast) {
+        if (!this.getFailFast()) {
             return commands;
         }
 
@@ -165,7 +188,19 @@ public abstract class AbstractExecScript extends Task implements RunnableTask<Sc
      * @return   list of commands;
      */
     protected List<String> getExitOnErrorCommands() {
+        // If targetOS is Windows OR targetOS is AUTO && current system is windows and we use process as a runner.(TLDR will run on windows)
+        if (this.getTargetOS().equals(TargetOS.WINDOWS) || this.getTargetOS().equals(TargetOS.AUTO) && SystemUtils.IS_OS_WINDOWS && this.getTaskRunner() instanceof Process) {
+            return List.of("");
+        }
         // errexit option may be unsupported by non-shell interpreter.
         return List.of("set -e");
+    }
+
+    /** {@inheritDoc} **/
+    @Override
+    public void kill() {
+        if (this.getTaskRunner() != null) {
+            this.getTaskRunner().kill();
+        }
     }
 }

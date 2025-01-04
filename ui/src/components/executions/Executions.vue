@@ -29,7 +29,7 @@
             </ul>
         </template>
     </top-nav-bar>
-    <section :class="{'container': topbar}" v-if="ready">
+    <section data-component="FILENAME_PLACEHOLDER" :class="{'container padding-bottom': topbar}" v-if="ready">
         <data-table
             @page-changed="onPageChanged"
             ref="dataTable"
@@ -57,8 +57,16 @@
                 </el-form-item>
                 <el-form-item>
                     <date-filter
-                        @update:is-relative="onDateFilterTypeChange($event)"
-                        @update:filter-value="onDataTableValue($event)"
+                        @update:is-relative="onDateFilterTypeChange"
+                        @update:filter-value="onDataTableValue"
+                    />
+                </el-form-item>
+                <el-form-item>
+                    <scope-filter-buttons
+                        :label="$t('executions')"
+                        :value="$route.query.scope"
+                        :system="namespace === 'system'"
+                        @update:model-value="onDataTableValue('scope', $event)"
                     />
                 </el-form-item>
                 <el-form-item>
@@ -96,7 +104,7 @@
                         multiple
                         collapse-tags
                         collapse-tags-tooltip
-                        @change="onDisplayColumnsChange($event)"
+                        @change="onDisplayColumnsChange"
                     >
                         <el-option
                             v-for="col in optionalColumns"
@@ -105,6 +113,13 @@
                             :value="col.prop"
                         />
                     </el-select>
+                </el-form-item>
+                <el-form-item>
+                    <el-switch
+                        :model-value="showChart"
+                        @update:model-value="onShowChartChange"
+                        :active-text="$t('show chart')"
+                    />
                 </el-form-item>
                 <el-form-item>
                     <filters :storage-key="filterStorageKey" />
@@ -118,7 +133,7 @@
                 </el-form-item>
             </template>
 
-            <template #top v-if="isDisplayedTop">
+            <template #top v-if="showStatChart()">
                 <state-global-chart
                     v-if="daily"
                     class="mb-4"
@@ -157,6 +172,9 @@
                             </el-button>
                             <el-button v-if="canCreate" :icon="PlayBoxMultiple" @click="replayExecutions()">
                                 {{ $t("replay") }}
+                            </el-button>
+                            <el-button v-if="canUpdate" :icon="StateMachine" @click="changeStatusDialogVisible = !changeStatusDialogVisible">
+                                {{ $t("change state") }}
                             </el-button>
                             <el-button v-if="canUpdate" :icon="StopCircleOutline" @click="killExecutions()">
                                 {{ $t("kill") }}
@@ -303,17 +321,6 @@
                         </el-table-column>
 
                         <el-table-column
-                            prop="triggers"
-                            v-if="displayColumn('triggers')"
-                            :label="$t('triggers')"
-                            class-name="shrink"
-                        >
-                            <template #default="scope">
-                                <trigger-avatar :execution="scope.row" />
-                            </template>
-                        </el-table-column>
-
-                        <el-table-column
                             prop="flowRevision"
                             v-if="displayColumn('flowRevision')"
                             :label="$t('revision')"
@@ -376,6 +383,45 @@
             </template>
         </data-table>
     </section>
+
+    <el-dialog v-if="changeStatusDialogVisible" v-model="changeStatusDialogVisible" :id="uuid" destroy-on-close :append-to-body="true">
+        <template #header>
+            <h5>{{ $t("confirmation") }}</h5>
+        </template>
+
+        <template #default>
+            <p v-html="changeStatusToast()" />
+
+            <el-select
+                :required="true"
+                v-model="selectedStatus"
+                :persistent="false"
+            >
+                <el-option
+                    v-for="item in states"
+                    :key="item.code"
+                    :value="item.code"
+                >
+                    <template #default>
+                        <status size="small" :label="false" class="me-1" :status="item.code" />
+                        <span v-html="item.label" />
+                    </template>
+                </el-option>
+            </el-select>
+        </template>
+
+        <template #footer>
+            <el-button @click="changeStatusDialogVisible = false">
+                {{ $t('cancel') }}
+            </el-button>
+            <el-button
+                type="primary"
+                @click="changeStatus()"
+            >
+                {{ $t('ok') }}
+            </el-button>
+        </template>
+    </el-dialog>
 </template>
 
 <script setup>
@@ -390,6 +436,7 @@
     import Import from "vue-material-design-icons/Import.vue";
     import Utils from "../../utils/utils";
     import LabelMultiple from "vue-material-design-icons/LabelMultiple.vue";
+    import StateMachine from "vue-material-design-icons/StateMachine.vue";
 </script>
 
 <script>
@@ -408,9 +455,8 @@
     import RefreshButton from "../layout/RefreshButton.vue"
     import Filters from "../saved-filters/Filters.vue";
     import StatusFilterButtons from "../layout/StatusFilterButtons.vue"
+    import ScopeFilterButtons from "../layout/ScopeFilterButtons.vue"
     import StateGlobalChart from "../../components/stats/StateGlobalChart.vue";
-    import TriggerAvatar from "../../components/flows/TriggerAvatar.vue";
-    import DateAgo from "../layout/DateAgo.vue";
     import Kicon from "../Kicon.vue"
     import Labels from "../layout/Labels.vue"
     import RestoreUrl from "../../mixins/restoreUrl";
@@ -422,8 +468,11 @@
     import TriggerFlow from "../../components/flows/TriggerFlow.vue";
     import {storageKeys} from "../../utils/constants";
     import LabelInput from "../../components/labels/LabelInput.vue";
-    import {ElMessageBox, ElSwitch, ElFormItem, ElAlert} from "element-plus";
+    import {ElMessageBox, ElSwitch, ElFormItem, ElAlert, ElCheckbox} from "element-plus";
+    import DateAgo from "../layout/DateAgo.vue";
     import {h, ref} from "vue";
+
+    import {filterLabels} from "./utils"
 
     export default {
         mixins: [RouteContext, RestoreUrl, DataTableActions, SelectTableActions],
@@ -438,9 +487,8 @@
             RefreshButton,
             Filters,
             StatusFilterButtons,
+            ScopeFilterButtons,
             StateGlobalChart,
-            TriggerAvatar,
-            DateAgo,
             Kicon,
             Labels,
             Id,
@@ -448,6 +496,7 @@
             TopNavBar,
             LabelInput
         },
+        emits: ["state-count"],
         props: {
             hidden: {
                 type: Array,
@@ -471,7 +520,7 @@
             },
             filter: {
                 type: Boolean,
-                default: false
+                default: true
             },
             namespace: {
                 type: String,
@@ -483,6 +532,10 @@
                 required: false,
                 default: undefined
             },
+            isConcurrency: {
+                type: Boolean,
+                default: false
+            }
         },
         data() {
             return {
@@ -491,6 +544,7 @@
                 dblClickRouteName: "executions/update",
                 flowTriggerDetails: undefined,
                 recomputeInterval: false,
+                showChart: ["true", null].includes(localStorage.getItem(storageKeys.SHOW_CHART)),
                 optionalColumns: [
                     {
                         label: "start date",
@@ -555,7 +609,15 @@
                 isOpenLabelsModal: false,
                 executionLabels: [],
                 actionOptions: {},
+                refreshDates: false,
+                changeStatusDialogVisible: false,
+                selectedStatus: undefined
             };
+        },
+        beforeCreate(){
+            if(!this.$route.query.scope) {
+                this.$route.query.scope = this.namespace === "system" ? ["SYSTEM"] : ["USER"];
+            }
         },
         created() {
             // allow to have different storage key for flow executions list
@@ -565,7 +627,9 @@
             }
             this.displayColumns = localStorage.getItem(this.storageKey)?.split(",")
                 || this.optionalColumns.filter(col => col.default).map(col => col.prop);
-
+            if (this.isConcurrency) {
+                this.emitStateCount([State.RUNNING, State.PAUSED])
+            }
         },
         computed: {
             ...mapState("execution", ["executions", "total"]),
@@ -584,6 +648,7 @@
                 return undefined;
             },
             startDate() {
+                this.refreshDates;
                 if (this.$route.query.startDate) {
                     return this.$route.query.startDate;
                 }
@@ -616,11 +681,19 @@
                 return this.user.hasAnyActionOnAnyNamespace(permission.EXECUTION, action.CREATE);
             },
             isDisplayedTop() {
-                return this.embed === false || this.filter
+                return this.embed === false && this.filter
             },
             filterStorageKey() {
                 return storageKeys.EXECUTIONS_FILTERS
-            }
+            },
+            states() {
+                return [ State.FAILED, State.SUCCESS, State.WARNING, State.CANCELLED,].map(value => {
+                    return {
+                        code: value,
+                        label: this.$t("mark as", {status: value})
+                    };
+                });
+            },
         },
         methods: {
             executionParams(row) {
@@ -636,6 +709,17 @@
             },
             displayColumn(column) {
                 return this.hidden ? !this.hidden.includes(column) : this.displayColumns.includes(column);
+            },
+            onShowChartChange(value) {
+                this.showChart = value;
+                localStorage.setItem(storageKeys.SHOW_CHART, value);
+
+                if (this.showChart) {
+                    this.loadStats();
+                }
+            },
+            showStatChart() {
+                return this.isDisplayedTop && this.showChart;
             },
             refresh() {
                 this.recomputeInterval = !this.recomputeInterval;
@@ -657,6 +741,9 @@
                     delete queryFilter["timeRange"];
                     delete queryFilter["startDate"];
                     delete queryFilter["endDate"];
+                } else if (queryFilter.timeRange) {
+                    delete queryFilter["startDate"];
+                    delete queryFilter["endDate"];
                 }
 
                 if (this.namespace) {
@@ -669,18 +756,22 @@
 
                 return _merge(base, queryFilter)
             },
-            loadData(callback) {
-                if (this.isDisplayedTop) {
-                    this.dailyReady = false;
+            loadStats() {
+                this.dailyReady = false;
 
-                    this.$store
-                        .dispatch("stat/daily", this.loadQuery({
-                            startDate: this.$moment(this.startDate).toISOString(true),
-                            endDate: this.$moment(this.endDate).toISOString(true)
-                        }, true))
-                        .then(() => {
-                            this.dailyReady = true;
-                        });
+                this.$store
+                    .dispatch("stat/daily", this.loadQuery({
+                        startDate: this.$moment(this.startDate).toISOString(true),
+                        endDate: this.$moment(this.endDate).toISOString(true)
+                    }, true))
+                    .then(() => {
+                        this.dailyReady = true;
+                    });
+            },
+            loadData(callback) {
+                this.refreshDates = !this.refreshDates;
+                if (this.showStatChart()) {
+                    this.loadStats();
                 }
 
                 this.$store.dispatch("execution/findExecutions", this.loadQuery({
@@ -755,9 +846,26 @@
                     "executions replayed"
                 );
             },
-            deleteExecutions() {
+            changeStatus() {
+                this.changeStatusDialogVisible = false;
+                this.actionOptions.newStatus = this.selectedStatus;
 
+                this.genericConfirmCallback(
+                    "execution/queryChangeExecutionStatus",
+                    "execution/bulkChangeExecutionStatus",
+                    "executions state changed"
+                );
+            },
+            changeStatusToast() {
+                return this.$t("bulk change execution status", {"executionCount": this.queryBulkAction ? this.total : this.selection.length});
+            },
+            deleteExecutions() {
                 const includeNonTerminated = ref(false);
+
+                const deleteLogs = ref(true);
+                const deleteMetrics = ref(true);
+                const deleteStorage = ref(true);
+
                 const message = () => h("div", null, [
                     h(
                         "p",
@@ -779,7 +887,22 @@
                         type: "warning",
                         showIcon: true,
                         closable: false
-                    })
+                    }),
+                    h(ElCheckbox, {
+                        modelValue: deleteLogs.value,
+                        label: this.$t("execution_deletion.logs"),
+                        "onUpdate:modelValue": (val) => (deleteLogs.value = val),
+                    }),
+                    h(ElCheckbox, {
+                        modelValue: deleteMetrics.value,
+                        label: this.$t("execution_deletion.metrics"),
+                        "onUpdate:modelValue": (val) => (deleteMetrics.value = val),
+                    }),
+                    h(ElCheckbox, {
+                        modelValue: deleteStorage.value,
+                        label: this.$t("execution_deletion.storage"),
+                        "onUpdate:modelValue": (val) => (deleteStorage.value = val),
+                    }),
                 ]);
                 ElMessageBox.confirm(message, this.$t("confirmation"), {
                     type: "confirm",
@@ -787,6 +910,10 @@
                     inputValue: "false",
                 }).then(() => {
                     this.actionOptions.includeNonTerminated = includeNonTerminated.value;
+                    this.actionOptions.deleteLogs = deleteLogs.value;
+                    this.actionOptions.deleteMetrics = deleteMetrics.value;
+                    this.actionOptions.deleteStorage = deleteStorage.value;
+
                     this.genericConfirmCallback(
                         "execution/queryDeleteExecution",
                         "execution/bulkDeleteExecution",
@@ -803,6 +930,13 @@
                 );
             },
             setLabels() {
+                const filtered = filterLabels(this.executionLabels)
+
+                if(filtered.error) {
+                    this.$toast().error(this.$t("wrong labels"))
+                    return;
+                }
+
                 this.$toast().confirm(
                     this.$t("bulk set labels", {"executionCount": this.queryBulkAction ? this.total : this.selection.length}),
                     () => {
@@ -813,7 +947,7 @@
                                         sort: this.$route.query.sort || "state.startDate:desc",
                                         state: this.$route.query.state ? [this.$route.query.state] : this.statuses
                                     }, false),
-                                    data: this.executionLabels
+                                    data: filtered.labels
                                 })
                                 .then(r => {
                                     this.$toast().success(this.$t("Set labels done", {executionCount: r.data.count}));
@@ -823,7 +957,7 @@
                             return this.$store
                                 .dispatch("execution/bulkSetLabels", {
                                     executionsId: this.selection,
-                                    executionLabels: this.executionLabels
+                                    executionLabels: filtered.labels
                                 })
                                 .then(r => {
                                     this.$toast().success(this.$t("Set labels done", {executionCount: r.data.count}));
@@ -848,6 +982,16 @@
                     }
                 })
             },
+            emitStateCount(states) {
+                this.$store.dispatch("execution/findExecutions", this.loadQuery({
+                    size: parseInt(this.$route.query.size || this.internalPageSize),
+                    page: parseInt(this.$route.query.page || this.internalPageNumber),
+                    sort: this.$route.query.sort || "state.startDate:desc",
+                    state: states
+                }, false)).then(() => {
+                    this.$emit("state-count", this.total);
+                });
+            }
         },
         watch: {
             isOpenLabelsModal(opening) {
@@ -858,3 +1002,9 @@
         },
     };
 </script>
+
+<style scoped lang="scss">
+    .padding-bottom {
+        padding-bottom: 4rem;
+    }
+</style>

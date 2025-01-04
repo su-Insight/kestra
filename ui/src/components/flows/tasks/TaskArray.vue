@@ -32,7 +32,7 @@
         mixins: [Task],
         emits: ["update:modelValue"],
         created() {
-            if (!Array.isArray(this.modelValue)) {
+            if (!Array.isArray(this.modelValue) && this.modelValue !== undefined) {
                 this.$emit("update:modelValue", []);
             }
         },

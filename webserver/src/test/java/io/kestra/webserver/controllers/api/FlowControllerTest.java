@@ -12,8 +12,8 @@ import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.validations.ValidateConstraintViolation;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.serializers.YamlFlowParser;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Sequential;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Sequential;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.TestsUtils;
 import io.kestra.jdbc.repository.AbstractJdbcFlowRepository;
@@ -22,10 +22,7 @@ import io.kestra.webserver.controllers.h2.JdbcH2ControllerTest;
 import io.kestra.webserver.responses.BulkResponse;
 import io.kestra.webserver.responses.PagedResults;
 import io.micronaut.core.type.Argument;
-import io.micronaut.http.HttpRequest;
-import io.micronaut.http.HttpResponse;
-import io.micronaut.http.HttpStatus;
-import io.micronaut.http.MediaType;
+import io.micronaut.http.*;
 import io.micronaut.http.client.annotation.Client;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
 import io.micronaut.http.client.multipart.MultipartBody;
@@ -41,7 +38,9 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -51,6 +50,7 @@ import static io.micronaut.http.HttpRequest.*;
 import static io.micronaut.http.HttpStatus.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class FlowControllerTest extends JdbcH2ControllerTest {
@@ -96,7 +96,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         Task result = client.toBlocking().retrieve(HttpRequest.GET("/api/v1/flows/io.kestra.tests/each-object/tasks/not-json"), Task.class);
 
         assertThat(result.getId(), is("not-json"));
-        assertThat(result.getType(), is("io.kestra.core.tasks.debugs.Return"));
+        assertThat(result.getType(), is("io.kestra.plugin.core.debug.Return"));
     }
 
     @Test
@@ -179,8 +179,8 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         // f3 & f4 must be updated
         updated = client.toBlocking().retrieve(HttpRequest.POST("/api/v1/flows/io.kestra.updatenamespace", flows), Argument.listOf(Flow.class));
         assertThat(updated.size(), is(4));
-        assertThat(updated.get(2).getInputs().get(0).getId(), is("3-3"));
-        assertThat(updated.get(3).getInputs().get(0).getId(), is("4"));
+        assertThat(updated.get(2).getInputs().getFirst().getId(), is("3-3"));
+        assertThat(updated.get(3).getInputs().getFirst().getId(), is("4"));
 
         // f1 & f2 must be deleted
         assertThrows(HttpClientResponseException.class, () -> {
@@ -217,7 +217,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
 
         // flow is not updated
         retrieve = parseFlow(client.toBlocking().retrieve(GET("/api/v1/flows/io.kestra.updatenamespace/f4"), String.class));
-        assertThat(retrieve.getInputs().get(0).getId(), is("4"));
+        assertThat(retrieve.getInputs().getFirst().getId(), is("4"));
 
         // send 2 same id
         e = assertThrows(
@@ -274,11 +274,11 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         Flow result = parseFlow(client.toBlocking().retrieve(POST("/api/v1/flows", flow), String.class));
 
         assertThat(result.getId(), is(flow.getId()));
-        assertThat(result.getInputs().get(0).getId(), is("a"));
+        assertThat(result.getInputs().getFirst().getId(), is("a"));
 
         Flow get = parseFlow(client.toBlocking().retrieve(HttpRequest.GET("/api/v1/flows/" + flow.getNamespace() + "/" + flow.getId()), String.class));
         assertThat(get.getId(), is(flow.getId()));
-        assertThat(get.getInputs().get(0).getId(), is("a"));
+        assertThat(get.getInputs().getFirst().getId(), is("a"));
     }
 
     @Test
@@ -289,8 +289,8 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         Flow result = parseFlow(client.toBlocking().retrieve(POST("/api/v1/flows", flow), String.class));
 
         assertThat(result.getId(), is(flow.get("id")));
-        assertThat(result.getLabels().get(0).key(), is("a"));
-        assertThat(result.getLabels().get(0).value(), is("b"));
+        assertThat(result.getLabels().getFirst().key(), is("a"));
+        assertThat(result.getLabels().getFirst().value(), is("b"));
     }
 
     @Test
@@ -329,7 +329,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         Flow result = client.toBlocking().retrieve(POST("/api/v1/flows", flow), Flow.class);
 
         assertThat(result.getId(), is(flow.getId()));
-        assertThat(result.getInputs().get(0).getId(), is("a"));
+        assertThat(result.getInputs().getFirst().getId(), is("a"));
 
         flow = generateFlow(flowId, "io.kestra.unittest", "b");
 
@@ -339,7 +339,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         );
 
         assertThat(get.getId(), is(flow.getId()));
-        assertThat(get.getInputs().get(0).getId(), is("b"));
+        assertThat(get.getInputs().getFirst().getId(), is("b"));
 
         Flow finalFlow = flow;
         HttpClientResponseException e = assertThrows(HttpClientResponseException.class, () -> {
@@ -433,7 +433,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         List<String> namespaces = client.toBlocking().retrieve(
             HttpRequest.GET("/api/v1/flows/distinct-namespaces"), Argument.listOf(String.class));
 
-        assertThat(namespaces.size(), is(5));
+        assertThat(namespaces.size(), is(6));
     }
 
     @Test
@@ -444,11 +444,11 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         FlowWithSource result = client.toBlocking().retrieve(POST("/api/v1/flows", flow).contentType(MediaType.APPLICATION_YAML), FlowWithSource.class);
 
         assertThat(result.getId(), is(assertFlow.getId()));
-        assertThat(result.getInputs().get(0).getId(), is("a"));
+        assertThat(result.getInputs().getFirst().getId(), is("a"));
 
         FlowWithSource get = client.toBlocking().retrieve(HttpRequest.GET("/api/v1/flows/io.kestra.unittest/" + assertFlow.getId() + "?source=true"), FlowWithSource.class);
         assertThat(get.getId(), is(assertFlow.getId()));
-        assertThat(get.getInputs().get(0).getId(), is("a"));
+        assertThat(get.getInputs().getFirst().getId(), is("a"));
         assertThat(get.getSource(), containsString(" Comment i added"));
     }
 
@@ -476,7 +476,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         FlowWithSource result = client.toBlocking().retrieve(POST("/api/v1/flows", flow).contentType(MediaType.APPLICATION_YAML), FlowWithSource.class);
 
         assertThat(result.getId(), is(assertFlow.getId()));
-        assertThat(result.getInputs().get(0).getId(), is("a"));
+        assertThat(result.getInputs().getFirst().getId(), is("a"));
 
         flow = generateFlowAsString("updatedFlow","io.kestra.unittest","b");
 
@@ -486,7 +486,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         );
 
         assertThat(get.getId(), is(assertFlow.getId()));
-        assertThat(get.getInputs().get(0).getId(), is("b"));
+        assertThat(get.getInputs().getFirst().getId(), is("b"));
 
         String finalFlow = flow;
         HttpClientResponseException e = assertThrows(HttpClientResponseException.class, () -> {
@@ -718,14 +718,12 @@ class FlowControllerTest extends JdbcH2ControllerTest {
         List<ValidateConstraintViolation> body = response.body();
         assertThat(body.size(), is(2));
         // We don't send any revision while the flow already exists so it's outdated
-        assertThat(body.get(0).isOutdated(), is(true));
-        assertThat(body.get(0).getDeprecationPaths(), hasSize(3));
-        assertThat(body.get(0).getDeprecationPaths(), containsInAnyOrder("tasks[1]", "tasks[1].additionalProperty", "listeners"));
-        assertThat(body.get(0).getWarnings().size(), is(1));
-        assertThat(body.get(0).getWarnings().get(0), containsString("The system namespace is reserved for background workflows"));
+        assertThat(body.getFirst().isOutdated(), is(true));
+        assertThat(body.getFirst().getDeprecationPaths(), hasSize(3));
+        assertThat(body.getFirst().getDeprecationPaths(), containsInAnyOrder("tasks[1]", "tasks[1].additionalProperty", "listeners"));
+        assertThat(body.getFirst().getWarnings().size(), is(0));
         assertThat(body.get(1).isOutdated(), is(false));
         assertThat(body.get(1).getDeprecationPaths(), containsInAnyOrder("tasks[0]", "tasks[1]"));
-        assertThat(body.get(1).getWarnings(), empty());
         assertThat(body, everyItem(
             Matchers.hasProperty("constraints", is(nullValue()))
         ));
@@ -737,8 +735,137 @@ class FlowControllerTest extends JdbcH2ControllerTest {
 
         body = response.body();
         assertThat(body.size(), is(2));
+        assertThat(body.getFirst().getConstraints(), containsString("Unrecognized field \"unknownProp\""));
+        assertThat(body.get(1).getConstraints(), containsString("Invalid type: io.kestra.plugin.core.debug.UnknownTask"));
+    }
+
+    @Test
+    void commaInSingleLabelsValue() {
+        String encodedCommaWithinLabel = URLEncoder.encode("project:foo,bar", StandardCharsets.UTF_8);
+
+        MutableHttpRequest<Object> searchRequest = HttpRequest
+            .GET("/api/v1/flows/search?labels=" + encodedCommaWithinLabel);
+        assertDoesNotThrow(() -> client.toBlocking().retrieve(searchRequest, PagedResults.class));
+
+        MutableHttpRequest<Object> exportRequest = HttpRequest
+            .GET("/api/v1/flows/export/by-query?labels=" + encodedCommaWithinLabel);
+        assertDoesNotThrow(() -> client.toBlocking().retrieve(exportRequest, byte[].class));
+
+        MutableHttpRequest<List<Object>> deleteRequest = HttpRequest
+            .DELETE("/api/v1/flows/delete/by-query?labels=" + encodedCommaWithinLabel);
+        assertDoesNotThrow(() -> client.toBlocking().retrieve(deleteRequest, BulkResponse.class));
+
+        MutableHttpRequest<List<Object>> disableRequest = HttpRequest
+            .POST("/api/v1/flows/disable/by-query?labels=" + encodedCommaWithinLabel, List.of());
+        assertDoesNotThrow(() -> client.toBlocking().retrieve(disableRequest, BulkResponse.class));
+
+        MutableHttpRequest<List<Object>> enableRequest = HttpRequest
+            .POST("/api/v1/flows/enable/by-query?labels=" + encodedCommaWithinLabel, List.of());
+        assertDoesNotThrow(() -> client.toBlocking().retrieve(enableRequest, BulkResponse.class));
+    }
+
+    @Test
+    void commaInOneOfMultiLabels() {
+        String encodedCommaWithinLabel = URLEncoder.encode("project:foo,bar", StandardCharsets.UTF_8);
+        String encodedRegularLabel = URLEncoder.encode("status:test", StandardCharsets.UTF_8);
+
+        Map<String, Object> flow = JacksonMapper.toMap(generateFlow("io.kestra.unittest", "a"));
+        flow.put("labels", Map.of("project", "foo,bar", "status", "test"));
+
+        parseFlow(client.toBlocking().retrieve(POST("/api/v1/flows", flow), String.class));
+
+        var flows = client.toBlocking().retrieve(GET("/api/v1/flows/search?labels=" + encodedCommaWithinLabel + "&labels=" + encodedRegularLabel), Argument.of(PagedResults.class, Flow.class));
+        assertThat(flows.getTotal(), is(1L));
+    }
+
+    @Test
+    void validateTask() throws IOException {
+        URL resource = TestsUtils.class.getClassLoader().getResource("tasks/validTask.json");
+
+        String task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        HttpResponse<List<ValidateConstraintViolation>> response = client.toBlocking().exchange(POST("/api/v1/flows/validate/task", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        List<ValidateConstraintViolation> body = response.body();
+        assertThat(body.size(), is(1));
+        assertThat(body, everyItem(
+            Matchers.hasProperty("constraints", is(nullValue()))
+        ));
+
+        resource = TestsUtils.class.getClassLoader().getResource("tasks/invalidTaskUnknownType.json");
+        task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        response = client.toBlocking().exchange(POST("/api/v1/flows/validate/task", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        body = response.body();
+
+        assertThat(body.size(), is(1));
+        assertThat(body.get(0).getConstraints(), containsString("Invalid type: io.kestra.plugin.core.debug.UnknownTask"));
+
+        resource = TestsUtils.class.getClassLoader().getResource("tasks/invalidTaskUnknownProp.json");
+        task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        response = client.toBlocking().exchange(POST("/api/v1/flows/validate/task", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        body = response.body();
+
+        assertThat(body.size(), is(1));
         assertThat(body.get(0).getConstraints(), containsString("Unrecognized field \"unknownProp\""));
-        assertThat(body.get(1).getConstraints(), containsString("Invalid type: io.kestra.core.tasks.debugs.UnknownTask"));
+
+        resource = TestsUtils.class.getClassLoader().getResource("tasks/invalidTaskMissingProp.json");
+        task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        response = client.toBlocking().exchange(POST("/api/v1/flows/validate/task", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        body = response.body();
+
+        assertThat(body.size(), is(1));
+        assertThat(body.get(0).getConstraints(), containsString("message: must not be null"));
+    }
+
+    @Test
+    void validateTrigger() throws IOException {
+        URL resource = TestsUtils.class.getClassLoader().getResource("triggers/validTrigger.json");
+
+        String task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        HttpResponse<List<ValidateConstraintViolation>> response = client.toBlocking().exchange(POST("/api/v1/flows/validate/trigger", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        List<ValidateConstraintViolation> body = response.body();
+        assertThat(body.size(), is(1));
+        assertThat(body, everyItem(
+            Matchers.hasProperty("constraints", is(nullValue()))
+        ));
+
+        resource = TestsUtils.class.getClassLoader().getResource("triggers/invalidTriggerUnknownType.json");
+        task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        response = client.toBlocking().exchange(POST("/api/v1/flows/validate/trigger", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        body = response.body();
+
+        assertThat(body.size(), is(1));
+        assertThat(body.get(0).getConstraints(), containsString("Invalid type: io.kestra.plugin.core.debug.UnknownTrigger"));
+
+        resource = TestsUtils.class.getClassLoader().getResource("triggers/invalidTriggerUnknownProp.json");
+        task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        response = client.toBlocking().exchange(POST("/api/v1/flows/validate/trigger", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        body = response.body();
+
+        assertThat(body.size(), is(1));
+        assertThat(body.get(0).getConstraints(), containsString("Unrecognized field \"unknownProp\""));
+
+        resource = TestsUtils.class.getClassLoader().getResource("triggers/invalidTriggerMissingProp.json");
+        task = Files.readString(Path.of(Objects.requireNonNull(resource).getPath()), Charset.defaultCharset());
+
+        response = client.toBlocking().exchange(POST("/api/v1/flows/validate/trigger", task).contentType(MediaType.APPLICATION_JSON), Argument.listOf(ValidateConstraintViolation.class));
+
+        body = response.body();
+
+        assertThat(body.size(), is(1));
+        assertThat(body.get(0).getConstraints(), containsString("cron: must not be null"));
     }
 
     private Flow generateFlow(String namespace, String inputName) {
@@ -792,7 +919,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
             "    type: STRING\n" +
             "tasks:\n" +
             "  - id: test\n" +
-            "    type: io.kestra.core.tasks.debugs.Return\n" +
+            "    type: io.kestra.plugin.core.debug.Return\n" +
             "    format: test\n" +
             "disabled: false\n" +
             "deleted: false", friendlyId,namespace, format);
@@ -807,7 +934,7 @@ class FlowControllerTest extends JdbcH2ControllerTest {
             "    type: STRING\n" +
             "tasks:\n" +
             "  - id: test\n" +
-            "    type: io.kestra.core.tasks.debugs.Return\n" +
+            "    type: io.kestra.plugin.core.debug.Return\n" +
             "    format: test\n" +
             "disabled: false\n" +
             "deleted: false", IdUtils.create(),namespace, format);

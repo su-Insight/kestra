@@ -7,14 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
@@ -25,7 +18,7 @@ import java.util.function.Predicate;
  * @see io.kestra.core.plugins.serdes.PluginDeserializer
  * @see PluginScanner
  */
-public final class DefaultPluginRegistry implements PluginRegistry {
+public class DefaultPluginRegistry implements PluginRegistry {
 
     private static class LazyHolder {
         static final DefaultPluginRegistry INSTANCE = new DefaultPluginRegistry();
@@ -50,7 +43,7 @@ public final class DefaultPluginRegistry implements PluginRegistry {
         return instance;
     }
 
-    private DefaultPluginRegistry() {
+    protected DefaultPluginRegistry() {
     }
 
     private boolean isInitialized() {
@@ -60,7 +53,7 @@ public final class DefaultPluginRegistry implements PluginRegistry {
     /**
      * Initializes the registry by loading all core plugins.
      */
-    private void init() {
+    protected void init() {
         if (initialized.compareAndSet(false, true)) {
             register(scanner.scan());
         }
@@ -112,10 +105,10 @@ public final class DefaultPluginRegistry implements PluginRegistry {
             Class<? extends Plugin> pluginClass = (Class<? extends Plugin>) clazz;
             pluginClassByIdentifier.put(ClassTypeIdentifier.create(clazz), pluginClass);
         });
-        plugin.getAliases().forEach((alias, clazz) -> {
+        plugin.getAliases().values().forEach(e -> {
             @SuppressWarnings("unchecked")
-            Class<? extends Plugin> pluginClass = (Class<? extends Plugin>) clazz;
-            pluginClassByIdentifier.put(ClassTypeIdentifier.create(alias), pluginClass);
+            Class<? extends Plugin> pluginClass = (Class<? extends Plugin>) e.getValue();
+            pluginClassByIdentifier.put(ClassTypeIdentifier.create(e.getKey()), pluginClass);
         });
     }
 
@@ -224,7 +217,7 @@ public final class DefaultPluginRegistry implements PluginRegistry {
             if (identifier == null || identifier.isBlank()) {
                 throw new IllegalArgumentException("Cannot create plugin identifier from null or empty string");
             }
-            return new ClassTypeIdentifier(identifier);
+            return new ClassTypeIdentifier(identifier.toLowerCase(Locale.ROOT));
         }
 
         /**

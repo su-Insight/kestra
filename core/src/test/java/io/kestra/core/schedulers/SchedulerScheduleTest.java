@@ -1,13 +1,16 @@
 package io.kestra.core.schedulers;
 
-import io.kestra.core.models.conditions.types.VariableCondition;
+import io.kestra.core.utils.TestsUtils;
+import io.kestra.jdbc.runner.JdbcScheduler;
+import io.kestra.plugin.core.condition.ExpressionCondition;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.triggers.Backfill;
 import io.kestra.core.models.triggers.Trigger;
-import io.kestra.core.models.triggers.types.Schedule;
+import io.kestra.core.models.triggers.RecoverMissedSchedules;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.runners.FlowListeners;
@@ -15,6 +18,7 @@ import io.kestra.core.utils.Await;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -23,6 +27,7 @@ import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static io.kestra.core.utils.Rethrow.throwConsumer;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.mockito.Mockito.doReturn;
@@ -63,10 +68,9 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
     }
 
     protected AbstractScheduler scheduler(FlowListeners flowListenersServiceSpy) {
-        return new DefaultScheduler(
+        return new JdbcScheduler(
             applicationContext,
-            flowListenersServiceSpy,
-            triggerState
+            flowListenersServiceSpy
         );
     }
 
@@ -111,7 +115,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         // scheduler
         try (AbstractScheduler scheduler = scheduler(flowListenersServiceSpy)) {
             // wait for execution
-            Runnable assertionStop = executionQueue.receive(either -> {
+            Flux<Execution> receiveExecutions = TestsUtils.receive(executionQueue, throwConsumer(either -> {
                 Execution execution = either.getLeft();
                 assertThat(execution.getInputs().get("testInputs"), is("test-inputs"));
                 assertThat(execution.getInputs().get("def"), is("awesome"));
@@ -124,9 +128,9 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
                     executionQueue.emit(execution.withState(State.Type.SUCCESS));
                 }
                 assertThat(execution.getFlowId(), is(flow.getId()));
-            });
+            }));
 
-            Runnable logStop = logQueue.receive(e -> {
+            Flux<LogEntry> receiveLogs = TestsUtils.receive(logQueue, e -> {
                 if (e.getLeft().getMessage().contains("Unknown time-zone ID: Asia/Delhi")) {
                     invalidLogCount.countDown();
                 }
@@ -136,8 +140,8 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
             queueCount.await(1, TimeUnit.MINUTES);
             invalidLogCount.await(1, TimeUnit.MINUTES);
             // needed for RetryingTest to work since there is no context cleaning between method => we have to clear assertion receiver manually
-            assertionStop.run();
-            logStop.run();
+            receiveExecutions.blockLast();
+            receiveLogs.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
             assertThat(invalidLogCount.getCount(), is(0L));
@@ -205,7 +209,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         // scheduler
         try (AbstractScheduler scheduler = scheduler(flowListenersServiceSpy)) {
             // wait for execution
-            Runnable assertionStop = executionQueue.receive(either -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, either -> {
                 Execution execution = either.getLeft();
                 assertThat(execution.getFlowId(), is(flow.getId()));
                 queueCount.countDown();
@@ -214,8 +218,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
             scheduler.run();
 
             queueCount.await(1, TimeUnit.MINUTES);
-            // needed for RetryingTest to work since there is no context cleaning between method => we have to clear assertion receiver manually
-            assertionStop.run();
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
             Trigger newTrigger = this.triggerState.findLast(lastTrigger).orElseThrow();
@@ -229,7 +232,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         // mock flow listeners
         FlowListeners flowListenersServiceSpy = spy(this.flowListenersService);
         Schedule schedule = createScheduleTrigger(null, "0 * * * *", "recoverLASTMissing", false)
-            .recoverMissedSchedules(Schedule.RecoverMissedSchedules.LAST)
+            .recoverMissedSchedules(RecoverMissedSchedules.LAST)
             .build();
         Flow flow = createFlow(List.of(schedule));
         doReturn(List.of(flow))
@@ -251,7 +254,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         // scheduler
         try (AbstractScheduler scheduler = scheduler(flowListenersServiceSpy)) {
             // wait for execution
-            Runnable assertionStop = executionQueue.receive(either -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, either -> {
                 Execution execution = either.getLeft();
                 assertThat(execution.getFlowId(), is(flow.getId()));
                 queueCount.countDown();
@@ -261,7 +264,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
 
             queueCount.await(1, TimeUnit.MINUTES);
             // needed for RetryingTest to work since there is no context cleaning between method => we have to clear assertion receiver manually
-            assertionStop.run();
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
             Trigger newTrigger = this.triggerState.findLast(lastTrigger).orElseThrow();
@@ -275,7 +278,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         // mock flow listeners
         FlowListeners flowListenersServiceSpy = spy(this.flowListenersService);
         Schedule schedule = createScheduleTrigger(null, "0 * * * *", "recoverNONEMissing", false)
-            .recoverMissedSchedules(Schedule.RecoverMissedSchedules.NONE)
+            .recoverMissedSchedules(RecoverMissedSchedules.NONE)
             .build();
         Flow flow = createFlow(List.of(schedule));
         doReturn(List.of(flow))
@@ -429,7 +432,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         // scheduler
         try (AbstractScheduler scheduler = scheduler(flowListenersServiceSpy)) {
             // wait for execution
-            Runnable assertionStop = executionQueue.receive(either -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, throwConsumer(either -> {
                 Execution execution = either.getLeft();
                 assertThat(execution.getInputs().get("testInputs"), is("test-inputs"));
                 assertThat(execution.getInputs().get("def"), is("awesome"));
@@ -439,13 +442,12 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
                 if (execution.getState().getCurrent() == State.Type.CREATED) {
                     executionQueue.emit(execution.withState(State.Type.SUCCESS));
                 }
-            });
+            }));
 
             scheduler.run();
 
             queueCount.await(1, TimeUnit.MINUTES);
-            // needed for RetryingTest to work since there is no context cleaning between method => we have to clear assertion receiver manually
-            assertionStop.run();
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
 
@@ -463,8 +465,8 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         Schedule schedule = createScheduleTrigger("Europe/Paris", "* * * * *", "failedEvaluation", false)
             .conditions(
                 List.of(
-                    VariableCondition.builder()
-                        .type(VariableCondition.class.getName())
+                    ExpressionCondition.builder()
+                        .type(ExpressionCondition.class.getName())
                         .expression("{{ trigger.date | date() < now() }}")
                         .build()
                 )
@@ -490,7 +492,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
         // scheduler
         try (AbstractScheduler scheduler = scheduler(flowListenersServiceSpy)) {
             // wait for execution
-            Runnable assertionStop = executionQueue.receive(either -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, either -> {
                 Execution execution = either.getLeft();
                 assertThat(execution.getFlowId(), is(flow.getId()));
                 assertThat(execution.getState().getCurrent(), is(State.Type.FAILED));
@@ -502,7 +504,7 @@ public class SchedulerScheduleTest extends AbstractSchedulerTest {
 
             queueCount.await(1, TimeUnit.MINUTES);
             // needed for RetryingTest to work since there is no context cleaning between method => we have to clear assertion receiver manually
-            assertionStop.run();
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
         } catch (Exception e) {

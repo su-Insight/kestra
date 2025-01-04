@@ -1,5 +1,6 @@
 package io.kestra.core.storages;
 
+import io.kestra.core.storages.kv.KVStore;
 import jakarta.annotation.Nullable;
 
 import java.io.File;
@@ -14,6 +15,19 @@ import java.util.Optional;
  * Service interface for accessing the Kestra's storage.
  */
 public interface Storage {
+    /**
+     * Gets access to the namespace files for the contextual namespace.
+     *
+     * @return The {@link Namespace}.
+     */
+    Namespace namespace();
+
+    /**
+     * Gets access to the namespace files for the given namespace.
+     *
+     * @return The {@link Namespace}.
+     */
+    Namespace namespace(String namespace);
 
     /**
      * Checks whether the given URI points to an exiting file/object in the internal storage.
@@ -32,6 +46,13 @@ public interface Storage {
      * @throws IOException              if an error happens while accessing the file.
      */
     InputStream getFile(URI uri) throws IOException;
+
+    /**
+     * Deletes the file for the given URI.
+     * @param uri the file URI.
+     * @return {@code true} if the file was deleted. Otherwise {@code false}.
+     */
+    boolean deleteFile(URI uri) throws IOException;
 
     /**
      * Deletes all the files for the current execution.
@@ -88,26 +109,6 @@ public interface Storage {
     URI putFile(File file, String name) throws IOException;
 
     // ==============================================================
-    //  STATE STORE
-    // ==============================================================
-    InputStream getTaskStateFile(String state, String name) throws IOException;
-
-    InputStream getTaskStateFile(String state, String name, Boolean isNamespace, Boolean useTaskRun) throws IOException;
-
-    URI putTaskStateFile(byte[] content, String state, String name) throws IOException;
-
-    URI putTaskStateFile(byte[] content, String state, String name, Boolean namespace, Boolean useTaskRun) throws IOException;
-
-    URI putTaskStateFile(File file, String state, String name) throws IOException;
-
-    URI putTaskStateFile(File file, String state, String name, Boolean isNamespace, Boolean useTaskRun) throws IOException;
-
-    boolean deleteTaskStateFile(String state, String name) throws IOException;
-
-    boolean deleteTaskStateFile(String state, String name, Boolean isNamespace, Boolean useTaskRun) throws IOException;
-
-
-    // ==============================================================
     // CACHING
     // ==============================================================
 
@@ -156,4 +157,10 @@ public interface Storage {
      * @throws IOException if an error occurs during the operation.
      */
     Optional<Boolean> deleteCacheFile(String cacheId, @Nullable String objectId) throws IOException;
+
+    /**
+     * Gets the storage context for current task
+     * @return the task storage context
+     */
+    Optional<StorageContext.Task> getTaskStorageContext();
 }

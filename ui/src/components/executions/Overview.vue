@@ -8,6 +8,7 @@
                 <set-labels :execution="execution" />
                 <restart is-replay :execution="execution" class="ms-0" @follow="forwardEvent('follow', $event)" />
                 <restart :execution="execution" class="ms-0" @follow="forwardEvent('follow', $event)" />
+                <change-execution-status :execution="execution" @follow="forwardEvent('follow', $event)" />
                 <resume :execution="execution" />
                 <kill :execution="execution" class="ms-0" />
                 <status :status="execution.state.current" class="ms-0" />
@@ -53,7 +54,7 @@
 
         <div v-if="execution.inputs" class="mt-4">
             <h5>{{ $t("inputs") }}</h5>
-            <vars :execution="execution" :data="inputs" />
+            <vars :execution="execution" :data="inputs" key-label-translation-key="id" />
         </div>
 
         <div v-if="execution.variables" class="mt-4">
@@ -81,9 +82,11 @@
     import Duration from "../layout/Duration.vue";
     import Labels from "../layout/Labels.vue"
     import {toRaw} from "vue";
+    import ChangeExecutionStatus from "./ChangeExecutionStatus.vue";
 
     export default {
         components: {
+            ChangeExecutionStatus,
             Duration,
             Status,
             SetLabels,
@@ -141,6 +144,7 @@
                     {key: this.$t("steps"), value: stepCount},
                     {key: this.$t("attempt"), value: this.execution?.metadata?.attemptNumber},
                     {key: this.$t("originalCreatedDate"), value: this.execution?.metadata?.originalCreatedDate, date: true},
+                    {key: this.$t("scheduleDate"), value: this.execution?.scheduleDate, date: true},
                 ];
 
                 if (this.execution.parentId) {

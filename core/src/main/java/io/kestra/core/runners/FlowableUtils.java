@@ -11,7 +11,7 @@ import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.tasks.flows.Dag;
+import io.kestra.plugin.core.flow.Dag;
 
 import java.util.*;
 import java.util.function.BiFunction;
@@ -60,7 +60,7 @@ public class FlowableUtils {
         // first one
         List<TaskRun> taskRuns = execution.findTaskRunByTasks(currentTasks, parentTaskRun);
         if (taskRuns.isEmpty()) {
-            return Collections.singletonList(currentTasks.get(0).toNextTaskRun(execution));
+            return Collections.singletonList(currentTasks.getFirst().toNextTaskRun(execution));
         }
 
         // first created, leave
@@ -82,6 +82,54 @@ public class FlowableUtils {
 
             if (currentTasks.size() > lastIndex + 1) {
                 return Collections.singletonList(currentTasks.get(lastIndex + 1).toNextTaskRun(execution));
+            }
+        }
+
+        return Collections.emptyList();
+    }
+
+    public static List<NextTaskRun> resolveWaitForNext(
+        Execution execution,
+        List<ResolvedTask> tasks,
+        List<ResolvedTask> errors,
+        TaskRun parentTaskRun
+    ) {
+        List<ResolvedTask> currentTasks = execution.findTaskDependingFlowState(tasks, errors, parentTaskRun);
+
+        // nothing
+        if (currentTasks == null || currentTasks.isEmpty() || execution.getState().getCurrent() == State.Type.KILLING) {
+            return Collections.emptyList();
+        }
+
+        // first one
+        List<TaskRun> taskRuns = execution.findTaskRunByTasks(currentTasks, parentTaskRun);
+        if (taskRuns.isEmpty()) {
+            return Collections.singletonList(
+                currentTasks.getFirst().toNextTaskRunIncrementIteration(execution, parentTaskRun.getIteration())
+            );
+        }
+
+        // first created, leave
+        Optional<TaskRun> lastCreated = execution.findLastCreated(taskRuns);
+        if (lastCreated.isPresent()) {
+            return Collections.emptyList();
+        }
+
+        // have running, leave
+        Optional<TaskRun> lastRunning = execution.findLastRunning(taskRuns);
+        if (lastRunning.isPresent()) {
+            return Collections.emptyList();
+        }
+
+        // last success, find next
+        Optional<TaskRun> lastTerminated = execution.findLastTerminated(taskRuns);
+        if (lastTerminated.isPresent()) {
+            int lastIndex = taskRuns.indexOf(lastTerminated.get());
+
+            if (currentTasks.size() > lastIndex + 1) {
+                return Collections.singletonList(currentTasks.get(lastIndex + 1).toNextTaskRunIncrementIteration(execution, parentTaskRun.getIteration()));
+            } else {
+                return Collections.singletonList(currentTasks.getFirst().toNextTaskRunIncrementIteration(execution, parentTaskRun.getIteration()));
             }
         }
 
@@ -137,9 +185,13 @@ public class FlowableUtils {
                 .parentId(parentTaskRun.getId())
                 .build()
             )
-            .collect(Collectors.toList());
+            .toList();
     }
 
+    /**
+     * resolveParallelNexts will resolve both concurrent values and subtasks
+     * For only concurrent values, see resolveConcurrentNexts()
+     */
     public static List<NextTaskRun> resolveParallelNexts(
         Execution execution,
         List<ResolvedTask> tasks,
@@ -154,6 +206,74 @@ public class FlowableUtils {
             concurrency,
             (nextTaskRunStream, taskRuns) -> nextTaskRunStream
         );
+    }
+
+    /**
+     * resolveConcurrentNexts will resolve concurrent values
+     * For both concurrent vales and subtasks, see resolveParallelNexts()
+     */
+    public static List<NextTaskRun> resolveConcurrentNexts(
+        Execution execution,
+        List<ResolvedTask> tasks,
+        List<ResolvedTask> errors,
+        TaskRun parentTaskRun,
+        Integer concurrency
+    ) {
+        if (execution.getState().getCurrent() == State.Type.KILLING) {
+            return Collections.emptyList();
+        }
+
+        List<ResolvedTask> allTasks = execution.findTaskDependingFlowState(
+            tasks,
+            errors,
+            parentTaskRun
+        );
+
+        // all tasks run
+        List<TaskRun> taskRuns = execution.findTaskRunByTasks(allTasks, parentTaskRun);
+
+        // find all non-terminated
+        long nonTerminatedCount = taskRuns
+            .stream()
+            .filter(taskRun -> !taskRun.getState().isTerminated())
+            .count();
+
+        if (concurrency > 0 && nonTerminatedCount >= concurrency) {
+            return Collections.emptyList();
+        }
+
+        long concurrencySlots = concurrency == 0 ? Integer.MAX_VALUE : concurrency - nonTerminatedCount;
+
+        // first one
+        if (taskRuns.isEmpty()) {
+            Map<String, List<ResolvedTask>> collect = allTasks
+                .stream()
+                .collect(Collectors.groupingBy(resolvedTask -> resolvedTask.getValue(), () -> new LinkedHashMap<>(), Collectors.toList()));
+            return collect.values().stream()
+                .limit(concurrencySlots)
+                .map(resolvedTasks -> resolvedTasks.getFirst().toNextTaskRun(execution))
+                .toList()
+                .reversed();
+        }
+
+        // start as many tasks as we have concurrency slots
+        Map<String, List<ResolvedTask>> collect = allTasks
+            .stream()
+            .collect(Collectors.groupingBy(resolvedTask -> resolvedTask.getValue(), () -> new LinkedHashMap<>(), Collectors.toList()));
+        return collect.values().stream()
+            .map(resolvedTasks -> filterCreated(resolvedTasks, taskRuns, parentTaskRun))
+            .filter(resolvedTasks -> !resolvedTasks.isEmpty())
+            .limit(concurrencySlots)
+            .map(resolvedTasks -> resolvedTasks.getFirst().toNextTaskRun(execution))
+            .toList();
+    }
+
+    private static List<ResolvedTask> filterCreated(List<ResolvedTask> tasks, List<TaskRun> taskRuns, TaskRun parentTaskRun) {
+        return tasks.stream()
+            .filter(resolvedTask -> taskRuns.stream()
+                .noneMatch(taskRun -> FlowableUtils.isTaskRunFor(resolvedTask, taskRun, parentTaskRun))
+            )
+            .toList();
     }
 
     public static List<NextTaskRun> resolveDagNexts(
@@ -217,15 +337,6 @@ public class FlowableUtils {
         // all tasks run
         List<TaskRun> taskRuns = execution.findTaskRunByTasks(currentTasks, parentTaskRun);
 
-        // find all not created tasks
-        List<ResolvedTask> notFinds = currentTasks
-            .stream()
-            .filter(resolvedTask -> taskRuns
-                .stream()
-                .noneMatch(taskRun -> FlowableUtils.isTaskRunFor(resolvedTask, taskRun, parentTaskRun))
-            )
-            .toList();
-
         // find all running and deal concurrency
         long runningCount = taskRuns
             .stream()
@@ -235,6 +346,15 @@ public class FlowableUtils {
         if (concurrency > 0 && runningCount > concurrency) {
             return Collections.emptyList();
         }
+
+        // find all not created tasks
+        List<ResolvedTask> notFinds = currentTasks
+            .stream()
+            .filter(resolvedTask -> taskRuns
+                .stream()
+                .noneMatch(taskRun -> FlowableUtils.isTaskRunFor(resolvedTask, taskRun, parentTaskRun))
+            )
+            .toList();
 
         // first created, leave
         Optional<TaskRun> lastCreated = execution.findLastCreated(taskRuns);
@@ -251,7 +371,7 @@ public class FlowableUtils {
             }
 
 
-            return nextTaskRunStream.collect(Collectors.toList());
+            return nextTaskRunStream.toList();
         }
 
         return Collections.emptyList();

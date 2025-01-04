@@ -5,7 +5,13 @@
         stripe
         table-layout="auto"
         @row-dblclick="triggerId = $event.id; isOpen = true"
+        default-expand-all
     >
+        <el-table-column type="expand">
+            <template #default="props">
+                <LogsWrapper class="m-3" :filters="props.row" purge-filters :charts="false" embed />
+            </template>
+        </el-table-column>
         <el-table-column prop="id" :label="$t('id')">
             <template #default="scope">
                 <code>
@@ -15,6 +21,15 @@
         </el-table-column>
 
         <el-table-column prop="type" :label="$t('type')" />
+
+        <el-table-column prop="workerId" :label="$t('workerId')">
+            <template #default="scope">
+                <id
+                    :value="scope.row.workerId"
+                    :shrink="true"
+                />
+            </template>
+        </el-table-column>
 
         <el-table-column prop="nextExecutionDate" :label="$t('next execution date')">
             <template #default="scope">
@@ -35,7 +50,7 @@
             <template #default="scope">
                 <el-button
                     :icon="CalendarCollapseHorizontalOutline"
-                    v-if="scheduleClassName === scope.row.type && !scope.row.backfill && userCan(action.CREATE)"
+                    v-if="isSchedule(scope.row.type) && !scope.row.backfill && userCan(action.CREATE)"
                     @click="setBackfillModal(scope.row, true)"
                     :disabled="scope.row.disabled"
                     size="small"
@@ -43,7 +58,7 @@
                 >
                     {{ $t("backfill executions") }}
                 </el-button>
-                <template v-else-if="scheduleClassName === scope.row.type && userCan(action.UPDATE)">
+                <template v-else-if="isSchedule(scope.row.type) && userCan(action.UPDATE)">
                     <div class="backfill-cell">
                         <div class="progress-cell">
                             <el-progress
@@ -83,6 +98,7 @@
         <el-table-column column-key="disable" class-name="row-action" v-if="userCan(action.UPDATE)">
             <template #default="scope">
                 <el-switch
+                    v-if="canBeDisabled(scope.row)"
                     size="small"
                     :active-text="$t('enabled')"
                     :model-value="!scope.row.disabled"
@@ -93,6 +109,16 @@
             </template>
         </el-table-column>
 
+        <el-table-column column-key="restart" class-name="row-action" v-if="userCan(action.UPDATE)">
+            <template #default="scope">
+                <el-button size="small" v-if="scope.row.evaluateRunningDate" @click="restart(scope.row)">
+                    <kicon :tooltip="$t('restart trigger.button')">
+                        <Restart />
+                    </kicon>
+                </el-button>
+            </template>
+        </el-table-column>
+
         <el-table-column column-key="unlock" class-name="row-action" v-if="userCan(action.UPDATE)">
             <template #default="scope">
                 <el-button size="small" v-if="scope.row.executionId" @click="unlock(scope.row)">
@@ -100,6 +126,12 @@
                         <lock-off />
                     </kicon>
                 </el-button>
+            </template>
+        </el-table-column>
+
+        <el-table-column>
+            <template #default="scope">
+                <trigger-avatar :flow="flow" :trigger-id="scope.row.id" />
             </template>
         </el-table-column>
 
@@ -179,9 +211,12 @@
     import Delete from "vue-material-design-icons/Delete.vue";
     import LockOff from "vue-material-design-icons/LockOff.vue";
     import Check from "vue-material-design-icons/Check.vue";
+    import Restart from "vue-material-design-icons/Restart.vue";
     import CalendarCollapseHorizontalOutline from "vue-material-design-icons/CalendarCollapseHorizontalOutline.vue"
     import FlowRun from "./FlowRun.vue";
     import RefreshButton from "../layout/RefreshButton.vue";
+    import Id from "../Id.vue";
+    import TriggerAvatar from "./TriggerAvatar.vue";
 </script>
 
 <script>
@@ -194,17 +229,16 @@
     import permission from "../../models/permission";
     import action from "../../models/action";
     import moment from "moment";
+    import LogsWrapper from "../logs/LogsWrapper.vue";
 
     export default {
-        components: {Markdown, Kicon, DateAgo, Vars, Drawer},
+        components: {Markdown, Kicon, DateAgo, Vars, Drawer, LogsWrapper},
         data() {
             return {
                 triggerId: undefined,
                 isOpen: false,
                 isBackfillOpen: false,
                 triggers: [],
-                // className to check to display the backfill button
-                scheduleClassName: "io.kestra.core.models.triggers.types.Schedule",
                 selectedTrigger: null,
                 backfill: {
                     start: null,
@@ -236,7 +270,9 @@
                 return this.flow.triggers.find(trigger => trigger.id === this.triggerId);
             },
             triggersWithType() {
-                let flowTriggers = this.flow.triggers
+                let flowTriggers = this.flow.triggers.map(trigger => {
+                    return {...trigger, sourceDisabled: trigger.disabled ?? false}
+                })
                 if (flowTriggers) {
                     return flowTriggers.map(flowTrigger => {
                         let pollingTrigger = this.triggers.find(trigger => trigger.triggerId === flowTrigger.id)
@@ -255,7 +291,7 @@
             },
             loadData() {
                 this.$store
-                    .dispatch("trigger/find", {namespace: this.flow.namespace, flowId: this.flow.id})
+                    .dispatch("trigger/find", {namespace: this.flow.namespace, flowId: this.flow.id, size: this.triggersWithType.length})
                     .then(triggers => this.triggers = triggers.results);
             },
             setBackfillModal(trigger, bool) {
@@ -376,6 +412,21 @@
                     })
                 })
             },
+            restart(trigger) {
+                this.$store.dispatch("trigger/restart", {
+                    namespace: trigger.namespace,
+                    flowId: trigger.flowId,
+                    triggerId: trigger.triggerId
+                }).then(newTrigger => {
+                    this.$toast().saved(newTrigger.id);
+                    this.triggers = this.triggers.map(t => {
+                        if (t.id === newTrigger.id) {
+                            return newTrigger
+                        }
+                        return t
+                    })
+                })
+            },
             backfillProgression(backfill) {
                 const startMoment = moment(backfill.start);
                 const endMoment = moment(backfill.end);
@@ -384,6 +435,13 @@
                 const totalDuration = endMoment.diff(startMoment);
                 const elapsedDuration = currentMoment.diff(startMoment);
                 return Math.round((elapsedDuration / totalDuration) * 100);
+            },
+            isSchedule(type) {
+                return type === "io.kestra.plugin.core.trigger.Schedule" || type === "io.kestra.core.models.triggers.types.Schedule";
+            },
+            canBeDisabled(trigger) {
+                return this.triggers.map(trigg => trigg.triggerId).includes(trigger.id)
+                    && !trigger.sourceDisabled;
             }
         }
     };

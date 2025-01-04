@@ -27,7 +27,7 @@
                             "Powerful orchestration engine",
                             "Declarative workflows as code and from the UI",
                             "Event-driven automations",
-                            "Embedded Visual Studio code editor",
+                            "Embedded code editor",
                             "Embedded documentation",
                             "Live-updating topology view",
                             "Access to 400+ plugins",
@@ -61,7 +61,7 @@
                         ],
                         button: {
                             text: "Talk to us",
-                            href: "https://kestra.io/demo?utm_source=app&utm_content=stats"
+                            href: "https://kestra.io/demo?utm_source=app$&utm_campaign=enterprise&utm_content=stats"
                         }
                     },
                     {
@@ -73,7 +73,7 @@
                         ],
                         button: {
                             text: "Sign up for a private Alpha",
-                            href: "https://kestra.io/cloud?utm_source=app&utm_content=stats"
+                            href: "https://kestra.io/cloud?utm_source=app&utm_campaign=cloud&utm_content=stats"
                         }
                     }
                 ]

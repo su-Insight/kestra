@@ -8,7 +8,6 @@ import lombok.Getter;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.jackson.Jacksonized;
 
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 
@@ -20,11 +19,10 @@ public class ExecutionUsage {
     private final List<DailyExecutionStatistics> dailyExecutionsCount;
     private final List<DailyExecutionStatistics> dailyTaskRunsCount;
 
-    public static ExecutionUsage of(String tenantId, ExecutionRepositoryInterface executionRepository) {
-        ZonedDateTime startDate = ZonedDateTime.now()
-            .toLocalDate()
-            .atStartOfDay(ZoneId.systemDefault())
-            .minusDays(1);
+    public static ExecutionUsage of(final String tenantId,
+                                    final ExecutionRepositoryInterface executionRepository,
+                                    final ZonedDateTime from,
+                                    final ZonedDateTime to) {
 
         List<DailyExecutionStatistics> dailyTaskRunsCount = null;
 
@@ -34,11 +32,12 @@ public class ExecutionUsage {
                 tenantId,
                 null,
                 null,
-                startDate,
-                ZonedDateTime.now(),
+                null,
+                from,
+                to,
                 DateUtils.GroupType.DAY,
-                true
-            );
+                null,
+                true);
         } catch (UnsupportedOperationException ignored) {
 
         }
@@ -49,44 +48,39 @@ public class ExecutionUsage {
                 tenantId,
                 null,
                 null,
-                startDate,
-                ZonedDateTime.now(),
+                null,
+                from,
+                to,
                 DateUtils.GroupType.DAY,
-                false
-            ))
+                null,
+                false))
             .dailyTaskRunsCount(dailyTaskRunsCount)
             .build();
     }
 
-    public static ExecutionUsage of(ExecutionRepositoryInterface executionRepository) {
-        ZonedDateTime startDate = ZonedDateTime.now()
-            .toLocalDate()
-            .atStartOfDay(ZoneId.systemDefault())
-            .minusDays(1);
-
+    public static ExecutionUsage of(final ExecutionRepositoryInterface repository,
+                                    final ZonedDateTime from,
+                                    final ZonedDateTime to) {
         List<DailyExecutionStatistics> dailyTaskRunsCount = null;
-
         try {
-            dailyTaskRunsCount = executionRepository.dailyStatisticsForAllTenants(
+            dailyTaskRunsCount = repository.dailyStatisticsForAllTenants(
                 null,
                 null,
                 null,
-                startDate,
-                ZonedDateTime.now(),
+                from,
+                to,
                 DateUtils.GroupType.DAY,
                 true
             );
-        } catch (UnsupportedOperationException ignored) {
-
-        }
+        } catch (UnsupportedOperationException ignored) {}
 
         return ExecutionUsage.builder()
-            .dailyExecutionsCount(executionRepository.dailyStatisticsForAllTenants(
+            .dailyExecutionsCount(repository.dailyStatisticsForAllTenants(
                 null,
                 null,
                 null,
-                startDate,
-                ZonedDateTime.now(),
+                from,
+                to,
                 DateUtils.GroupType.DAY,
                 false
             ))

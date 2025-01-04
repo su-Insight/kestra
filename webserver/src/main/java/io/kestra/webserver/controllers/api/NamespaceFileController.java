@@ -2,7 +2,7 @@ package io.kestra.webserver.controllers.api;
 
 import io.kestra.core.services.FlowService;
 import io.kestra.core.storages.FileAttributes;
-import io.kestra.core.storages.StorageContext;
+import io.kestra.core.storages.NamespaceFile;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.Rethrow;
@@ -23,8 +23,14 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.*;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -53,7 +59,7 @@ public class NamespaceFileController {
         @Parameter(description = "The namespace id") @PathVariable String namespace,
         @Parameter(description = "The string the file path should contain") @QueryValue String q
     ) throws IOException, URISyntaxException {
-        URI baseNamespaceFilesUri = toNamespacedStorageUri(namespace, null);
+        URI baseNamespaceFilesUri = NamespaceFile.of(namespace).uri();
         return storageInterface.allByPrefix(tenantService.resolveTenant(), baseNamespaceFilesUri, false).stream()
             .map(storageUri -> "/" + baseNamespaceFilesUri.relativize(storageUri).getPath())
             .filter(path -> path.contains(q)).toList();
@@ -64,12 +70,15 @@ public class NamespaceFileController {
     @Operation(tags = {"Files"}, summary = "Get namespace file content")
     public StreamedFile file(
         @Parameter(description = "The namespace id") @PathVariable String namespace,
-        @Parameter(description = "The internal storage uri") @QueryValue URI path
+        @Parameter(description = "The internal storage uri") @QueryValue String path
     ) throws IOException, URISyntaxException {
-        forbiddenPathsGuard(path);
+        URI encodedPath = null;
+        if (path != null) {
+            encodedPath = new URI(URLEncoder.encode(path, StandardCharsets.UTF_8));
+        }
+        forbiddenPathsGuard(encodedPath);
 
-        InputStream fileHandler = storageInterface.get(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, path));
-
+        InputStream fileHandler = storageInterface.get(tenantService.resolveTenant(), NamespaceFile.of(namespace, encodedPath).uri());
         return new StreamedFile(fileHandler, MediaType.APPLICATION_OCTET_STREAM_TYPE);
     }
 
@@ -78,20 +87,23 @@ public class NamespaceFileController {
     @Operation(tags = {"Files"}, summary = "Get namespace file stats such as size, creation & modification dates and type")
     public FileAttributes stats(
         @Parameter(description = "The namespace id") @PathVariable String namespace,
-        @Parameter(description = "The internal storage uri") @Nullable @QueryValue URI path
+        @Parameter(description = "The internal storage uri") @Nullable @QueryValue String path
     ) throws IOException, URISyntaxException {
-        forbiddenPathsGuard(path);
+        URI encodedPath = null;
+        if (path != null) {
+            encodedPath = new URI(URLEncoder.encode(path, StandardCharsets.UTF_8));
+        }
+        forbiddenPathsGuard(encodedPath);
 
-        // if stats is performed upon namespace root and it doesn't exist yet, we create it
-        if (path == null) {
-            if(!storageInterface.exists(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, null))) {
-                storageInterface.createDirectory(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, null));
+        // if stats is performed upon namespace root, and it doesn't exist yet, we create it
+        if (path == null || path.isEmpty()) {
+            if(!storageInterface.exists(tenantService.resolveTenant(), NamespaceFile.of(namespace).uri())) {
+                storageInterface.createDirectory(tenantService.resolveTenant(), NamespaceFile.of(namespace).uri());
             }
-
-            return storageInterface.getAttributes(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, null));
+            return storageInterface.getAttributes(tenantService.resolveTenant(), NamespaceFile.of(namespace).uri());
         }
 
-        return storageInterface.getAttributes(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, path));
+        return storageInterface.getAttributes(tenantService.resolveTenant(), NamespaceFile.of(namespace, encodedPath).uri());
     }
 
     @ExecuteOn(TaskExecutors.IO)
@@ -99,22 +111,22 @@ public class NamespaceFileController {
     @Operation(tags = {"Files"}, summary = "List directory content")
     public List<FileAttributes> list(
         @Parameter(description = "The namespace id") @PathVariable String namespace,
-        @Parameter(description = "The internal storage uri") @Nullable @QueryValue URI path
+        @Parameter(description = "The internal storage uri") @Nullable @QueryValue String path
     ) throws IOException, URISyntaxException {
-        forbiddenPathsGuard(path);
-
-        if (path == null) {
-            path = URI.create("/");
+        URI encodedPath = null;
+        if (path != null) {
+            encodedPath = new URI(URLEncoder.encode(path, StandardCharsets.UTF_8));
         }
+        forbiddenPathsGuard(encodedPath);
 
-        String pathString = path.getPath();
+        NamespaceFile namespaceFile = NamespaceFile.of(namespace, encodedPath);
 
-        if (pathString.equals("/") && !storageInterface.exists(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, null))) {
-            storageInterface.createDirectory(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, null));
+        if (namespaceFile.isRootDirectory() && !storageInterface.exists(tenantService.resolveTenant(), NamespaceFile.of(namespace).uri())) {
+            storageInterface.createDirectory(tenantService.resolveTenant(), NamespaceFile.of(namespace).uri());
             return Collections.emptyList();
         }
 
-        return storageInterface.list(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, path));
+        return storageInterface.list(tenantService.resolveTenant(), namespaceFile.uri());
     }
 
     @ExecuteOn(TaskExecutors.IO)
@@ -122,11 +134,15 @@ public class NamespaceFileController {
     @Operation(tags = {"Files"}, summary = "Create a directory")
     public void createDirectory(
         @Parameter(description = "The namespace id") @PathVariable String namespace,
-        @Parameter(description = "The internal storage uri") @Nullable @QueryValue URI path
+        @Parameter(description = "The internal storage uri") @Nullable @QueryValue String path
     ) throws IOException, URISyntaxException {
-        forbiddenPathsGuard(path);
+        URI encodedPath = null;
+        if (path != null) {
+            encodedPath = new URI(URLEncoder.encode(path, StandardCharsets.UTF_8));
+        }
+        forbiddenPathsGuard(encodedPath);
 
-        storageInterface.createDirectory(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, path));
+        storageInterface.createDirectory(tenantService.resolveTenant(), NamespaceFile.of(namespace, encodedPath).uri());
     }
 
     @ExecuteOn(TaskExecutors.IO)
@@ -134,7 +150,7 @@ public class NamespaceFileController {
     @Operation(tags = {"Files"}, summary = "Create a file")
     public void createFile(
         @Parameter(description = "The namespace id") @PathVariable String namespace,
-        @Parameter(description = "The internal storage uri") @QueryValue URI path,
+        @Parameter(description = "The internal storage uri") @QueryValue String path,
         @Part CompletedFileUpload fileContent
     ) throws IOException, URISyntaxException {
         String tenantId = tenantService.resolveTenant();
@@ -157,7 +173,7 @@ public class NamespaceFileController {
                     return (int) fileContent.getSize();
                 }
             }) {
-                putNamespaceFile(tenantId, namespace, path, inputStream);
+                putNamespaceFile(tenantId, namespace, new URI(URLEncoder.encode(path, StandardCharsets.UTF_8)), inputStream);
             }
         }
     }
@@ -175,7 +191,7 @@ public class NamespaceFileController {
             return;
         }
 
-        storageInterface.put(tenantId, toNamespacedStorageUri(namespace, path), inputStream);
+        storageInterface.put(tenantId, NamespaceFile.of(namespace, path).uri(), inputStream);
     }
 
     protected void importFlow(String tenantId, String source) {
@@ -191,7 +207,7 @@ public class NamespaceFileController {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ZipOutputStream archive = new ZipOutputStream(bos)) {
 
-            URI baseNamespaceFilesUri = toNamespacedStorageUri(namespace, null);
+            URI baseNamespaceFilesUri = NamespaceFile.of(namespace).uri();
             String tenantId = tenantService.resolveTenant();
             storageInterface.allByPrefix(tenantId, baseNamespaceFilesUri, false).forEach(Rethrow.throwConsumer(uri -> {
                 try (InputStream inputStream = storageInterface.get(tenantId, uri)) {
@@ -228,7 +244,7 @@ public class NamespaceFileController {
         ensureWritableNamespaceFile(from);
         ensureWritableNamespaceFile(to);
 
-        storageInterface.move(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, from), toNamespacedStorageUri(namespace, to));
+        storageInterface.move(tenantService.resolveTenant(), NamespaceFile.of(namespace, from).uri(),NamespaceFile.of(namespace, to).uri());
     }
 
     @ExecuteOn(TaskExecutors.IO)
@@ -236,11 +252,40 @@ public class NamespaceFileController {
     @Operation(tags = {"Files"}, summary = "Delete a file or directory")
     public void delete(
         @Parameter(description = "The namespace id") @PathVariable String namespace,
-        @Parameter(description = "The internal storage uri of the file / directory to delete") @QueryValue URI path
+        @Parameter(description = "The internal storage uri of the file / directory to delete") @QueryValue String path
     ) throws IOException, URISyntaxException {
-        ensureWritableNamespaceFile(path);
+        URI encodedPath = null;
+        if (path != null) {
+            encodedPath = new URI(URLEncoder.encode(path, StandardCharsets.UTF_8));
+        }
+        ensureWritableNamespaceFile(encodedPath);
 
-        storageInterface.delete(tenantService.resolveTenant(), toNamespacedStorageUri(namespace, path));
+        String pathWithoutScheme = encodedPath.getPath();
+
+        List<String> allNamespaceFilesPaths = storageInterface.allByPrefix(tenantService.resolveTenant(), NamespaceFile.of(namespace).storagePath().toUri(), true)
+            .stream()
+            .map(uri -> NamespaceFile.of(namespace, uri).path(true).toString())
+            .collect(Collectors.toCollection(ArrayList::new));
+
+        if (allNamespaceFilesPaths.contains(pathWithoutScheme + "/")) {
+            // the given path to delete is a directory
+            pathWithoutScheme = pathWithoutScheme + "/";
+        }
+
+        while (!pathWithoutScheme.equals("/")) {
+            String parentFolder = pathWithoutScheme.substring(0, pathWithoutScheme.lastIndexOf('/') + 1);
+            if (parentFolder.equals("/")) {
+                break;
+            }
+            List<String> filesInParentFolder = allNamespaceFilesPaths.stream().filter(p -> p.length() > parentFolder.length() && p.startsWith(parentFolder)).toList();
+            // there is more than one file in this folder so we stop the cascade deletion there
+            if (filesInParentFolder.size() > 1) {
+                break;
+            }
+            allNamespaceFilesPaths.removeIf(filesInParentFolder::contains);
+            pathWithoutScheme = parentFolder.endsWith("/") ? parentFolder.substring(0, parentFolder.length() - 1) : parentFolder;
+        }
+        storageInterface.delete(tenantService.resolveTenant(), NamespaceFile.of(namespace, Path.of(pathWithoutScheme)).uri());
     }
 
     private void forbiddenPathsGuard(URI path) {
@@ -251,10 +296,6 @@ public class NamespaceFileController {
         if (forbiddenPathPatterns.stream().anyMatch(pattern -> pattern.matcher(path.getPath()).matches())) {
             throw new IllegalArgumentException("Forbidden path: " + path.getPath());
         }
-    }
-
-    private URI toNamespacedStorageUri(String namespace, @Nullable URI relativePath) {
-        return URI.create("kestra://" + StorageContext.namespaceFilePrefix(namespace) + Optional.ofNullable(relativePath).map(URI::getPath).orElse("/"));
     }
 
     private void ensureWritableNamespaceFile(URI path) {

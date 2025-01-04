@@ -5,7 +5,7 @@
         @click="visible = !visible"
         :disabled="!enabled"
     >
-        <span v-if="component !== 'el-button'">{{ $t('change status') }}</span>
+        <span v-if="component !== 'el-button'">{{ $t('change_status') }}</span>
 
         <el-dialog v-if="enabled && visible" v-model="visible" :id="uuid" destroy-on-close :append-to-body="true">
             <template #header>
@@ -129,7 +129,7 @@
                             });
                         }
 
-                        this.$toast().success(this.$t("change status done"));
+                        this.$toast().success(this.$t("change state done"));
                     })
             },
         },

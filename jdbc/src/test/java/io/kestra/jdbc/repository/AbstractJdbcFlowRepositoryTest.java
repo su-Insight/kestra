@@ -1,20 +1,23 @@
 package io.kestra.jdbc.repository;
 
-import io.kestra.core.Helpers;
 import io.kestra.core.models.SearchResult;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithException;
+import io.kestra.core.models.flows.FlowWithSource;
 import io.kestra.core.serializers.JacksonMapper;
+import io.kestra.core.utils.IdUtils;
 import io.kestra.jdbc.JdbcTestUtils;
 import io.kestra.jdbc.JooqDSLContextWrapper;
+import io.kestra.plugin.core.debug.Return;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.data.model.Sort;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,8 +39,8 @@ public abstract class AbstractJdbcFlowRepositoryTest extends io.kestra.core.repo
     protected JooqDSLContextWrapper dslContextWrapper;
 
     @Test
-    void findSourceCode() {
-        List<SearchResult<Flow>> search = flowRepository.findSourceCode(Pageable.from(1, 10, Sort.UNSORTED), "io.kestra.core.models.conditions.types.MultipleCondition", null, null);
+    public void findSourceCode() {
+        List<SearchResult<Flow>> search = flowRepository.findSourceCode(Pageable.from(1, 10, Sort.UNSORTED), "io.kestra.plugin.core.condition.MultipleCondition", null, null);
 
         assertThat((long) search.size(), is(2L));
 
@@ -48,7 +51,7 @@ public abstract class AbstractJdbcFlowRepositoryTest extends io.kestra.core.repo
                 .equals("trigger-multiplecondition-listener"))
             .findFirst()
             .orElseThrow();
-        assertThat(flow.getFragments().get(0), containsString("types.MultipleCondition[/mark]"));
+        assertThat(flow.getFragments().getFirst(), containsString("condition.MultipleCondition[/mark]"));
     }
 
     @Test
@@ -65,7 +68,7 @@ public abstract class AbstractJdbcFlowRepositoryTest extends io.kestra.core.repo
                     "revision", 1,
                     "tasks", List.of(Map.of(
                         "id", "invalid",
-                        "type", "io.kestra.core.tasks.log.Log",
+                        "type", "io.kestra.plugin.core.log.Log",
                         "level", "invalid"
                     )),
                     "deleted", false
@@ -75,14 +78,69 @@ public abstract class AbstractJdbcFlowRepositoryTest extends io.kestra.core.repo
 
         Optional<Flow> flow = flowRepository.findById(null, "io.kestra.unittest", "invalid");
 
-        assertThat(flow.isPresent(), is(true));
-        assertThat(flow.get(), instanceOf(FlowWithException.class));
-        assertThat(((FlowWithException) flow.get()).getException(), containsString("Cannot deserialize value of type `org.slf4j.event.Level`"));
+        try {
+            assertThat(flow.isPresent(), is(true));
+            assertThat(flow.get(), instanceOf(FlowWithException.class));
+            assertThat(((FlowWithException) flow.get()).getException(), containsString("Cannot deserialize value of type `org.slf4j.event.Level`"));
+        } finally {
+            flow.ifPresent(value -> flowRepository.delete(value));
+        }
     }
 
     @BeforeAll
     protected void setup() {
         jdbcTestUtils.drop();
         jdbcTestUtils.migrate();
+    }
+
+    @Test
+    void shouldCountForNullTenant() {
+        FlowWithSource toDelete = null;
+        try {
+            // Given
+            Flow flow = createTestFlowForNamespace("io.kestra.unittest");
+            toDelete = flowRepository.create(flow, "", flow);
+            // When
+            int count = flowRepository.count(null);
+
+            // Then
+            Assertions.assertTrue(count > 0);
+        } finally {
+            Optional.ofNullable(toDelete).ifPresent(flow -> {
+                flowRepository.delete(flow.toFlow());
+            });
+        }
+    }
+
+    @Test
+    void shouldCountForNullTenantGivenNamespace() {
+        List<FlowWithSource> toDelete = new ArrayList<>();
+        try {
+            // Given
+            toDelete.add(flowRepository.create(createTestFlowForNamespace("io.kestra.unittest"), "", createTestFlowForNamespace("io.kestra.unittest")));
+            toDelete.add(flowRepository.create(createTestFlowForNamespace("io.kestra.unittest.shouldcountbynamespacefornulltenant"), "", createTestFlowForNamespace("io.kestra.unittest.shouldcountbynamespacefornulltenant")));
+
+            // When
+            int count = flowRepository.countForNamespace(null, "io.kestra.unittest.shouldcountbynamespacefornulltenant");
+
+            // Then
+            Assertions.assertEquals(1, count);
+        } finally {
+            for (FlowWithSource flow : toDelete) {
+                flowRepository.delete(flow.toFlow());
+            }
+        }
+    }
+
+    private static Flow createTestFlowForNamespace(String namespace) {
+        return Flow.builder()
+            .id(IdUtils.create())
+            .namespace(namespace)
+            .tasks(List.of(Return.builder()
+                .id(IdUtils.create())
+                .type(Return.class.getName())
+                .build()
+            ))
+            .build();
     }
 }

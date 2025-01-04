@@ -1,5 +1,5 @@
 <template>
-    <nav class="d-flex w-100 gap-3 top-bar" v-if="displayNavBar">
+    <nav data-component="FILENAME_PLACEHOLDER" class="d-flex w-100 gap-3 top-bar" v-if="displayNavBar">
         <div class="d-flex flex-column flex-grow-1 flex-shrink-1 overflow-hidden top-title">
             <el-breadcrumb v-if="breadcrumb">
                 <el-breadcrumb-item v-for="(item, x) in breadcrumb" :key="x">
@@ -14,9 +14,15 @@
                 </slot>
             </h1>
         </div>
-        <div class="d-flex side gap-2 flex-shrink-0">
+        <div class="d-flex side gap-2 flex-shrink-0 align-items-center">
             <div class="d-none d-lg-flex align-items-center">
                 <global-search class="trigger-flow-guided-step" />
+            </div>
+            <div class="d-flex side gap-2 flex-shrink-0 align-items-center">
+                <el-button v-if="shouldDisplayDeleteButton && logs !== undefined && logs.length > 0" @click="deleteLogs()">
+                    <TrashCan class="me-2" />
+                    <span>{{ $t("delete logs") }}</span>
+                </el-button>
             </div>
             <slot name="additional-right" />
             <div class="d-flex fixed-buttons">
@@ -27,32 +33,27 @@
                     <template #dropdown>
                         <el-dropdown-menu>
                             <a
-                                href="https://kestra.io/slack?utm_source=app&utm_content=top-nav-bar"
+                                href="https://kestra.io/slack?utm_source=app&utm_campaign=slack&utm_content=top-nav-bar"
                                 target="_blank"
                                 class="d-flex gap-2 el-dropdown-menu__item"
                             >
                                 <HelpBox class="align-middle" /> {{ $t("live help") }}
                             </a>
                             <a
+                                v-if="tourEnabled"
                                 @click="restartGuidedTour"
                                 class="d-flex gap-2 el-dropdown-menu__item"
                             >
                                 <ProgressQuestion class="align-middle" /> {{ $t('Reset guided tour') }}
                             </a>
 
-                            <a
-                                href="https://kestra.io/docs?utm_source=app&utm_content=top-nav-bar"
-                                target="_blank"
+                            <router-link
                                 class="d-flex gap-2 el-dropdown-menu__item"
+                                :to="{name: 'docs/view'}"
                             >
                                 <BookMultipleOutline class="align-middle" /> {{ $t("documentation.documentation") }}
-                            </a>
-                            <router-link
-                                :to="{name: 'plugins/list'}"
-                                class="d-flex gap-2 el-dropdown-menu__item"
-                            >
-                                <GoogleCirclesExtended class="align-middle" /> {{ $t("plugins.names") }}
                             </router-link>
+
                             <a
                                 href="https://github.com/kestra-io/kestra/issues"
                                 target="_blank"
@@ -61,14 +62,14 @@
                                 <Github class="align-middle" /> {{ $t("documentation.github") }}
                             </a>
                             <a
-                                href="https://kestra.io/slack?utm_source=app&utm_content=top-nav-bar"
+                                href="https://kestra.io/slack?utm_source=app&utm_campaign=slack&utm_content=top-nav-bar"
                                 target="_blank"
                                 class="d-flex gap-2 el-dropdown-menu__item"
                             >
                                 <Slack class="align-middle" /> {{ $t("join community") }}
                             </a>
                             <a
-                                href="https://kestra.io/contact-us?utm_source=app&utm_content=top-nav-bar"
+                                href="https://kestra.io/demo?utm_source=app&utm_campaign=sales&utm_content=top-nav-bar"
                                 target="_blank"
                                 class="d-flex gap-2 el-dropdown-menu__item"
                             >
@@ -86,24 +87,26 @@
                     </template>
                 </el-dropdown>
                 <news />
+                <impersonating />
                 <auth />
             </div>
         </div>
     </nav>
 </template>
 <script>
-    import {mapState} from "vuex";
+    import {mapState, mapGetters} from "vuex";
     import Auth from "override/components/auth/Auth.vue";
+    import Impersonating from "override/components/auth/Impersonating.vue";
     import News from "./News.vue";
     import HelpBox from "vue-material-design-icons/HelpBox.vue";
     import BookMultipleOutline from "vue-material-design-icons/BookMultipleOutline.vue";
-    import GoogleCirclesExtended from "vue-material-design-icons/GoogleCirclesExtended.vue";
     import Github from "vue-material-design-icons/Github.vue";
     import Slack from "vue-material-design-icons/Slack.vue";
     import EmailHeartOutline from "vue-material-design-icons/EmailHeartOutline.vue";
     import Update from "vue-material-design-icons/Update.vue";
     import ProgressQuestion from "vue-material-design-icons/ProgressQuestion.vue";
-    import GlobalSearch from "./GlobalSearch.vue"
+    import GlobalSearch from "./GlobalSearch.vue";
+    import TrashCan from "vue-material-design-icons/TrashCan.vue";
 
     export default {
         components: {
@@ -111,13 +114,14 @@
             News,
             HelpBox,
             BookMultipleOutline,
-            GoogleCirclesExtended,
             Github,
             Slack,
             EmailHeartOutline,
             Update,
             ProgressQuestion,
-            GlobalSearch
+            GlobalSearch,
+            TrashCan,
+            Impersonating
         },
         props: {
             title: {
@@ -131,31 +135,38 @@
         },
         computed: {
             ...mapState("api", ["version"]),
+            ...mapState("core", ["tutorialFlows"]),
+            ...mapState("log", ["logs"]),
+            ...mapGetters("core", ["guidedProperties"]),
+            ...mapGetters("auth", ["user"]),
             displayNavBar() {
                 return this.$route?.name !== "welcome";
-            }
+            },
+            tourEnabled(){
+                // Temporary solution to not showing the tour menu item for EE
+                return this.tutorialFlows?.length && !Object.keys(this.user).length
+            },
+            shouldDisplayDeleteButton() {
+                return this.$route.name === "flows/update" && this.$route.params?.tab === "logs"
+            },
         },
         methods: {
             restartGuidedTour() {
                 localStorage.setItem("tourDoneOrSkip", undefined);
-                this.$store.commit("core/setGuidedProperties", {
-                    tourStarted: false,
-                    flowSource: undefined,
-                    saveFlow: false,
-                    executeFlow: false,
-                    validateInputs: false,
-                    monacoRange: undefined,
-                    monacoDisableRange: undefined
-                });
+                this.$store.commit("core/setGuidedProperties", {tourStarted: false});
 
-                this.$router
-                    .push({name: "flows/create"}).then(() => {
-                        this.$tours["guidedTour"].start();
-                    })
+                this.$tours["guidedTour"]?.start();
+            },
+            deleteLogs() {
+                this.$toast().confirm(
+                    this.$t("delete_all_logs"),
+                    () => this.$store.dispatch("log/deleteLogs", {namespace: this.namespace, flowId: this.flowId}),
+                    () => {}
+                )
             }
         }
     };
-</script>
+</script>,
 <style lang="scss" scoped>
     nav {
         top: 0;

@@ -1,7 +1,6 @@
 package io.kestra.core.topologies;
 
 import io.kestra.core.models.conditions.Condition;
-import io.kestra.core.models.conditions.types.*;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.hierarchies.Graph;
@@ -15,15 +14,13 @@ import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.repositories.FlowTopologyRepositoryInterface;
 import io.kestra.core.services.ConditionService;
 import io.kestra.core.utils.ListUtils;
+import io.kestra.plugin.core.condition.*;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -172,13 +169,13 @@ public class FlowTopologyService {
         List<AbstractTrigger> triggers = ListUtils.emptyOnNull(child.getTriggers());
 
         // simulated execution
-        Execution execution = Execution.newExecution(parent, (f, e) -> null, null);
+        Execution execution = Execution.newExecution(parent, (f, e) -> null, null, Optional.empty());
 
         // keep only flow trigger
-        List<io.kestra.core.models.triggers.types.Flow> flowTriggers = triggers
+        List<io.kestra.plugin.core.trigger.Flow> flowTriggers = triggers
             .stream()
-            .filter(t -> t instanceof io.kestra.core.models.triggers.types.Flow)
-            .map(t -> (io.kestra.core.models.triggers.types.Flow) t)
+            .filter(t -> t instanceof io.kestra.plugin.core.trigger.Flow)
+            .map(t -> (io.kestra.plugin.core.trigger.Flow) t)
             .toList();
 
         if (flowTriggers.isEmpty()) {
@@ -223,7 +220,7 @@ public class FlowTopologyService {
     protected boolean isMandatoryMultipleCondition(Condition condition) {
         return Stream
             .of(
-                VariableCondition.class
+                ExpressionCondition.class
             )
             .anyMatch(aClass -> condition.getClass().isAssignableFrom(aClass));
     }

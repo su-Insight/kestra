@@ -156,7 +156,7 @@
                     });
                     return;
                 }
-                emit("on-edit", YamlUtils.deleteTask(props.source, event.id, section))
+                emit("on-edit", YamlUtils.deleteTask(props.source, event.id, section), true)
             },
             () => {
             }
@@ -197,17 +197,17 @@
         if (task === undefined || (task && YamlUtils.parse(event).id === taskEditData.value.oldTaskId)) {
             switch (taskEditData.value.action) {
             case("create_task"):
-                emit("on-edit", YamlUtils.insertTask(source, taskEditData.value.insertionDetails[0], event, taskEditData.value.insertionDetails[1]))
+                emit("on-edit", YamlUtils.insertTask(source, taskEditData.value.insertionDetails[0], event, taskEditData.value.insertionDetails[1]), true)
                 return;
             case("edit_task"):
                 emit("on-edit", YamlUtils.replaceTaskInDocument(
                     source,
                     taskEditData.value.oldTaskId,
                     event
-                ))
+                ), true)
                 return;
             case("add_flowable_error"):
-                emit("on-edit", YamlUtils.insertErrorInFlowable(props.source, event, taskEditData.value.taskId))
+                emit("on-edit", YamlUtils.insertErrorInFlowable(props.source, event, taskEditData.value.taskId), true)
                 return;
             }
         } else {
@@ -276,7 +276,7 @@
 
     const onSwappedTask = (event) => {
         emit("swapped-task", event.swappedTasks);
-        emit("on-edit", event.newSource);
+        emit("on-edit", event.newSource, true);
     }
 
     const message = (event) => {
@@ -307,16 +307,16 @@
             :namespace="namespace"
             :expanded-subflows="props.expandedSubflows"
             @toggle-orientation="toggleOrientation"
-            @edit="onEditTask($event)"
+            @edit="onEditTask"
             @delete="onDelete"
-            @open-link="openFlow($event)"
-            @show-logs="showLogs($event)"
-            @show-description="showDescription($event)"
-            @on-add-flowable-error="onAddFlowableError($event)"
-            @add-task="onCreateNewTask($event)"
-            @swapped-task="onSwappedTask($event)"
-            @message="message($event)"
-            @expand-subflow="expandSubflow($event)"
+            @open-link="openFlow"
+            @show-logs="showLogs"
+            @show-description="showDescription"
+            @on-add-flowable-error="onAddFlowableError"
+            @add-task="onCreateNewTask"
+            @swapped-task="onSwappedTask"
+            @message="message"
+            @expand-subflow="expandSubflow"
             :icons="icons"
         />
 
@@ -332,7 +332,7 @@
             size="small"
             :namespace="namespace"
             :revision="execution ? execution.flowRevision : undefined"
-            @update:task="confirmEdit($event)"
+            @update:task="confirmEdit"
             @close="closeEdit()"
             :flow-source="source"
             ref="taskEditDomElement"

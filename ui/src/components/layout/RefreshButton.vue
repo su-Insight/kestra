@@ -1,11 +1,11 @@
 <template>
-    <el-button-group :size="size" :class="customClass">
-        <el-button :disabled="!canAutoRefresh" :active="autoRefresh" @click="toggleAutoRefresh">
+    <el-button-group class="min-w-auto" data-component="FILENAME_PLACEHOLDER" :size="size" :class="customClass">
+        <el-button :disabled="!canAutoRefresh" :active="autoRefresh" @click="toggleAutoRefresh" data-test-id="toggle-aut-refresh-button">
             <kicon :tooltip="$t('toggle periodic refresh each 10 seconds')" placement="bottom">
                 <component :is="autoRefresh ? 'auto-renew' : 'auto-renew-off'" class="auto-refresh-icon" />
             </kicon>
         </el-button>
-        <el-button @click="triggerRefresh">
+        <el-button @click="triggerRefresh" data-test-id="trigger-refresh-button">
             <kicon :tooltip="$t('trigger refresh')" placement="bottom">
                 <refresh />
             </kicon>
@@ -17,6 +17,7 @@
     import AutoRenew from "vue-material-design-icons/Autorenew.vue";
     import AutoRenewOff from "vue-material-design-icons/AutorenewOff.vue";
     import Kicon from "../Kicon.vue"
+
     export default {
         components: {Refresh, AutoRenew, AutoRenewOff, Kicon},
         emits: ["refresh"],
@@ -36,7 +37,7 @@
         },
         data() {
             return {
-                autoRefresh: false,
+                autoRefresh: undefined,
                 refreshHandler: undefined
             };
         },
@@ -68,10 +69,12 @@
                     this.stopRefresh();
                 }
             },
-            autoRefresh(newValue) {
+            autoRefresh(newValue, oldValue) {
                 if (newValue) {
                     this.refreshHandler = setInterval(this.triggerRefresh, 10000);
-                    this.triggerRefresh()
+                    if (oldValue !== undefined) {
+                        this.triggerRefresh();
+                    }
                 } else {
                     this.stopRefresh();
                 }

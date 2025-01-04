@@ -3,7 +3,7 @@
         <el-form-item
             v-for="input in inputsList || []"
             :key="input.id"
-            :label="input.id"
+            :label="input.displayName ? input.displayName : input.id"
             :required="input.required !== false"
             :prop="input.id"
         >
@@ -14,17 +14,40 @@
                 v-if="input.type === 'STRING' || input.type === 'URI'"
                 v-model="inputs[input.id]"
                 @update:model-value="onChange"
+                @confirm="onSubmit"
             />
             <el-select
                 :full-height="false"
                 :input="true"
                 :navbar="false"
-                v-if="input.type === 'ENUM'"
+                v-if="input.type === 'ENUM' || input.type === 'SELECT'"
                 v-model="inputs[input.id]"
                 @update:model-value="onChange"
+                :allow-create="input.allowCustomValue"
+                filterable
             >
                 <el-option
                     v-for="item in input.values"
+                    :key="item"
+                    :label="item"
+                    :value="item"
+                >
+                    {{ item }}
+                </el-option>
+            </el-select>
+            <el-select
+                :full-height="false"
+                :input="true"
+                :navbar="false"
+                v-if="input.type === 'MULTISELECT'"
+                v-model="multiSelectInputs[input.id]"
+                @update:model-value="onMultiSelectChange(input.id, $event)"
+                multiple
+                filterable
+                :allow-create="input.allowCustomValue"
+            >
+                <el-option
+                    v-for="item in (input.values ?? input.options)"
                     :key="item"
                     :label="item"
                     :value="item"
@@ -39,26 +62,35 @@
                 @update:model-value="onChange"
                 show-password
             />
-            <el-input-number
-                v-if="input.type === 'INT'"
-                v-model="inputs[input.id]"
-                @update:model-value="onChange"
-                :step="1"
-            />
-            <el-input-number
-                v-if="input.type === 'FLOAT'"
-                v-model="inputs[input.id]"
-                @update:model-value="onChange"
-                :step="0.001"
-            />
+            <span v-if="input.type === 'INT'">
+                <el-input-number
+                    v-model="inputs[input.id]"
+                    @update:model-value="onChange"
+                    :min="input.min"
+                    :max="input.max && input.max >= (input.min || -Infinity) ? input.max : Infinity"
+                    :step="1"
+                />
+                <div v-if="input.min || input.max" class="hint">{{ numberHint(input) }}</div>
+            </span>
+            <span v-if="input.type === 'FLOAT'">
+                <el-input-number
+                    v-model="inputs[input.id]"
+                    @update:model-value="onChange"
+                    :min="input.min"
+                    :max="input.max && input.max >= (input.min || -Infinity) ? input.max : Infinity"
+                    :step="0.001"
+                />
+                <div v-if="input.min || input.max" class="hint">{{ numberHint(input) }}</div>
+            </span>
             <el-radio-group
                 v-if="input.type === 'BOOLEAN'"
                 v-model="inputs[input.id]"
                 @update:model-value="onChange"
+                class="w-100"
             >
-                <el-radio-button :label="$t('true')" value="true" />
-                <el-radio-button :label="$t('false')" value="false" />
-                <el-radio-button :label="$t('undefined')" value="undefined" />
+                <el-radio-button :label="$t('true')" :value="true" />
+                <el-radio-button :label="$t('false')" :value="false" />
+                <el-radio-button :label="$t('undefined')" :value="undefined" />
             </el-radio-group>
             <el-date-picker
                 v-if="input.type === 'DATETIME'"
@@ -73,7 +105,7 @@
                 type="date"
             />
             <el-time-picker
-                v-if="input.type === 'TIME' || input.type === 'DURATION'"
+                v-if="input.type === 'TIME'"
                 v-model="inputs[input.id]"
                 @update:model-value="onChange"
                 type="time"
@@ -102,8 +134,28 @@
                 lang="json"
                 v-model="inputs[input.id]"
             />
-
-            <markdown v-if="input.description" class="markdown-tooltip text-muted" :source="input.description" font-size-var="font-size-xs" />
+            <editor
+                :full-height="false"
+                :input="true"
+                :navbar="false"
+                v-if="input.type === 'YAML'"
+                lang="yaml"
+                :model-value="inputs[input.id]"
+                @change="onYamlChange(input, $event)"
+            />
+            <duration-picker
+                v-if="input.type === 'DURATION'"
+                v-model="inputs[input.id]"
+                @update:model-value="onChange"
+            />
+            <markdown v-if="input.description" class="markdown-tooltip text-description" :source="input.description" font-size-var="font-size-xs" />
+            <template v-if="executeClicked">
+                <template v-for="err in input.errors ?? []" :key="err">
+                    <el-text type="warning">
+                        {{ err.message }}
+                    </el-text>
+                </template>
+            </template>
         </el-form-item>
     </template>
     <el-alert type="info" :show-icon="true" :closable="false" v-else>
@@ -115,27 +167,53 @@
     import Editor from "../../components/inputs/Editor.vue";
     import Markdown from "../layout/Markdown.vue";
     import Inputs from "../../utils/inputs";
+    import YamlUtils from "../../utils/yamlUtils.js";
+    import DurationPicker from "./DurationPicker.vue";
+    import {inputsToFormDate} from "../../utils/submitTask"
+    import {mapState} from "vuex";
 
     export default {
-        components: {Editor, Markdown},
+        computed: {
+            ...mapState("auth", ["user"]),
+            YamlUtils() {
+                return YamlUtils
+            },
+        },
+        components: {Editor, Markdown, DurationPicker},
         props: {
+            executeClicked: {
+                type: Boolean,
+                default: false
+            },
             modelValue: {
                 default: undefined,
                 type: Object
             },
-            inputsList: {
+            initialInputs: {
                 type: Array,
                 default: undefined
+            },
+            flow: {
+                type: Object,
+                default: undefined,
+            },
+            execution: {
+                type: Object,
+                default: undefined,
             },
         },
         data() {
             return {
                 inputs: {},
+                inputsList: [],
+                inputsValidation: [],
+                multiSelectInputs: {},
             };
         },
-        emits: ["update:modelValue"],
+        emits: ["update:modelValue", "confirm"],
         created() {
-            this.updateDefaults();
+            this.inputsList.push(...(this.initialInputs ?? []));
+            this.validateInputs();
         },
         mounted() {
             setTimeout(() => {
@@ -146,9 +224,10 @@
             }, 500)
 
             this._keyListener = function(e) {
-                if (e.keyCode === 13 && (e.ctrlKey || e.metaKey))  {
+                // Ctrl/Control + Enter
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey))  {
                     e.preventDefault();
-                    this.onSubmit(this.$refs.form);
+                    this.onSubmit();
                 }
             };
 
@@ -157,18 +236,26 @@
         beforeUnmount() {
             document.removeEventListener("keydown", this._keyListener);
         },
-        computed: {
-
-        },
         methods: {
             updateDefaults() {
                 for (const input of this.inputsList || []) {
-                    this.inputs[input.id] = Inputs.normalize(input.type, input.defaults);
-                    this.onChange();
+                    if (this.inputs[input.id] === undefined || this.inputs[input.id] === null) {
+                        if (input.type === "MULTISELECT") {
+                            this.multiSelectInputs[input.id] = input.defaults;
+                        }
+                        this.inputs[input.id] = Inputs.normalize(input.type, input.defaults);
+                    }
                 }
             },
             onChange() {
                 this.$emit("update:modelValue", this.inputs);
+            },
+            onSubmit() {
+                this.$emit("confirm");
+            },
+            onMultiSelectChange(input, e) {
+                this.inputs[input] = JSON.stringify(e).toString();
+                this.onChange();
             },
             onFileChange(input, e) {
                 if (!e.target) {
@@ -182,22 +269,81 @@
                 this.inputs[input.id] = e.target.files[0];
                 this.onChange();
             },
+            onYamlChange(input, e) {
+                this.inputs[input.id] = e.target.value;
+                this.onChange();
+            },
+            numberHint(input){
+                const {min, max} = input;
+
+                if (min !== undefined && max !== undefined) {
+                    if(min > max) return `Minimum value ${min} is larger than maximum value ${max}, so we've removed the upper limit.`;
+                    return `Minimum value is ${min}, maximum value is ${max}.`;
+                } else if (min !== undefined) {
+                    return `Minimum value is ${min}.`;
+                } else if (max !== undefined) {
+                    return `Maximum value is ${max}.`;
+                } else return false;
+            },
+            validateInputs() {
+                if (this.inputsList === undefined || this.inputsList.length === 0) {
+                    return;
+                }
+
+                const formData = inputsToFormDate(this, this.inputsList, this.inputs);
+                if (this.flow !== undefined) {
+                    const options = {namespace: this.flow.namespace, id: this.flow.id};
+                    this.$store.dispatch("execution/validateExecution", {...options, formData})
+                        .then(response => {
+                            this.inputsList = response.data.inputs.filter(it => it.enabled).map(it => {
+                                return {...it.input, errors: it.errors}
+                            });
+                            this.updateDefaults();
+                        });
+
+                    return;
+                }
+
+                if (this.execution !== undefined) {
+                    const options = {id: this.execution.id};
+                    this.$store.dispatch("execution/validateResume", {...options, formData})
+                        .then(response => {
+                            this.inputsList = response.data.inputs.filter(it => it.enabled).map(it => it.input);
+                            this.updateDefaults();
+                        });
+                }
+            }
         },
         watch: {
             inputs: {
                 handler() {
+                    this.validateInputs();
                     this.$emit("update:modelValue", this.inputs);
                 },
+                deep: true
             },
-            inputsList: {
+            flow: {
                 handler() {
-                    this.updateDefaults();
-                },
+                    this.validateInputs()
+                }
+            },
+            execution: {
+                handler() {
+                    this.validateInputs()
+                }
             }
         }
     };
 </script>
 
 <style scoped lang="scss">
+.hint {
+    font-size: var(--font-size-xs);
+    color: var(--bs-gray-700);
+}
 
+.text-description {
+    font-size: var(--font-size-xs);
+    color: var(--bs-gray-700);
+}
 </style>

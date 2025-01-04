@@ -28,7 +28,6 @@ import java.util.List;
 @NoArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
 abstract public class AbstractTrigger implements TriggerInterface {
-
     protected String id;
 
     protected String type;
@@ -63,6 +62,9 @@ abstract public class AbstractTrigger implements TriggerInterface {
         title = "List of execution states after which a trigger should be stopped (a.k.a. disabled)."
     )
     private List<State.Type> stopAfter;
+
+    @Builder.Default
+    private boolean logToFile = false;
 
     /**
      * For backward compatibility: we rename minLogLevel to logLevel.

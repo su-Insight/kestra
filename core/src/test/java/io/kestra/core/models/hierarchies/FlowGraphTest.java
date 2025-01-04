@@ -5,26 +5,26 @@ import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.triggers.Trigger;
-import io.kestra.core.models.triggers.types.Schedule;
-import io.kestra.core.repositories.FlowRepositoryInterface;
+import io.kestra.core.queues.QueueException;
+import io.kestra.core.runners.RunnerUtils;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.repositories.TriggerRepositoryInterface;
 import io.kestra.core.runners.AbstractMemoryRunnerTest;
 import io.kestra.core.serializers.YamlFlowParser;
 import io.kestra.core.services.GraphService;
-import io.kestra.core.tasks.flows.Subflow;
-import io.kestra.core.tasks.flows.Switch;
+import io.kestra.plugin.core.flow.Switch;
 import io.kestra.core.utils.GraphUtils;
 import io.kestra.core.utils.TestsUtils;
-import io.micronaut.data.model.Pageable;
 import jakarta.inject.Inject;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.net.URL;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -40,7 +40,7 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
     private TriggerRepositoryInterface triggerRepositoryInterface;
 
     @Inject
-    private FlowRepositoryInterface flowRepositoryInterface;
+    private RunnerUtils runnerUtils;
 
     @Test
     void simple() throws IllegalVariableEvaluationException {
@@ -175,7 +175,7 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
     }
 
     @Test
-    void parallelWithExecution() throws TimeoutException, IllegalVariableEvaluationException {
+    void parallelWithExecution() throws TimeoutException, IllegalVariableEvaluationException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "parallel");
 
         Flow flow = this.parse("flows/valids/parallel.yaml");
@@ -188,15 +188,15 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
         assertThat(edge(flowGraph, ".*parent", ".*t2").getRelation().getRelationType(), is(RelationType.PARALLEL));
         assertThat(edge(flowGraph, ".*parent", ".*t6").getRelation().getRelationType(), is(RelationType.PARALLEL));
 
-        assertThat(edge(flowGraph, ".*t1", ((GraphCluster) flowGraph.getClusters().get(0).getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t1"));
-        assertThat(edge(flowGraph, ".*t4", ((GraphCluster) flowGraph.getClusters().get(0).getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t4"));
+        assertThat(edge(flowGraph, ".*t1", ((GraphCluster) flowGraph.getClusters().getFirst().getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t1"));
+        assertThat(edge(flowGraph, ".*t4", ((GraphCluster) flowGraph.getClusters().getFirst().getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t4"));
 
         assertThat(((AbstractGraphTask) node(flowGraph, "t1")).getTaskRun(), is(notNullValue()));
         assertThat(((AbstractGraphTask) node(flowGraph, "t4")).getTaskRun(), is(notNullValue()));
     }
 
     @Test
-    void eachWithExecution() throws TimeoutException, IllegalVariableEvaluationException {
+    void eachWithExecution() throws TimeoutException, IllegalVariableEvaluationException, QueueException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "each-sequential");
 
         Flow flow = this.parse("flows/valids/each-sequential.yaml");
@@ -217,7 +217,7 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
     void trigger() throws IllegalVariableEvaluationException {
         Flow flow = this.parse("flows/valids/trigger-flow-listener.yaml");
         triggerRepositoryInterface.save(
-            Trigger.of(flow, flow.getTriggers().get(0)).toBuilder().disabled(true).build()
+            Trigger.of(flow, flow.getTriggers().getFirst()).toBuilder().disabled(true).build()
         );
 
         FlowGraph flowGraph = graphService.flowGraph(flow, null);
@@ -256,7 +256,7 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
 
         assertThat(((SubflowGraphTask) ((SubflowGraphCluster) cluster(flowGraph, "root\\.launch").getCluster()).getTaskNode()).getExecutableTask().subflowId().flowId(), is("switch"));
         SubflowGraphTask subflowGraphTask = (SubflowGraphTask) nodeByUid(flowGraph, "root.launch");
-        assertThat(subflowGraphTask.getTask(), instanceOf(Subflow.class));
+        assertThat(subflowGraphTask.getTask(), instanceOf(SubflowGraphTask.SubflowTaskWrapper.class));
         assertThat(subflowGraphTask.getRelationType(), is(RelationType.SEQUENTIAL));
 
         GraphTask switchNode = (GraphTask) nodeByUid(flowGraph, "root.launch.parent-seq");
@@ -267,6 +267,24 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
         assertThat(flowTrigger.getTriggerDeclaration(), instanceOf(Schedule.class));
         GraphTrigger subflowTrigger = (GraphTrigger) nodeByUid(flowGraph, "root.launch.Triggers.schedule");
         assertThat(subflowTrigger.getTriggerDeclaration(), instanceOf(Schedule.class));
+    }
+
+    @Test
+    void dynamicIdSubflow() throws IllegalVariableEvaluationException, TimeoutException, QueueException {
+        Flow flow = this.parse("flows/valids/task-flow-dynamic.yaml").toBuilder().revision(1).build();
+
+        IllegalArgumentException illegalArgumentException = Assertions.assertThrows(IllegalArgumentException.class, () -> graphService.flowGraph(flow, Collections.singletonList("root.launch")));
+        assertThat(illegalArgumentException.getMessage(), is("Can't expand subflow task 'launch' because namespace and/or flowId contains dynamic values. This can only be viewed on an execution."));
+
+        Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "task-flow-dynamic", 1, (f, e) -> Map.of(
+            "namespace", f.getNamespace(),
+            "flowId", "switch"
+        ));
+        FlowGraph flowGraph = graphService.flowGraph(flow, Collections.singletonList("root.launch"), execution);
+
+        assertThat(flowGraph.getNodes().size(), is(20));
+        assertThat(flowGraph.getEdges().size(), is(23));
+        assertThat(flowGraph.getClusters().size(), is(4));
     }
 
     private Flow parse(String path) {
@@ -321,7 +339,7 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
             .stream()
             .filter(e -> e.getSource().matches(source))
             .map(FlowGraph.Edge::getTarget)
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private FlowGraph.Cluster cluster(FlowGraph flowGraph, String clusterIdRegex) {

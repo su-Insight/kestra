@@ -4,6 +4,7 @@ import io.kestra.core.models.SearchResult;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowForExecution;
+import io.kestra.core.models.flows.FlowScope;
 import io.kestra.core.models.flows.FlowWithSource;
 import io.micronaut.data.model.Pageable;
 
@@ -32,7 +33,7 @@ public interface FlowRepositoryInterface {
             execution.getTenantId(),
             execution.getNamespace(),
             execution.getFlowId(),
-            Optional.of(execution.getFlowRevision())
+            Optional.ofNullable(execution.getFlowRevision())
         );
 
         if (find.isEmpty()) {
@@ -50,7 +51,7 @@ public interface FlowRepositoryInterface {
             execution.getTenantId(),
             execution.getNamespace(),
             execution.getFlowId(),
-            Optional.of(execution.getFlowRevision())
+            Optional.ofNullable(execution.getFlowRevision())
         );
 
         if (find.isEmpty()) {
@@ -83,9 +84,31 @@ public interface FlowRepositoryInterface {
 
     List<Flow> findAll(String tenantId);
 
+    /**
+     * Counts the total number of flows.
+     *
+     * @param tenantId the tenant ID.
+     * @return The count.
+     */
+    int count(@Nullable  String tenantId);
+
+    /**
+     * Counts the total number of flows for the given namespace.
+     *
+     * @param tenantId the tenant ID.
+     * @return The count.
+     */
+    int countForNamespace(@Nullable  String tenantId, @Nullable String namespace);
+
+    List<FlowWithSource> findAllWithSource(String tenantId);
+
     List<Flow> findAllForAllTenants();
 
+    List<FlowWithSource> findAllWithSourceForAllTenants();
+
     List<Flow> findByNamespace(String tenantId, String namespace);
+
+    List<Flow> findByNamespacePrefix(String tenantId, String namespacePrefix);
 
     List<FlowForExecution> findByNamespaceExecutable(String tenantId, String namespace);
 
@@ -95,6 +118,7 @@ public interface FlowRepositoryInterface {
         Pageable pageable,
         @Nullable String query,
         @Nullable String tenantId,
+        @Nullable List<FlowScope> scope,
         @Nullable String namespace,
         @Nullable Map<String, String> labels
     );
@@ -102,6 +126,7 @@ public interface FlowRepositoryInterface {
     List<FlowWithSource> findWithSource(
         @Nullable String query,
         @Nullable String tenantId,
+        @Nullable List<FlowScope> scope,
         @Nullable String namespace,
         @Nullable Map<String, String> labels
     );

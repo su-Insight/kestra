@@ -1,9 +1,9 @@
 <template>
     <div class="trigger-flow-wrapper">
-        <el-button :icon="icon.Flash" :type="type" :disabled="isDisabled()" @click="onClick()">
+        <el-button id="execute-button" :class="{'onboarding-glow': guidedProperties.tourStarted}" :icon="icon.Flash" :type="type" :disabled="isDisabled()" @click="onClick()">
             {{ $t("execute") }}
         </el-button>
-        <el-dialog v-if="isOpen" v-model="isOpen" destroy-on-close :before-close="() => reset()" :append-to-body="true">
+        <el-dialog id="execute-flow-dialog" v-if="isOpen" v-model="isOpen" destroy-on-close :show-close="!guidedProperties.tourStarted" :before-close="(done) => beforeClose(done)" :append-to-body="true">
             <template #header>
                 <span v-html="$t('execute the flow', {id: flowId})" />
             </template>
@@ -76,6 +76,10 @@
             type: {
                 type: String,
                 default: "primary"
+            },
+            flowSource: {
+                type: String,
+                default: null
             }
         },
         data() {
@@ -91,20 +95,32 @@
         },
         methods: {
             onClick() {
-                if (this.$tours["guidedTour"].isRunning.value && !this.guidedProperties.executeFlow) {
+                if (this.$tours["guidedTour"]?.isRunning?.value) {
+                    this.$tours["guidedTour"]?.nextStep();
                     this.$store.dispatch("api/events", {
                         type: "ONBOARDING",
                         onboarding: {
-                            step: this.$tours["guidedTour"].currentStep._value,
+                            step: this.$tours["guidedTour"]?.currentStep?._value,
                             action: "next",
+                            template: this.guidedProperties.template
                         },
                         page: pageFromRoute(this.$router.currentRoute.value)
                     });
-                    this.$tours["guidedTour"].nextStep();
-                    return;
-                } else if (this.computedNamespace !== undefined && this.computedFlowId !== undefined) {
                     this.isOpen = !this.isOpen;
-                } else {
+                    return;
+                }
+                else if (this.checkForTrigger) {
+                    this.$toast().confirm(
+                        this.$t("trigger_check_warning"),
+                        () => {
+                            this.isOpen = !this.isOpen;
+                        },
+                        () => {});
+                }
+                else if (this.computedNamespace !== undefined && this.computedFlowId !== undefined) {
+                    this.isOpen = !this.isOpen;
+                }
+                else {
                     this.$store.dispatch("execution/loadNamespaces");
                     this.isSelectFlowOpen = !this.isSelectFlowOpen;
                 }
@@ -126,6 +142,12 @@
                 this.isSelectFlowOpen = false;
                 this.localFlow = undefined;
                 this.localNamespace = undefined;
+            },
+            beforeClose(done){
+                if(this.guidedProperties.tourStarted) return;
+
+                this.reset();
+                done()
             }
         },
         computed: {
@@ -138,6 +160,13 @@
             },
             computedNamespace() {
                 return this.namespace || this.localNamespace;
+            },
+            checkForTrigger() {
+                if (this.flowSource) {
+                    const triggerRegex = /\{\{\s*\(?\s*(\|\||&&)?\s*trigger\s*(\.\w+|\|\s*\w+)?\s*\}\}/;
+                    return triggerRegex.test(this.flowSource);
+                }
+                return false;
             }
         },
         watch: {
@@ -201,5 +230,18 @@
 <style scoped>
     .trigger-flow-wrapper {
         display: inline;
+    }
+
+    .onboarding-glow {
+        animation: glowAnimation 1s infinite alternate;
+    }
+
+    @keyframes glowAnimation {
+        0% {
+            box-shadow: 0px 0px 0px 0px #8405FF;
+        }
+        100% {
+            box-shadow: 0px 0px 50px 2px #8405FF;
+        }
     }
 </style>

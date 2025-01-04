@@ -12,9 +12,11 @@ import io.kestra.core.schedulers.ScheduleContextInterface;
 import io.kestra.jdbc.runner.JdbcIndexerInterface;
 import io.kestra.jdbc.runner.JdbcSchedulerContext;
 import io.micronaut.data.model.Pageable;
-import jakarta.inject.Singleton;
+import jakarta.annotation.Nullable;
 import org.jooq.*;
 import org.jooq.impl.DSL;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -22,8 +24,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
-@Singleton
 public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcRepository implements TriggerRepositoryInterface, JdbcIndexerInterface<Trigger> {
+    public static final Field<Object> NAMESPACE_FIELD = field("namespace");
+
     protected io.kestra.jdbc.AbstractJdbcRepository<Trigger> jdbcRepository;
 
     public AbstractJdbcTriggerRepository(io.kestra.jdbc.AbstractJdbcRepository<Trigger> jdbcRepository) {
@@ -63,6 +66,21 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
     }
 
     @Override
+    public List<Trigger> findAll(String tenantId) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> {
+                var select = DSL
+                    .using(configuration)
+                    .select(field("value"))
+                    .from(this.jdbcRepository.getTable())
+                    .where(this.defaultFilter(tenantId));
+
+                return this.jdbcRepository.fetch(select);
+            });
+    }
+
+    @Override
     public List<Trigger> findAllForAllTenants() {
         return this.jdbcRepository
             .getDslContextWrapper()
@@ -74,6 +92,33 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
 
                 return this.jdbcRepository.fetch(select);
             });
+    }
+
+    @Override
+    public int count(@Nullable String tenantId) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> DSL
+                .using(configuration)
+                .selectCount()
+                .from(this.jdbcRepository.getTable())
+                .where(this.defaultFilter(tenantId))
+                .fetchOne(0, int.class));
+    }
+
+    @Override
+    public int countForNamespace(@Nullable String tenantId, @Nullable String namespace) {
+        if (namespace == null) return count(tenantId);
+
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> DSL
+                .using(configuration)
+                .selectCount()
+                .from(this.jdbcRepository.getTable())
+                .where(this.defaultFilter(tenantId))
+                .and(NAMESPACE_FIELD.eq(namespace))
+                .fetchOne(0, int.class));
     }
 
     public List<Trigger> findByNextExecutionDateReadyForAllTenants(ZonedDateTime now, ScheduleContextInterface scheduleContextInterface) {
@@ -90,7 +135,7 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
             .orderBy(field("next_execution_date").asc())
             .forUpdate()
             .fetch()
-            .map(r -> this.jdbcRepository.deserialize(r.get("value").toString()));
+            .map(r -> this.jdbcRepository.deserialize(r.get("value", String.class)));
     }
 
     public Trigger save(Trigger trigger, ScheduleContextInterface scheduleContextInterface) {
@@ -232,12 +277,7 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
     }
 
     @Override
-    public ArrayListTotal<Trigger> find(Pageable pageable, String query, String tenantId, String namespace) {
-        return this.find(pageable, query, tenantId, namespace, null);
-    }
-
-    @Override
-    public ArrayListTotal<Trigger> find(Pageable pageable, String query, String tenantId, String namespace, String flowId) {
+    public ArrayListTotal<Trigger> find(Pageable pageable, String query, String tenantId, String namespace, String flowId, String workerId) {
         return this.jdbcRepository
             .getDslContextWrapper()
             .transactionResult(configuration -> {
@@ -245,30 +285,68 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
 
                 SelectConditionStep<Record1<Object>> select = context
                     .select(field("value"))
-                    .hint(context.dialect() == SQLDialect.MYSQL ? "SQL_CALC_FOUND_ROWS" : null)
+                    .hint(context.configuration().dialect().supports(SQLDialect.MYSQL) ? "SQL_CALC_FOUND_ROWS" : null)
                     .from(this.jdbcRepository.getTable())
                     .where(this.fullTextCondition(query))
                     .and(this.defaultFilter(tenantId));
 
                 if (namespace != null) {
-                    select.and(DSL.or(field("namespace").eq(namespace), field("namespace").likeIgnoreCase(namespace + ".%")));
+                    select.and(DSL.or(NAMESPACE_FIELD.eq(namespace), NAMESPACE_FIELD.likeIgnoreCase(namespace + ".%")));
                 }
 
                 if (flowId != null) {
                     select.and(field("flow_id").eq(flowId));
                 }
 
+                if (workerId != null) {
+                    select.and(field("worker_id").eq(workerId));
+                }
                 select.and(this.defaultFilter());
 
                 return this.jdbcRepository.fetchPage(context, select, pageable);
             });
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public Flux<Trigger> find(String query, String tenantId, String namespace) {
+        return Flux.create(
+            emitter -> this.jdbcRepository
+                .getDslContextWrapper()
+                .transaction(configuration -> {
+                    DSLContext context = DSL.using(configuration);
+
+                    var select = context
+                        .select(
+                            field("value")
+                        )
+                        .hint(context.configuration().dialect().supports(SQLDialect.MYSQL) ? "SQL_CALC_FOUND_ROWS" : null)
+                        .from(this.jdbcRepository.getTable())
+                        .where(this.defaultFilter(tenantId));
+                    if (namespace != null) {
+                        select =  select.and(DSL.or(NAMESPACE_FIELD.eq(namespace), NAMESPACE_FIELD.likeIgnoreCase(namespace + ".%")));
+                    }
+                    if (query != null) {
+                        select = select.and(this.fullTextCondition(query));
+                    }
+
+                    select.fetch()
+                    .map(this.jdbcRepository::map)
+                    .forEach(emitter::next);
+
+                    emitter.complete();
+
+                }),
+            FluxSink.OverflowStrategy.BUFFER
+        );
+
+    }
+
     protected Condition fullTextCondition(String query) {
         return query == null ? DSL.trueCondition() : jdbcRepository.fullTextCondition(List.of("fulltext"), query);
     }
 
-    protected Condition defaultFilter(String tenantId) {
+    protected Condition defaultFilter(String tenantId, boolean allowDeleted) {
         return buildTenantCondition(tenantId);
     }
 
@@ -282,7 +360,8 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
         Map<String, String> mapper = Map.of(
             "flowId", "flow_id",
             "triggerId", "trigger_id",
-            "executionId", "execution_id"
+            "executionId", "execution_id",
+            "nextExecutionDate", "next_execution_date"
         );
 
         return s -> mapper.getOrDefault(s, s);

@@ -1,31 +1,6 @@
 <template>
-    <top-nav-bar :title="routeInfo?.title" :breadcrumb="routeInfo?.breadcrumb">
-        <template #additional-right v-if="canDelete || isAllowedTrigger || isAllowedEdit">
-            <ul>
-                <li v-if="isAllowedEdit">
-                    <a :href="`${finalApiUrl}/executions/${execution.id}`" target="_blank">
-                        <el-button :icon="Api">
-                            {{ $t("api") }}
-                        </el-button>
-                    </a>
-                </li>
-                <li v-if="canDelete">
-                    <el-button :icon="Delete" @click="deleteExecution">
-                        {{ $t("delete") }}
-                    </el-button>
-                </li>
-                <li v-if="isAllowedEdit">
-                    <el-button :icon="Pencil" @click="editFlow">
-                        {{ $t("edit flow") }}
-                    </el-button>
-                </li>
-                <li v-if="isAllowedTrigger">
-                    <trigger-flow type="primary" :flow-id="$route.params.flowId" :namespace="$route.params.namespace" />
-                </li>
-            </ul>
-        </template>
-    </top-nav-bar>
     <template v-if="ready">
+        <execution-root-top-bar :route-info="routeInfo" />
         <tabs
             :route-name="$route.params && $route.params.id ? 'executions/update': ''"
             @follow="follow"
@@ -35,37 +10,27 @@
     <div v-else class="full-space" v-loading="!ready" />
 </template>
 
-<script setup>
-    import Api from "vue-material-design-icons/Api.vue";
-    import Delete from "vue-material-design-icons/Delete.vue";
-    import Pencil from "vue-material-design-icons/Pencil.vue";
-</script>
-
 <script>
     import Gantt from "./Gantt.vue";
     import Overview from "./Overview.vue";
     import Logs from "./Logs.vue";
     import Topology from "./Topology.vue";
-    import ExecutionOutput from "./ExecutionOutput.vue";
-    import TriggerFlow from "../flows/TriggerFlow.vue";
+    import ExecutionOutput from "./outputs/Wrapper.vue";
     import RouteContext from "../../mixins/routeContext";
-    import TopNavBar from "../../components/layout/TopNavBar.vue";
     import {mapState} from "vuex";
     import permission from "../../models/permission";
     import action from "../../models/action";
     import Tabs from "../../components/Tabs.vue";
+    import ExecutionRootTopBar from "./ExecutionRootTopBar.vue";
 
-    import State from "../../utils/state";
     import ExecutionMetric from "./ExecutionMetric.vue";
-    import {apiUrl} from "override/utils/route"
     import throttle from "lodash/throttle";
 
     export default {
         mixins: [RouteContext],
         components: {
-            TriggerFlow,
             Tabs,
-            TopNavBar
+            ExecutionRootTopBar,
         },
         data() {
             return {
@@ -104,6 +69,14 @@
                 if (oldValue.name === newValue.name && this.previousExecutionId !== this.$route.params.id) {
                     this.follow()
                 }
+                // if we change the execution id, we need to close the sse
+                if (this.execution && this.$route.params.id != this.execution.id) {
+                    this.closeSSE();
+                    window.removeEventListener("popstate", this.follow)
+                    this.$store.commit("execution/setExecution", undefined);
+                    this.$store.commit("flow/setFlow", undefined);
+                    this.$store.commit("flow/setFlowGraph", undefined);
+                }
             },
         },
         methods: {
@@ -126,13 +99,16 @@
                         }
                         // sse.onerror doesnt return the details of the error
                         // but as our emitter can only throw an error on 404
-                        // we can safely assume that the error
+                        // we can safely assume that the error is a 404
+                        // if execution is not defined
                         this.sse.onerror = () => {
-                            this.$store.dispatch("core/showMessage", {
-                                variant: "error",
-                                title: this.$t("error"),
-                                message: this.$t("errors.404.flow or execution"),
-                            });
+                            if (!this.execution) {
+                                this.$store.dispatch("core/showMessage", {
+                                    variant: "error",
+                                    title: this.$t("error"),
+                                    message: this.$t("errors.404.flow or execution"),
+                                });
+                            }
                         }
                     });
             },
@@ -168,61 +144,26 @@
                     {
                         name: "outputs",
                         component: ExecutionOutput,
-                        title: title("outputs")
+                        title: title("outputs"),
+                        maximized: true
                     },
                     {
                         name: "metrics",
                         component: ExecutionMetric,
                         title: title("metrics")
+                    },
+                    {
+                        name: "auditlogs",
+                        title: title("auditlogs"),
+                        locked: true
                     }
                 ];
             },
-            editFlow() {
-                this.$router.push({
-                    name: "flows/update", params: {
-                        namespace: this.$route.params.namespace,
-                        id: this.$route.params.flowId,
-                        tab: "editor",
-                        tenant: this.$route.params.tenant
-                    }
-                })
-            },
-            deleteExecution() {
-                if (this.execution) {
-                    const item = this.execution;
-
-                    let message = this.$t("delete confirm", {name: item.id});
-                    if (State.isRunning(this.execution.state.current)) {
-                        message += this.$t("delete execution running");
-                    }
-
-                    this.$toast()
-                        .confirm(message, () => {
-                            return this.$store
-                                .dispatch("execution/deleteExecution", item)
-                                .then(() => {
-                                    return this.$router.push({
-                                        name: "executions/list",
-                                        tenant: this.$route.params.tenant
-                                    });
-                                })
-                                .then(() => {
-                                    this.$toast().deleted(item.id);
-                                })
-                        });
-                }
-            },
-            canReadFlow() {
-                return this.user.isAllowed(permission.FLOW, action.READ, this.$route.params.namespace)
-            }
         },
         computed: {
             // ...mapState("flow", ["flow", "revisions"]),
             ...mapState("execution", ["execution", "flow"]),
             ...mapState("auth", ["user"]),
-            finalApiUrl() {
-                return apiUrl(this.$store);
-            },
             tabs() {
                 return this.getTabs();
             },
@@ -292,7 +233,7 @@
         }
     };
 </script>
-<style>
+<style lang="scss" scoped>
     .full-space {
         flex: 1 1 auto;
     }

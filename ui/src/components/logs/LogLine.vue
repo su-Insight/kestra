@@ -1,9 +1,13 @@
 <template>
-    <div class="line font-monospace" v-if="filtered">
-        <span :class="levelClass" class="header-badge log-level el-tag noselect fw-bold">{{ log.level }}</span>
+    <div class="py-2 line font-monospace" :class="{['log-border-' + log.level.toLowerCase()]: cursor}" v-if="filtered">
+        <span :class="levelClasses" class="border header-badge log-level el-tag noselect">{{ log.level }}</span>
         <div class="log-content d-inline-block">
-            <div class="header" :class="{'d-inline-block': metaWithValue.length === 0, 'me-3': metaWithValue.length === 0}">
-                <span class="header-badge">
+            <span v-if="title" class="fw-bold">{{ (log.taskId ?? log.flowId ?? "").capitalize() }}</span>
+            <div
+                class="header"
+                :class="{'d-inline-block': metaWithValue.length === 0, 'me-3': metaWithValue.length === 0}"
+            >
+                <span class="header-badge text-secondary">
                     {{ $filters.date(log.timestamp, "iso") }}
                 </span>
                 <span v-for="(meta, x) in metaWithValue" :key="x">
@@ -18,17 +22,27 @@
                     </span>
                 </span>
             </div>
-            <span class="message" v-html="message" />
+            <v-runtime-template :template="markdownRenderer" />
         </div>
     </div>
 </template>
 <script>
     import Convert from "ansi-to-html"
     import xss from "xss";
+    import Markdown from "../../utils/markdown";
+    import VRuntimeTemplate from "vue3-runtime-template";
+
     let convert = new Convert();
 
     export default {
+        components:{
+            VRuntimeTemplate
+        },
         props: {
+            cursor: {
+                type: Boolean,
+                default: false
+            },
             log: {
                 type: Object,
                 required: true,
@@ -44,7 +58,19 @@
             excludeMetas: {
                 type: Array,
                 default: () => [],
+            },
+            title: {
+                type: Boolean,
+                default: false
             }
+        },
+        data() {
+            return {
+                markdownRenderer: undefined
+            }
+        },
+        async created() {
+            this.markdownRenderer = await this.renderMarkdown();
         },
         computed: {
             metaWithValue() {
@@ -63,11 +89,13 @@
                     if (this.log[key] && !excludes.includes(key)) {
                         let meta = {key, value: this.log[key]};
                         if (key === "executionId") {
-                            meta["router"] = {name: "executions/update", params: {
-                                namespace: this.log["namespace"],
-                                flowId: this.log["flowId"],
-                                id: this.log[key]
-                            }};
+                            meta["router"] = {
+                                name: "executions/update", params: {
+                                    namespace: this.log["namespace"],
+                                    flowId: this.log["flowId"],
+                                    id: this.log[key]
+                                }
+                            };
                         }
 
                         if (key === "namespace") {
@@ -76,7 +104,10 @@
 
 
                         if (key === "flowId") {
-                            meta["router"] = {name: "flows/update", params: {namespace: this.log["namespace"], id: this.log[key]}};
+                            meta["router"] = {
+                                name: "flows/update",
+                                params: {namespace: this.log["namespace"], id: this.log[key]}
+                            };
                         }
 
                         metaWithValue.push(meta);
@@ -84,14 +115,9 @@
                 }
                 return metaWithValue;
             },
-            levelClass() {
-                return {
-                    TRACE: "",
-                    DEBUG: "el-tag--info",
-                    INFO: "el-tag--success",
-                    WARN: "el-tag--warning",
-                    ERROR: "el-tag--danger",
-                }[this.log.level];
+            levelClasses() {
+                const lowerCaseLevel = this.log.level.toLowerCase();
+                return `log-content-${lowerCaseLevel} log-border-${lowerCaseLevel} log-bg-${lowerCaseLevel}`;
             },
             filtered() {
                 return (
@@ -113,6 +139,16 @@
                 return logMessage;
             }
         },
+        methods: {
+            async renderMarkdown() {
+                let markdown = await Markdown.render(this.message, {onlyLink: true});
+
+                // Avoid rendering non-existent properties in the template by VRuntimeTemplate
+                markdown = markdown.replace(/{{/g, "&#123;&#123;").replace(/}}/g, "&#125;&#125;");
+
+                return markdown
+            },
+        },
     };
 </script>
 <style scoped lang="scss">
@@ -122,48 +158,42 @@
         cursor: text;
         white-space: pre-wrap;
         word-break: break-all;
-        padding: calc(var(--spacer) / 2);
         display: flex;
-        align-items: start;
+        align-items: center;
         gap: $spacer;
+
+        border-left-width: 2px !important;
+        border-left-style: solid;
+        border-left-color: transparent;
+
 
         .log-level {
             padding: calc(var(--spacer) / 4);
         }
 
         .log-content {
-            .header {
-                color: var(--bs-gray-500);
-
-                html.dark & {
-                    color: var(--bs-gray-700);
-                }
-
-                > * + * {
-                    margin-left: $spacer;
-                }
+            .header > * + * {
+                margin-left: $spacer;
             }
         }
 
         .el-tag {
-            border-radius: 0;
-            border: 0;
             height: auto;
         }
 
         .header-badge {
-            display: inline-block;
             font-size: 95%;
             text-align: center;
             white-space: nowrap;
             vertical-align: baseline;
+            width: 40px;
 
             span:first-child {
                 margin-right: 6px;
                 font-family: var(--bs-font-sans-serif);
                 user-select: none;
 
-                &::after{
+                &::after {
                     content: ":";
                 }
             }
@@ -174,8 +204,7 @@
 
             &.log-level {
                 white-space: pre;
-                border-radius: 2px;
-                color: $black;
+                border-radius: 4px;
             }
         }
 
@@ -190,6 +219,11 @@
 
         .message {
             line-height: 1.8;
+        }
+
+        p, :deep(.log-content p) {
+            display: inline;
+            margin-bottom: 0;
         }
     }
 </style>

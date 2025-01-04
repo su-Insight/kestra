@@ -17,7 +17,12 @@ public class NullCoalescingExpression extends BinaryExpression<Object> {
     @Override
     public Object evaluate(PebbleTemplateImpl self, EvaluationContextImpl context) {
         try {
-            return getLeftExpression().evaluate(self, context);
+            var result = getLeftExpression().evaluate(self, context);
+            if (result != null) {
+                return result;
+            } else {
+                return getRightExpression().evaluate(self, context);
+            }
         } catch (AttributeNotFoundException e) {
             return getRightExpression().evaluate(self, context);
         }

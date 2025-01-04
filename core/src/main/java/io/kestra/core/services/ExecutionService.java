@@ -6,6 +6,7 @@ import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.*;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.models.flows.input.InputAndValue;
 import io.kestra.core.models.hierarchies.AbstractGraphTask;
 import io.kestra.core.models.hierarchies.GraphCluster;
 import io.kestra.core.models.tasks.Task;
@@ -19,16 +20,18 @@ import io.kestra.core.repositories.MetricRepositoryInterface;
 import io.kestra.core.runners.FlowInputOutput;
 import io.kestra.core.storages.StorageContext;
 import io.kestra.core.storages.StorageInterface;
-import io.kestra.core.tasks.flows.Pause;
-import io.kestra.core.tasks.flows.WorkingDirectory;
 import io.kestra.core.utils.GraphUtils;
 import io.kestra.core.utils.IdUtils;
+import io.kestra.plugin.core.flow.Pause;
+import io.kestra.plugin.core.flow.WorkingDirectory;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import io.micronaut.core.annotation.Nullable;
-import io.micronaut.http.multipart.StreamingFileUpload;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.multipart.CompletedPart;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
+import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.experimental.SuperBuilder;
@@ -41,6 +44,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -77,6 +81,20 @@ public class ExecutionService {
     @Inject
     private ApplicationEventPublisher<CrudEvent<Execution>> eventPublisher;
 
+    public Execution getExecutionIfPause(final String tenant, final @NotNull String executionId) {
+        Optional<Execution> maybeExecution = executionRepository.findById(tenant, executionId);
+        if (maybeExecution.isEmpty()) {
+            throw new NoSuchElementException("Execution '"+ executionId + "' not found.");
+        }
+
+        var execution = maybeExecution.get();
+        if (!execution.getState().isPaused()) {
+            throw new IllegalStateException("Execution '"+ executionId + "' is not paused, can't resume it");
+        }
+
+        return execution;
+    }
+
     /**
      * Retry set the given taskRun in created state
      * and return the execution in running state
@@ -96,6 +114,36 @@ public class ExecutionService {
             .toList();
 
         return execution.withTaskRunList(newTaskRuns).withState(State.Type.RUNNING);
+    }
+
+    public Execution retryWaitFor(Execution execution, String flowableTaskRunId) {
+        AtomicReference<Boolean> firstDone = new AtomicReference<>(false);
+        List<TaskRun> newTaskRuns = execution
+            .getTaskRunList()
+            .stream()
+            .map(taskRun -> {
+                if (taskRun.getId().equals(flowableTaskRunId)) {
+                    // Keep only CREATED/RUNNING
+                    // To avoid having large history
+                    return taskRun.resetAttempts().incrementIteration();
+                }
+
+                if (flowableTaskRunId.equals(taskRun.getParentTaskRunId())) {
+                    // Clean children
+                    return null;
+                }
+
+                return taskRun;
+            })
+            .filter(Objects::nonNull)
+            .toList();
+
+        return execution.withTaskRunList(newTaskRuns).withState(State.Type.RUNNING);
+    }
+
+    public Execution pauseFlowable(Execution execution, TaskRun updateFlowableTaskRun) throws InternalException {
+
+        return execution.withTaskRun(updateFlowableTaskRun.withState(State.Type.PAUSED)).withState(State.Type.PAUSED);
     }
 
     public Execution restart(final Execution execution, @Nullable Integer revision) throws Exception {
@@ -126,7 +174,7 @@ public class ExecutionService {
                 State.Type.RESTARTED,
                 taskRunToRestart.contains(originalTaskRun.getId()))
             ))
-            .collect(Collectors.toList());
+            .collect(Collectors.toCollection(ArrayList::new));
 
         // Worker task, we need to remove all child in order to be restarted
         this.removeWorkerTask(flow, execution, taskRunToRestart, mappingTaskRunId)
@@ -159,10 +207,10 @@ public class ExecutionService {
                     .getTaskRunList()
                     .stream()
                     .filter(predicate)
-                    .collect(Collectors.toList())
+                    .toList()
             );
 
-        if (finalTaskRunToRestart.size() == 0) {
+        if (finalTaskRunToRestart.isEmpty()) {
             throw new IllegalArgumentException("No task found to restart execution from!");
         }
 
@@ -195,7 +243,7 @@ public class ExecutionService {
                         State.Type.RESTARTED,
                         taskRunToRestart.contains(originalTaskRun.getId()))
                     ))
-                    .collect(Collectors.toList())
+                    .toList()
             );
 
             // remove all child for replay task id
@@ -230,10 +278,11 @@ public class ExecutionService {
     }
 
     public Execution markAs(final Execution execution, Flow flow, String taskRunId, State.Type newState) throws Exception {
-        return this.markAs(execution, flow, taskRunId, newState, null, null);
+        return this.markAs(execution, flow, taskRunId, newState, null);
     }
 
-    private Execution markAs(final Execution execution, Flow flow, String taskRunId, State.Type newState, @Nullable Map<String, Object> onResumeInputs, @Nullable Publisher<StreamingFileUpload> onResumeFiles) throws Exception {
+    @SuppressWarnings("deprecation")
+    private Execution markAs(final Execution execution, Flow flow, String taskRunId, State.Type newState, @Nullable Map<String, Object> onResumeInputs) throws Exception {
         Set<String> taskRunToRestart = this.taskRunToRestart(
             execution,
             taskRun -> taskRun.getId().equals(taskRunId)
@@ -250,14 +299,7 @@ public class ExecutionService {
                 TaskRun newTaskRun = originalTaskRun.withState(newState);
 
                 if (task instanceof Pause pauseTask && pauseTask.getOnResume() != null) {
-                    Map<String, Object> pauseOutputs = flowInputOutput.typedInputs(
-                        pauseTask.getOnResume(),
-                        execution,
-                        onResumeInputs,
-                        onResumeFiles
-                    );
-
-                    newTaskRun = newTaskRun.withOutputs(pauseTask.generateOutputs(pauseOutputs));
+                    newTaskRun = newTaskRun.withOutputs(pauseTask.generateOutputs(onResumeInputs));
                 }
 
                 if (task instanceof Pause pauseTask && pauseTask.getTasks() == null && newState == State.Type.RUNNING) {
@@ -303,6 +345,7 @@ public class ExecutionService {
         @Nullable String tenantId,
         @Nullable String namespace,
         @Nullable String flowId,
+        @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> state
     ) throws IOException {
@@ -310,14 +353,16 @@ public class ExecutionService {
             .find(
                 null,
                 tenantId,
+                null,
                 namespace,
                 flowId,
-                null,
+                startDate,
                 endDate,
                 state,
                 null,
                 null,
-                null
+                null,
+                true
             )
             .map(throwFunction(execution -> {
                 PurgeResult.PurgeResultBuilder<?, ?> builder = PurgeResult.builder();
@@ -331,7 +376,7 @@ public class ExecutionService {
                 }
 
                 if (purgeMetric) {
-                    this.metricRepository.purge(execution);
+                    builder.metricsCount(this.metricRepository.purge(execution));
                 }
 
                 if (purgeStorage) {
@@ -346,6 +391,7 @@ public class ExecutionService {
                 .executionsCount(a.getExecutionsCount() + b.getExecutionsCount())
                 .logsCount(a.getLogsCount() + b.getLogsCount())
                 .storagesCount(a.getStoragesCount() + b.getStoragesCount())
+                .metricsCount(a.getMetricsCount() + b.getMetricsCount())
                 .build()
             )
             .block();
@@ -355,6 +401,28 @@ public class ExecutionService {
         }
 
         return PurgeResult.builder().build();
+    }
+
+    public void delete(
+        Execution execution,
+        boolean deleteLogs,
+        boolean deleteMetrics,
+        boolean deleteStorage
+    ) throws IOException {
+        this.executionRepository.purge(execution);
+
+        if (deleteLogs) {
+            this.logRepository.purge(execution);
+        }
+
+        if (deleteMetrics) {
+            this.metricRepository.purge(execution);
+        }
+
+        if (deleteStorage) {
+            URI uri = StorageContext.forExecution(execution).getExecutionStorageURI(StorageContext.KESTRA_SCHEME);
+            storageInterface.deleteByPrefix(execution.getTenantId(), uri);
+        }
     }
 
     /**
@@ -368,7 +436,7 @@ public class ExecutionService {
      * @throws Exception if the state of the execution cannot be updated
      */
     public Execution resume(Execution execution, Flow flow, State.Type newState) throws Exception {
-        return this.resume(execution, flow, newState, null, null);
+        return this.resume(execution, flow, newState, (Map<String, Object>) null);
     }
 
     /**
@@ -376,21 +444,75 @@ public class ExecutionService {
      * The execution must be paused or this call will be a no-op.
      *
      * @param execution the execution to resume
-     * @param newState  should be RUNNING or KILLING, other states may lead to undefined behaviour
      * @param flow      the flow of the execution
      * @param inputs    the onResume inputs
-     * @param files     the onResume files
      * @return the execution in the new state.
      * @throws Exception if the state of the execution cannot be updated
      */
-    public Execution resume(final Execution execution, Flow flow, State.Type newState, @Nullable Map<String, Object> inputs, @Nullable Publisher<StreamingFileUpload> files) throws Exception {
+    public List<InputAndValue> validateForResume(final Execution execution, Flow flow, @Nullable Publisher<CompletedPart> inputs) throws Exception {
+        Task task = getFirstPausedTaskOrThrow(execution, flow);
+        if (task instanceof Pause pauseTask) {
+            return flowInputOutput.validateExecutionInputs(
+                pauseTask.getOnResume(),
+                execution,
+                inputs,
+                true
+            );
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Resume a paused execution to a new state.
+     * The execution must be paused or this call will be a no-op.
+     *
+     * @param execution the execution to resume
+     * @param newState  should be RUNNING or KILLING, other states may lead to undefined behavior
+     * @param flow      the flow of the execution
+     * @param inputs    the onResume inputs
+     * @return the execution in the new state.
+     * @throws Exception if the state of the execution cannot be updated
+     */
+    public Execution resume(final Execution execution, Flow flow, State.Type newState, @Nullable Publisher<CompletedPart> inputs) throws Exception {
+        var task = getFirstPausedTaskOrThrow(execution, flow);
+        Map<String, Object> pauseOutputs = Collections.emptyMap();
+        if (task instanceof Pause pauseTask) {
+            pauseOutputs = flowInputOutput.readExecutionInputs(
+                pauseTask.getOnResume(),
+                execution,
+                inputs
+            );
+        }
+
+        return resume(execution, flow, newState, pauseOutputs);
+    }
+
+    private static Task getFirstPausedTaskOrThrow(Execution execution, Flow flow) throws InternalException {
+        var runningTaskRun = execution
+            .findFirstByState(State.Type.PAUSED)
+            .orElseThrow(() -> new IllegalArgumentException("No paused task found on execution " + execution.getId()));
+        return flow.findTaskByTaskId(runningTaskRun.getTaskId());
+    }
+
+    /**
+     * Resume a paused execution to a new state.
+     * The execution must be paused or this call will be a no-op.
+     *
+     * @param execution the execution to resume
+     * @param newState  should be RUNNING or KILLING, other states may lead to undefined behavior
+     * @param flow      the flow of the execution
+     * @param inputs    the onResume inputs
+     * @return the execution in the new state.
+     * @throws Exception if the state of the execution cannot be updated
+     */
+    public Execution resume(final Execution execution, Flow flow, State.Type newState, @Nullable Map<String, Object> inputs) throws Exception {
         var runningTaskRun = execution
             .findFirstByState(State.Type.PAUSED)
             .orElseThrow(() -> new IllegalArgumentException("No paused task found on execution " + execution.getId()));
 
-        var unpausedExecution = this.markAs(execution, flow, runningTaskRun.getId(), newState, inputs, files);
+        var unpausedExecution = this.markAs(execution, flow, runningTaskRun.getId(), newState, inputs);
 
-        this.eventPublisher.publishEvent(new CrudEvent<>(execution, CrudEventType.UPDATE));
+        this.eventPublisher.publishEvent(new CrudEvent<>(unpausedExecution, execution, CrudEventType.UPDATE));
         return unpausedExecution;
     }
 
@@ -422,6 +544,7 @@ public class ExecutionService {
                 .executionId(childExecution.getId())
                 .isOnKillCascade(true)
                 .state(ExecutionKilled.State.REQUESTED) // Event will be reentrant in the Executor.
+                .tenantId(tenantId)
                 .build()
             );
     }
@@ -476,6 +599,9 @@ public class ExecutionService {
 
         @Builder.Default
         private int storagesCount = 0;
+
+        @Builder.Default
+        private int metricsCount = 0;
     }
 
     private Set<String> removeWorkerTask(Flow flow, Execution execution, Set<String> taskRunToRestart, Map<String, String> mappingTaskRunId) throws InternalException {

@@ -1,7 +1,7 @@
 package io.kestra.core.models.tasks;
 
 import io.kestra.core.models.flows.Input;
-import io.kestra.core.tasks.flows.Pause;
+import io.kestra.plugin.core.flow.Pause;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
@@ -20,7 +20,9 @@ public class TaskForExecution implements TaskInterface {
 
     protected List<Input<?>> inputs;
 
-    public static TaskForExecution of(Task task) {
+    protected ExecutableTask.SubflowId subflowId;
+
+    public static TaskForExecution of(TaskInterface task) {
         List<Input<?>> inputs = null;
 
         if (task instanceof Pause pauseTask) {
@@ -31,6 +33,10 @@ public class TaskForExecution implements TaskInterface {
             .id(task.getId())
             .type(task.getType())
             .inputs(inputs);
+
+        if (task instanceof ExecutableTask<?> executableTask) {
+            taskForExecutionBuilder.subflowId(executableTask.subflowId());
+        }
 
         if (task instanceof FlowableTask<?> flowable) {
             taskForExecutionBuilder.tasks(flowable.allChildTasks().stream().map(TaskForExecution::of).toList());

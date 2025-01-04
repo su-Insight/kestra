@@ -17,6 +17,7 @@ public class Plugin {
     private String name;
     private String title;
     private String description;
+    private String license;
     private String longDescription;
     private String group;
     private String version;
@@ -29,22 +30,28 @@ public class Plugin {
     private List<String> secrets;
     private List<String> taskRunners;
     private List<String> guides;
+    private List<String> aliases;
     private List<PluginSubGroup.PluginCategory> categories;
     private String subGroup;
 
     public static Plugin of(RegisteredPlugin registeredPlugin, @Nullable String subgroup) {
         Plugin plugin = new Plugin();
         plugin.name = registeredPlugin.name();
+        PluginSubGroup subGroupInfos = null;
         if (subgroup == null) {
             plugin.title = registeredPlugin.title();
         } else {
-            plugin.title = subgroup.substring(subgroup.lastIndexOf('.') + 1);
+            subGroupInfos = registeredPlugin.allClass().stream().filter(c -> c.getName().contains(subgroup)).map(clazz -> clazz.getPackage().getDeclaredAnnotation(PluginSubGroup.class)).toList().getFirst();
+            plugin.title = !subGroupInfos.title().isEmpty() ? subGroupInfos.title() : subgroup.substring(subgroup.lastIndexOf('.') + 1);;
+
         }
         plugin.group = registeredPlugin.group();
-        plugin.description = registeredPlugin.description();
+        plugin.description = subGroupInfos != null && !subGroupInfos.description().isEmpty() ? subGroupInfos.description() : registeredPlugin.description();
+        plugin.license = registeredPlugin.license();
         plugin.longDescription = registeredPlugin.longDescription();
         plugin.version = registeredPlugin.version();
         plugin.guides = registeredPlugin.getGuides();
+        plugin.aliases = registeredPlugin.getAliases().values().stream().map(Map.Entry::getKey).toList();
         plugin.manifest = registeredPlugin
             .getManifest()
             .getMainAttributes()
@@ -55,7 +62,9 @@ public class Plugin {
                 e.getValue().toString()
             ))
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        plugin.categories =  registeredPlugin
+        plugin.categories = subGroupInfos != null ?
+            Arrays.stream(subGroupInfos.categories()).toList() :
+            registeredPlugin
             .allClass()
             .stream()
             .map(clazz -> clazz.getPackage().getDeclaredAnnotation(PluginSubGroup.class))

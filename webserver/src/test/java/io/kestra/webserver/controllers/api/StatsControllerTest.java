@@ -2,9 +2,10 @@ package io.kestra.webserver.controllers.api;
 
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.statistics.DailyExecutionStatistics;
+import io.kestra.core.models.executions.statistics.ExecutionCountStatistics;
 import io.kestra.core.models.executions.statistics.LogStatistics;
+import io.kestra.core.models.stats.SummaryStatistics;
 import io.kestra.core.repositories.ExecutionRepositoryInterface;
-import io.kestra.webserver.controllers.api.StatsController;
 import io.kestra.webserver.controllers.h2.JdbcH2ControllerTest;
 import io.micronaut.core.type.Argument;
 import io.micronaut.http.HttpRequest;
@@ -31,7 +32,7 @@ class StatsControllerTest extends JdbcH2ControllerTest {
     void dailyStatistics() {
         var dailyStatistics = client.toBlocking().retrieve(
             HttpRequest
-                .POST("/api/v1/stats/executions/daily", new StatsController.StatisticRequest(null, null, null, ZonedDateTime.now().minusDays(1), ZonedDateTime.now()))
+                .POST("/api/v1/stats/executions/daily", new StatsController.StatisticRequest(null, null, null, null, ZonedDateTime.now().minusDays(1), ZonedDateTime.now(), null))
                 .contentType(MediaType.APPLICATION_JSON),
             Argument.listOf(DailyExecutionStatistics.class)
         );
@@ -74,6 +75,40 @@ class StatsControllerTest extends JdbcH2ControllerTest {
         );
 
         assertThat(dailyStatistics, notNullValue());
+    }
+
+    @Test
+    void shouldGetDailyStatisticsGroupByNamespace() {
+        // Given
+        StatsController.ByNamespaceStatisticRequest body = new StatsController.ByNamespaceStatisticRequest(null, ZonedDateTime.now().minusDays(1), ZonedDateTime.now());
+
+        // When
+        Map<String, ExecutionCountStatistics> response = client.toBlocking().retrieve(
+            HttpRequest
+                .POST("/api/v1/stats/executions/daily/group-by-namespace", body)
+                .contentType(MediaType.APPLICATION_JSON),
+            Argument.mapOf(String.class, ExecutionCountStatistics.class)
+        );
+
+        // Then
+        assertThat(response, notNullValue());
+    }
+
+    @Test
+    void shouldGetSummary() {
+        // Given
+        StatsController.SummaryRequest body = new StatsController.SummaryRequest(null, null, null);
+
+        // When
+        SummaryStatistics response = client.toBlocking().retrieve(
+            HttpRequest
+                .POST("/api/v1/stats/summary", body)
+                .contentType(MediaType.APPLICATION_JSON),
+            SummaryStatistics.class
+        );
+
+        // Then
+        assertThat(response, notNullValue());
     }
 
 }
