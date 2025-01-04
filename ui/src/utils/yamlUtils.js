@@ -1,5 +1,5 @@
 import JsYaml from "js-yaml";
-import yaml, {Document, YAMLMap, isSeq, isMap, Pair, Scalar, YAMLSeq, LineCounter} from "yaml";
+import yaml, {Document, YAMLMap, isSeq, isMap, Pair, Scalar, YAMLSeq, LineCounter, isPair} from "yaml";
 import _cloneDeep from "lodash/cloneDeep"
 import {SECTIONS} from "./constants.js";
 
@@ -20,6 +20,18 @@ export default class YamlUtils {
             noCompatMode: true,
             quotingType: "\"",
         });
+    }
+
+    static pairsToMap(pairs) {
+        const map = new YAMLMap();
+        if (!isPair(pairs?.[0])) {
+            return map;
+        }
+
+        pairs.forEach(pair => {
+            map.add(pair);
+        });
+        return map;
     }
 
     static parse(item) {
@@ -188,7 +200,7 @@ export default class YamlUtils {
                     if (map.items) {
                         for (const item of map.items) {
                             if (item.key.value === fieldName) {
-                                const fieldValue = item.value?.value;
+                                const fieldValue = item.value?.value ?? item.value?.items;
                                 maps.push({[fieldName]: fieldValue, range: map.range});
                             }
                         }
@@ -235,8 +247,12 @@ export default class YamlUtils {
         return maps;
     }
 
+    static extractAllTaskIds(source) {
+        return this.extractFieldFromMaps(source, "id", (yamlDoc) => yamlDoc.contents && yamlDoc.contents.items && yamlDoc.contents.items.find(e => ["tasks"].includes(e.key?.value)))
+    }
+
     static extractAllTypes(source) {
-        return this.extractFieldFromMaps(source, "type", (yamlDoc) => yamlDoc.contents && yamlDoc.contents.items && yamlDoc.contents.items.find(e => ["tasks", "triggers", "errors"].includes(e.key.value)))
+        return this.extractFieldFromMaps(source, "type", (yamlDoc) => yamlDoc.contents && yamlDoc.contents.items && yamlDoc.contents.items.find(e => ["tasks", "triggers", "errors"].includes(e.key?.value)))
     }
 
     static getTaskType(source, position) {
@@ -573,7 +589,7 @@ export default class YamlUtils {
             return source;
         }
 
-        const order = ["id", "namespace", "description", "labels", "inputs", "variables", "tasks", "triggers", "errors", "taskDefaults", "concurrency"];
+        const order = ["id", "namespace", "description", "retry", "labels", "inputs", "variables", "tasks", "triggers", "errors", "pluginDefaults", "taskDefaults", "concurrency", "outputs"];
         const updatedItems = [];
         for (const prop of order) {
             const item = yamlDoc.contents.items.find(e => e.key.value === prop);
@@ -603,7 +619,7 @@ export default class YamlUtils {
             return false;
         }
 
-        const tasks = yamlDoc.contents.items.find(item => item.key.value === "tasks");
+        const tasks = yamlDoc.contents.items.find(item => item.key?.value === "tasks");
         return tasks?.value?.items?.length >= 1;
     }
 

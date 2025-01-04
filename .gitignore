@@ -7,6 +7,7 @@ target/
 out/
 .idea
 .vscode
+prettierrc.js
 *.iml
 *.ipr
 *.iws
@@ -28,8 +29,6 @@ node_modules
 yarn-error.log
 yarn.lock
 ui/node_modules
-ui/public/vscode
-ui/public/vscode-web
 ui/.env.local
 ui/.env.*.local
 webserver/src/main/resources/ui
@@ -51,4 +50,7 @@ core/src/main/resources/gradle.properties
 .plugins.override
 
 # H2 Database
-data
+/data
+
+# Allure Reports
+**/allure-results/*

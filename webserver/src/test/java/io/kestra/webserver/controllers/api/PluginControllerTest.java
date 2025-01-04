@@ -6,9 +6,8 @@ import io.kestra.core.docs.InputType;
 import io.kestra.core.docs.Plugin;
 import io.kestra.core.docs.PluginIcon;
 import io.kestra.core.models.annotations.PluginSubGroup;
-import io.kestra.core.plugins.DefaultPluginRegistry;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.log.Log;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.log.Log;
 import io.micronaut.core.type.Argument;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.reactor.http.client.ReactorHttpClient;
@@ -51,10 +50,10 @@ class PluginControllerTest {
             assertThat(template.getDescription(), is("Plugin template for Kestra"));
 
             assertThat(template.getTasks().size(), is(1));
-            assertThat(template.getTasks().get(0), is("io.kestra.plugin.templates.ExampleTask"));
+            assertThat(template.getTasks().getFirst(), is("io.kestra.plugin.templates.ExampleTask"));
 
             assertThat(template.getGuides().size(), is(2));
-            assertThat(template.getGuides().get(0), is("authentication"));
+            assertThat(template.getGuides().getFirst(), is("authentication"));
 
             Plugin core = list.stream()
                 .filter(plugin -> plugin.getTitle().equals("core"))
@@ -87,6 +86,8 @@ class PluginControllerTest {
             );
 
             assertThat(list.entrySet().stream().filter(e -> e.getKey().equals(Log.class.getName())).findFirst().orElseThrow().getValue().getIcon(), is(notNullValue()));
+            // test an alias
+            assertThat(list.entrySet().stream().filter(e -> e.getKey().equals("io.kestra.core.tasks.log.Log")).findFirst().orElseThrow().getValue().getIcon(), is(notNullValue()));
         });
     }
 
@@ -102,7 +103,7 @@ class PluginControllerTest {
                 DocumentationWithSchema.class
             );
 
-            assertThat(doc.getMarkdown(), containsString("io.kestra.core.tasks.debugs.Return"));
+            assertThat(doc.getMarkdown(), containsString("io.kestra.plugin.core.debug.Return"));
             assertThat(doc.getMarkdown(), containsString("Return a value for debugging purposes."));
             assertThat(doc.getMarkdown(), containsString("The templated string to render"));
             assertThat(doc.getMarkdown(), containsString("The generated string"));
@@ -134,11 +135,11 @@ class PluginControllerTest {
             ReactorHttpClient client = ReactorHttpClient.create(embeddedServer.getURL());
 
             DocumentationWithSchema doc = client.toBlocking().retrieve(
-                HttpRequest.GET("/api/v1/plugins/io.kestra.core.tasks.states.Set"),
+                HttpRequest.GET("/api/v1/plugins/io.kestra.plugin.core.state.Set"),
                 DocumentationWithSchema.class
             );
 
-            assertThat(doc.getMarkdown(), containsString("io.kestra.core.tasks.states.Set"));
+            assertThat(doc.getMarkdown(), containsString("io.kestra.plugin.core.state.Set"));
             assertThat(doc.getMarkdown(), containsString("::: warning\n"));
         });
     }
@@ -212,7 +213,7 @@ class PluginControllerTest {
                 Argument.listOf(InputType.class)
             );
 
-            assertThat(doc.size(), is(14));
+            assertThat(doc.size(), is(15));
         });
     }
 
