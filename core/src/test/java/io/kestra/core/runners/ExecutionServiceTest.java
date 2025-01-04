@@ -1,21 +1,19 @@
 package io.kestra.core.runners;
 
 import com.google.common.collect.ImmutableMap;
-import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.services.ExecutionService;
-import io.kestra.core.services.TaskDefaultService;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.core.services.PluginDefaultService;
+import io.kestra.plugin.core.debug.Return;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import org.junitpioneer.jupiter.RetryingTest;
 
 import java.util.List;
-import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -29,7 +27,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
     FlowRepositoryInterface flowRepository;
 
     @Inject
-    TaskDefaultService taskDefaultService;
+    PluginDefaultService pluginDefaultService;
 
     @Test
     void restartSimple() throws Exception {
@@ -67,7 +65,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
                     .build()
             ),
             JacksonMapper.ofYaml().writeValueAsString(flow),
-            taskDefaultService.injectDefaults(flow)
+            pluginDefaultService.injectDefaults(flow)
         );
 
 

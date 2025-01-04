@@ -27,7 +27,7 @@ plugins {
     id "com.github.ben-manes.versions" version "0.51.0"
 
     // front
-    id 'org.siouan.frontend-jdk11' version '8.0.0' apply false
+    id 'org.siouan.frontend-jdk17' version '8.0.0' apply false
 
     // release
     id "io.github.gradle-nexus.publish-plugin" version "2.0.0"
@@ -94,8 +94,8 @@ allprojects {
             force("org.apache.httpcomponents:httpclient:4.5.14")
 
             // ugly bug on crypto plugin
-            force('org.bouncycastle:bcprov-jdk18on:1.78')
-            force('org.bouncycastle:bcpg-jdk18on:1.78')
+            force('org.bouncycastle:bcprov-jdk18on:1.78.1')
+            force('org.bouncycastle:bcpg-jdk18on:1.78.1')
 
             // ugly bug for jackson
             force("com.fasterxml.jackson:jackson-bom:" + jacksonVersion)
@@ -108,10 +108,12 @@ allprojects {
             force("com.fasterxml.jackson.core:jackson-annotations:" + jacksonVersion)
             force("com.fasterxml.jackson.dataformat:jackson-dataformat-smile:" + jacksonVersion)
             force("com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:" + jacksonVersion)
+            force("com.fasterxml.jackson.dataformat:jackson-dataformat-ion:" + jacksonVersion)
             force("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:" + jacksonVersion)
+            force("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:" + jacksonVersion)
 
             // issue with the Docker lib having a too old version for the k8s extension
-            force("org.apache.commons:commons-compress:1.26.1")
+            force("org.apache.commons:commons-compress:1.26.2")
         }
     }
 
@@ -151,18 +153,20 @@ allprojects {
         implementation group: 'org.fusesource.jansi', name: 'jansi', version: '2.4.1'
 
         // jackson
-        implementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: jacksonVersion
-        implementation group: 'com.fasterxml.jackson.dataformat', name: 'jackson-dataformat-yaml', version: jacksonVersion
-        implementation group: 'com.fasterxml.jackson.module', name: 'jackson-module-parameter-names', version: jacksonVersion
-        implementation group: 'com.fasterxml.jackson.datatype', name: 'jackson-datatype-guava', version: jacksonVersion
-        implementation group: 'com.fasterxml.jackson.datatype', name: 'jackson-datatype-jsr310', version: jacksonVersion
+        implementation platform(group: 'com.fasterxml.jackson', name:'jackson-bom', version: jacksonVersion)
+        implementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind'
+        implementation group: 'com.fasterxml.jackson.dataformat', name: 'jackson-dataformat-yaml'
+        implementation group: 'com.fasterxml.jackson.module', name: 'jackson-module-parameter-names'
+        implementation group: 'com.fasterxml.jackson.datatype', name: 'jackson-datatype-guava'
+        implementation group: 'com.fasterxml.jackson.datatype', name: 'jackson-datatype-jsr310'
 
         // kestra
         implementation group: 'com.devskiller.friendly-id', name: 'friendly-id', version: '1.1.0'
         implementation group: 'net.thisptr', name: 'jackson-jq', version: '1.0.0-preview.20240207'
 
         // exposed utils
-        api group: 'com.google.guava', name: 'guava', version: '33.2.0-jre'
+        api platform("io.micronaut.platform:micronaut-platform:$micronautVersion")
+        api group: 'com.google.guava', name: 'guava', version: '33.2.1-jre'
         api group: 'commons-io', name: 'commons-io', version: '2.16.1'
         api group: 'org.apache.commons', name: 'commons-lang3', version: '3.14.0'
         api "io.swagger.core.v3:swagger-annotations"
@@ -229,6 +233,73 @@ subprojects {
         showStandardStreams true
         showPassedStandardStreams false
         showSkippedStandardStreams true
+    }
+}
+
+/**********************************************************************************************************************\
+ * Allure Reports
+ **********************************************************************************************************************/
+subprojects {
+    dependencies {
+        testImplementation platform("io.qameta.allure:allure-bom:2.27.0")
+        testImplementation "io.qameta.allure:allure-junit5"
+    }
+
+    configurations {
+        agent {
+            canBeResolved = true
+            canBeConsumed = true
+        }
+    }
+
+    dependencies {
+        agent "org.aspectj:aspectjweaver:1.9.22.1"
+    }
+
+    test {
+        jvmArgs = [ "-javaagent:${configurations.agent.singleFile}" ]
+    }
+}
+
+/**********************************************************************************************************************\
+ * Jacoco
+ **********************************************************************************************************************/
+subprojects {
+    apply plugin: 'jacoco'
+
+    test {
+        finalizedBy jacocoTestReport
+    }
+}
+
+dependencies {
+    jacocoAggregation subprojects
+}
+
+tasks.named('testCodeCoverageReport') {
+    dependsOn = subprojects.test
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('testCodeCoverageReport', JacocoReport)
+}
+
+/**********************************************************************************************************************\
+ * Sonar
+ **********************************************************************************************************************/
+subprojects {
+    sonar {
+        properties {
+            property "sonar.coverage.jacoco.xmlReportPaths", "$projectDir.parentFile.path/build/reports/jacoco/testCodeCoverageReport/testCodeCoverageReport.xml"
+        }
+    }
+}
+
+sonar {
+    properties {
+        property "sonar.projectKey", "kestra-io_kestra"
+        property "sonar.organization", "kestra-io"
+        property "sonar.host.url", "https://sonarcloud.io"
     }
 }
 
@@ -304,7 +375,7 @@ task writeExecutableJar() {
     }
 
     doLast {
-        executable.append(file("${buildDir}/libs/${project.name}-${project.version}.jar").readBytes())
+        executable.setBytes(file("${buildDir}/libs/${project.name}-${project.version}.jar").readBytes())
         ByteArrayOutputStream executableBytes = new ByteArrayOutputStream()
         executableBytes.write("\n: <<END_OF_KESTRA_SELFRUN\r\n".getBytes())
         executableBytes.write(file("gradle/jar/selfrun.bat").readBytes())
@@ -326,62 +397,6 @@ task executableJar(type: Zip) {
 
     from executableDir
     archiveClassifier.set(null)
-}
-
-/**********************************************************************************************************************\
- * Jacoco
- **********************************************************************************************************************/
-subprojects {
-    test {
-        finalizedBy jacocoTestReport
-    }
-
-    jacoco {
-        toolVersion = "0.8.11"
-    }
-
-    jacocoTestReport {
-        getAdditionalSourceDirs().setFrom(files(sourceSets.main.allSource.srcDirs))
-        getSourceDirectories().setFrom(files(sourceSets.main.allSource.srcDirs))
-        getClassDirectories().setFrom(files(sourceSets.main.output))
-        reports {
-            html.required = true
-            xml.required = true
-        }
-    }
-
-    sonar {
-        properties {
-            property "sonar.coverage.jacoco.xmlReportPaths", "$projectDir.parentFile.path/build/reports/jacoco/testCodeCoverageReport/testCodeCoverageReport.xml"
-        }
-    }
-}
-
-
-task jacoco(type: JacocoReport) {
-    dependsOn = subprojects.test
-
-    def javaProject = subprojects.findAll { it.name != 'ui' };
-
-    getAdditionalSourceDirs().setFrom(files(javaProject.sourceSets.main.allSource.srcDirs))
-    getSourceDirectories().setFrom(files(javaProject.sourceSets.main.allSource.srcDirs))
-    getClassDirectories().setFrom(files(javaProject.sourceSets.main.output))
-    getExecutionData().setFrom(files(javaProject.jacocoTestReport.executionData))
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('testCodeCoverageReport', JacocoReport)
-}
-
-/**********************************************************************************************************************\
- * Sonar
- **********************************************************************************************************************/
-sonar {
-    properties {
-        property "sonar.projectKey", "kestra-io_kestra"
-        property "sonar.organization", "kestra-io"
-        property "sonar.host.url", "https://sonarcloud.io"
-    }
 }
 
 /**********************************************************************************************************************\
@@ -450,7 +465,7 @@ subprojects {
     }
 
     maven.pom {
-        description 'The modern, scalable orchestrator & scheduler open source platform'
+        description = 'The modern, scalable orchestrator & scheduler open source platform'
 
         developers {
             developer {
@@ -502,10 +517,9 @@ release {
     tagCommitMessage = 'tag version'
     newVersionCommitMessage = 'update snapshot version'
     tagTemplate = 'v${version}'
-    pushReleaseVersionBranch = 'master'
     buildTasks = ['classes']
 
     git {
-        requireBranch.set('release')
+        requireBranch.set('develop')
     }
 }

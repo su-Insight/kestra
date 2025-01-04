@@ -1,37 +1,36 @@
 package io.kestra.core.runners;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.encryption.EncryptionService;
-import io.kestra.core.exceptions.MissingRequiredArgument;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Data;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Input;
 import io.kestra.core.models.flows.Type;
-import io.kestra.core.models.flows.input.ArrayInput;
+import io.kestra.core.models.flows.input.FileInput;
+import io.kestra.core.models.flows.input.ItemTypeInterface;
 import io.kestra.core.models.tasks.common.EncryptedString;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.storages.StorageInterface;
 import io.micronaut.context.annotation.Value;
 import io.micronaut.core.annotation.Nullable;
-import io.micronaut.http.multipart.StreamingFileUpload;
+import io.micronaut.http.multipart.CompletedFileUpload;
+import io.micronaut.http.multipart.CompletedPart;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import jakarta.validation.ConstraintViolationException;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -61,82 +60,71 @@ public class FlowInputOutput {
     /**
      * Utility method for retrieving types inputs for a flow.
      *
-     * @param flow      The Flow
+     * @param flow      The Flow.
      * @param execution The Execution.
-     * @param in        The Flow's inputs.
+     * @param inputs        The Flow's inputs.
      * @return The Map of typed inputs.
      */
-    public Map<String, Object> typedInputs(
-        final Flow flow,
-        final Execution execution,
-        final Map<String, Object> in,
-        final Publisher<StreamingFileUpload> files
-    ) throws IOException {
-        return this.typedInputs(
-            flow.getInputs(),
-            execution,
-            in,
-            files
-        );
-    }
-
-    /**
-     * Utility method for retrieving types inputs.
-     *
-     * @param inputs    The Inputs.
-     * @param execution The Execution.
-     * @param in        The Flow's inputs.
-     * @return The Map of typed inputs.
-     */
-    public Map<String, Object> typedInputs(
-        final List<Input<?>> inputs,
-        final Execution execution,
-        final Map<String, Object> in,
-        final Publisher<StreamingFileUpload> files
-    ) throws IOException {
-        if (files == null) {
-            return this.typedInputs(inputs, execution, in);
-        }
-
-        Map<String, String> uploads = Flux.from(files)
-            .subscribeOn(Schedulers.boundedElastic())
-            .map(throwFunction(file -> {
-                File tempFile = File.createTempFile(file.getFilename() + "_", ".upl");
-                Publisher<Boolean> uploadPublisher = file.transferTo(tempFile);
-                Boolean bool = Mono.from(uploadPublisher).block();
-
-                if (Boolean.FALSE.equals(bool)) {
-                    throw new RuntimeException("Can't upload");
-                }
-
-                URI from = storageInterface.from(execution, file.getFilename(), tempFile);
-                //noinspection ResultOfMethodCallIgnored
-                tempFile.delete();
-
-                return new AbstractMap.SimpleEntry<>(
-                    file.getFilename(),
-                    from.toString()
-                );
-            }))
-            .collectMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue)
-            .block();
-
-        Map<String, Object> merged = new HashMap<>();
-        if (in != null) {
-            merged.putAll(in);
-        }
-
-        merged.putAll(uploads);
-
-        return this.typedInputs(inputs, execution, merged);
+    public Map<String, Object> typedInputs(final Flow flow,
+                                           final Execution execution,
+                                           final Publisher<CompletedPart> inputs) throws IOException {
+        return this.typedInputs(flow.getInputs(), execution, inputs);
     }
 
     /**
      * Utility method for retrieving types inputs for a flow.
      *
-     * @param flow      The inputs Flow?
+     * @param inputs      The inputs
      * @param execution The Execution.
-     * @param in        The Flow's inputs.
+     * @param in        The Execution's inputs.
+     * @return The Map of typed inputs.
+     */
+    public Map<String, Object> typedInputs(final List<Input<?>> inputs,
+                                           final Execution execution,
+                                           final Publisher<CompletedPart> in) throws IOException {
+        Map<String, Object> uploads = Flux.from(in)
+            .subscribeOn(Schedulers.boundedElastic())
+            .map(throwFunction(input -> {
+                if (input instanceof CompletedFileUpload fileUpload) {
+                    String fileExtension = inputs.stream().filter(flowInput -> flowInput instanceof FileInput && flowInput.getId().equals(fileUpload.getFilename())).map(flowInput -> ((FileInput) flowInput).getExtension()).findFirst().orElse(".upl");
+                    fileExtension = fileExtension.startsWith(".") ? fileExtension : "." + fileExtension;
+                    File tempFile = File.createTempFile(fileUpload.getFilename() + "_", fileExtension);
+                    try (var inputStream = fileUpload.getInputStream();
+                         var outputStream = new FileOutputStream(tempFile)) {
+                        long transferredBytes = inputStream.transferTo(outputStream);
+                        if (transferredBytes == 0) {
+                            throw new RuntimeException("Can't upload file: " + fileUpload.getFilename());
+                        }
+                    }
+                    URI from = storageInterface.from(execution, fileUpload.getFilename(), tempFile);
+                    if (!tempFile.delete()) {
+                        tempFile.deleteOnExit();
+                    }
+
+                    return new AbstractMap.SimpleEntry<>(
+                        fileUpload.getFilename(),
+                        (Object) from.toString()
+                    );
+
+                } else {
+                    return new AbstractMap.SimpleEntry<>(
+                        input.getName(),
+                        (Object) new String(input.getBytes())
+                    );
+                }
+            }))
+            .collectMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue)
+            .block();
+
+        return this.typedInputs(inputs, execution, uploads);
+    }
+
+    /**
+     * Utility method for retrieving types inputs for a flow.
+     *
+     * @param flow      The Flow.
+     * @param execution The Execution.
+     * @param in        The Execution's inputs.
      * @return The Map of typed inputs.
      */
     public Map<String, Object> typedInputs(
@@ -156,7 +144,7 @@ public class FlowInputOutput {
      *
      * @param inputs    The inputs.
      * @param execution The Execution.
-     * @param in        The Flow's inputs.
+     * @param in        The Execution's inputs.
      * @return The Map of typed inputs.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -164,7 +152,7 @@ public class FlowInputOutput {
         final List<Input<?>> inputs,
         final Execution execution,
         final Map<String, Object> in
-    ) {
+    ) throws ConstraintViolationException {
         if (inputs == null) {
             return ImmutableMap.of();
         }
@@ -179,7 +167,10 @@ public class FlowInputOutput {
                 }
 
                 if (input.getRequired() && current == null) {
-                    throw new MissingRequiredArgument("Missing required input value '" + input.getId() + "'");
+                    throw input.toConstraintViolationException(
+                        "missing required input",
+                        current
+                    );
                 }
 
                 if (!input.getRequired() && current == null) {
@@ -189,9 +180,19 @@ public class FlowInputOutput {
                     ));
                 }
 
-                var parsedInput = parseData(execution, input, current);
-                parsedInput.ifPresent(parsed -> input.validate(parsed.getValue()));
-                return parsedInput;
+                try {
+                    var parsedInput = parseData(execution, input, current);
+                    parsedInput.ifPresent(parsed -> input.validate(parsed.getValue()));
+                    return parsedInput;
+                } catch (ConstraintViolationException e) {
+                    if (e.getConstraintViolations().size() == 1) {
+                        throw input.toConstraintViolationException(List.copyOf(e.getConstraintViolations()).getFirst().getMessage(), current);
+                    } else {
+                        throw input.toConstraintViolationException(e.getMessage(), current);
+                    }
+                } catch (Exception e) {
+                    throw input.toConstraintViolationException(e instanceof IllegalArgumentException ? e.getMessage() : e.toString(), current);
+                }
             })
             .filter(Optional::isPresent)
             .map(Optional::get)
@@ -213,16 +214,20 @@ public class FlowInputOutput {
             .stream()
             .map(output -> {
                 Object current = in == null ? null : in.get(output.getId());
-                return parseData(execution, output, current)
-                    .map(entry -> {
-                        if (output.getType().equals(Type.SECRET)) {
-                            return new AbstractMap.SimpleEntry<>(
-                                entry.getKey(),
-                                EncryptedString.from(entry.getValue().toString())
-                            );
-                        }
-                        return entry;
-                    });
+                try {
+                    return parseData(execution, output, current)
+                        .map(entry -> {
+                            if (output.getType().equals(Type.SECRET)) {
+                                return new AbstractMap.SimpleEntry<>(
+                                    entry.getKey(),
+                                    EncryptedString.from(entry.getValue().toString())
+                                );
+                            }
+                            return entry;
+                        });
+                } catch (Exception e) {
+                    throw output.toConstraintViolationException(e.getMessage(), current);
+                }
             })
             .filter(Optional::isPresent)
             .map(Optional::get)
@@ -236,64 +241,37 @@ public class FlowInputOutput {
         final Execution execution,
         final Data data,
         final Object current
-    ) {
+    ) throws Exception {
         if (data.getType() == null) {
             return Optional.of(new AbstractMap.SimpleEntry<>(data.getId(), current));
         }
 
-        final Type elementType = data instanceof ArrayInput arrayInput ? arrayInput.getItemType() : null;
+        final Type elementType = data instanceof ItemTypeInterface itemTypeInterface ? itemTypeInterface.getItemType() : null;
+
         return Optional.of(new AbstractMap.SimpleEntry<>(
             data.getId(),
             parseType(execution, data.getType(), data.getId(), elementType, current)
         ));
     }
 
-    private Object parseType(Execution execution, Type type, String id, Type elementType, Object current) {
-        return switch (type) {
-            case ENUM, STRING -> current;
-            case SECRET -> {
-                try {
+    private Object parseType(Execution execution, Type type, String id, Type elementType, Object current) throws Exception {
+        try {
+            return switch (type) {
+                case ENUM, STRING -> current;
+                case SECRET -> {
                     if (secretKey == null) {
-                        throw new MissingRequiredArgument("Unable to use a SECRET input/output as encryption is not configured");
+                        throw new Exception("Unable to use a `SECRET` input/output as encryption is not configured");
                     }
                     yield EncryptionService.encrypt(secretKey, (String) current);
-                } catch (GeneralSecurityException e) {
-                    throw new MissingRequiredArgument("Invalid SECRET format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-            }
-            case INT -> current instanceof Integer ? current : Integer.valueOf((String) current);
-            case FLOAT -> current instanceof Float ? current : Float.valueOf((String) current);
-            case BOOLEAN -> current instanceof Boolean ? current : Boolean.valueOf((String) current);
-            case DATETIME -> {
-                try {
-                    yield Instant.parse(((String) current));
-                } catch (DateTimeParseException e) {
-                    throw new MissingRequiredArgument("Invalid DATETIME format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
-                }
-            }
-            case DATE -> {
-                try {
-                   yield LocalDate.parse(((String) current));
-                } catch (DateTimeParseException e) {
-                    throw new MissingRequiredArgument("Invalid DATE format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
-                }
-            }
-            case TIME -> {
-                try {
-                    yield LocalTime.parse(((String) current));
-                } catch (DateTimeParseException e) {
-                    throw new MissingRequiredArgument("Invalid TIME format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
-                }
-            }
-            case DURATION -> {
-                try {
-                    yield Duration.parse(((String) current));
-                } catch (DateTimeParseException e) {
-                    throw new MissingRequiredArgument("Invalid DURATION format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
-                }
-            }
-            case FILE -> {
-                try {
+                case INT -> current instanceof Integer ? current : Integer.valueOf((String) current);
+                case FLOAT -> current instanceof Float ? current : Float.valueOf((String) current);
+                case BOOLEAN -> current instanceof Boolean ? current : Boolean.valueOf((String) current);
+                case DATETIME -> Instant.parse(((String) current));
+                case DATE -> LocalDate.parse(((String) current));
+                case TIME -> LocalTime.parse(((String) current));
+                case DURATION -> Duration.parse(((String) current));
+                case FILE -> {
                     URI uri = URI.create(((String) current).replace(File.separator, "/"));
 
                     if (uri.getScheme() != null && uri.getScheme().equals("kestra")) {
@@ -301,41 +279,39 @@ public class FlowInputOutput {
                     } else {
                         yield storageInterface.from(execution, id, new File(((String) current)));
                     }
-                } catch (Exception e) {
-                    throw new MissingRequiredArgument("Invalid FILE format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-            }
-            case JSON -> {
-                try {
-                    yield  JacksonMapper.toObject(((String) current));
-                } catch (JsonProcessingException e) {
-                    throw new MissingRequiredArgument("Invalid JSON format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
+                case JSON -> JacksonMapper.toObject(((String) current));
+                case URI -> {
+                    Matcher matcher = URI_PATTERN.matcher((String) current);
+                    if (matcher.matches()) {
+                        yield current;
+                    } else {
+                        throw new IllegalArgumentException("Expected `URI` but received `" + current + "`");
+                    }
                 }
-            }
-            case URI -> {
-                Matcher matcher = URI_PATTERN.matcher((String) current);
-                if (matcher.matches()) {
-                    yield current;
-                } else {
-                    throw new MissingRequiredArgument("Invalid URI format for '" + id + "' for '" + current + "'");
-                }
-            }
-            case ARRAY -> {
-                try {
+                case ARRAY, MULTISELECT -> {
                     if (elementType != null) {
                         // recursively parse the elements only once
                         yield JacksonMapper.toList(((String) current))
                             .stream()
-                            .map(element -> parseType(execution, elementType, id, null, element))
+                            .map(throwFunction(element -> {
+                                try {
+                                    return parseType(execution, elementType, id, null, element);
+                                } catch (Throwable e) {
+                                    throw new IllegalArgumentException("Unable to parse array element as `" + elementType + "` on `" + element + "`", e);
+                                }
+                            }))
                             .toList();
                     } else {
                         yield JacksonMapper.toList(((String) current));
                     }
-                } catch (JsonProcessingException e) {
-                    throw new MissingRequiredArgument("Invalid JSON format for '" + id + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-            }
-        };
+            };
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new Exception("Expected `" + type + "` but received `" + current + "` with errors:\n```\n" + e.getMessage() + "\n```");
+        }
     }
 
     @SuppressWarnings("unchecked")
