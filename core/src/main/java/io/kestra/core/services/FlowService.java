@@ -2,6 +2,7 @@ package io.kestra.core.services;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithSource;
@@ -38,6 +39,10 @@ import java.util.stream.StreamSupport;
 @Slf4j
 public class FlowService {
     private final IllegalStateException NO_REPOSITORY_EXCEPTION = new IllegalStateException("No flow repository found. Make sure the `kestra.repository.type` property is set.");
+
+    private static final ObjectMapper NON_DEFAULT_OBJECT_MAPPER = JacksonMapper.ofJson()
+        .copy()
+        .setSerializationInclusion(JsonInclude.Include.NON_DEFAULT);
 
     @Inject
     RunContextFactory runContextFactory;
@@ -102,41 +107,45 @@ public class FlowService {
         return Collections.emptyList();
     }
 
-    public List<String> aliasesPaths(String flowSource) {
+    public List<Relocation> relocations(String flowSource) {
         try {
-            List<String> aliases = pluginRegistry.plugins().stream().flatMap(plugin -> plugin.getAliases().keySet().stream()).toList();
+            Map<String, Class<?>> aliases = pluginRegistry.plugins().stream()
+                .flatMap(plugin -> plugin.getAliases().entrySet().stream())
+                .collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue()));
             Map<String, Object> stringObjectMap = JacksonMapper.ofYaml().readValue(flowSource, JacksonMapper.MAP_TYPE_REFERENCE);
-            return aliasesPaths(aliases, stringObjectMap);
+            return relocations(aliases, stringObjectMap);
         } catch (JsonProcessingException e) {
             // silent failure (we don't compromise the app / response for warnings)
             return Collections.emptyList();
         }
     }
+    public record Relocation(String from, String to) {}
 
-    private List<String> aliasesPaths(List<String> aliases, Map<String, Object> stringObjectMap) {
-        List<String> warnings = new ArrayList<>();
+    private List<Relocation> relocations(Map<String, Class<?>> aliases, Map<String, Object> stringObjectMap) {
+        List<Relocation> relocations = new ArrayList<>();
         for (Map.Entry<String, Object> entry : stringObjectMap.entrySet()) {
-            if (entry.getValue() instanceof String value && aliases.contains(value)) {
-                warnings.add(value);
+            if (entry.getValue() instanceof String value && aliases.containsKey(value)) {
+                relocations.add(new Relocation(value, aliases.get(value).getName()));
             }
 
             if (entry.getValue() instanceof Map<?, ?> value) {
-                warnings.addAll(aliasesPaths(aliases, (Map<String, Object>) value));
+                relocations.addAll(relocations(aliases, (Map<String, Object>) value));
             }
 
             if (entry.getValue() instanceof List<?> value) {
-                List<String> listAliases = value.stream().flatMap(item -> {
+                List<Relocation> listAliases = value.stream().flatMap(item -> {
                     if (item instanceof Map<?, ?> map) {
-                        return aliasesPaths(aliases, (Map<String, Object>) map).stream();
+                        return relocations(aliases, (Map<String, Object>) map).stream();
                     }
                     return Stream.empty();
                 }).toList();
-                warnings.addAll(listAliases);
+                relocations.addAll(listAliases);
             }
         }
 
-        return warnings;
+        return relocations;
     }
+
 
     private Stream<String> deprecationTraversal(String prefix, Object object) {
         if (object == null || ClassUtils.isPrimitiveOrWrapper(object.getClass()) || String.class.equals(object.getClass())) {
@@ -277,11 +286,7 @@ public class FlowService {
 
     @SneakyThrows
     private static String toYamlWithoutDefault(Object object) throws JsonProcessingException {
-        String json = JacksonMapper
-            .ofJson()
-            .copy()
-            .setSerializationInclusion(JsonInclude.Include.NON_DEFAULT)
-            .writeValueAsString(object);
+        String json = NON_DEFAULT_OBJECT_MAPPER.writeValueAsString(object);
 
         Object map = fixSnakeYaml(JacksonMapper.toMap(json));
 

@@ -31,7 +31,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -102,6 +101,9 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 public class DockerTaskRunner extends TaskRunner {
     private static final ReadableBytesTypeConverter READABLE_BYTES_TYPE_CONVERTER = new ReadableBytesTypeConverter();
     public static final Pattern NEWLINE_PATTERN = Pattern.compile("([^\\r\\n]+)[\\r\\n]+");
+
+    private static final String LEGACY_VOLUME_ENABLED_CONFIG = "kestra.tasks.scripts.docker.volume-enabled";
+    private static final String VOLUME_ENABLED_CONFIG = "volume-enabled";
 
     @Schema(
         title = "Docker API URI."
@@ -199,10 +201,6 @@ public class DockerTaskRunner extends TaskRunner {
     @PluginProperty(dynamic = true)
     private String shmSize;
     
-    @Builder.Default
-    @Getter(AccessLevel.NONE)
-    private AtomicReference<Runnable> killable = new AtomicReference<>(); // Used for killing the Docker container.
-    
     public static DockerTaskRunner from(DockerOptions dockerOptions) {
         if (dockerOptions == null) {
             return DockerTaskRunner.builder().build();
@@ -262,7 +260,7 @@ public class DockerTaskRunner extends TaskRunner {
             );
             
             // register the runnable to be used for killing the container.
-            killable.set(() -> safelyKillContainer(dockerClient, exec.getId(), logger));
+            onKill(() -> kill(dockerClient, exec.getId(), logger));
             
             AtomicBoolean ended = new AtomicBoolean(false);
 
@@ -339,7 +337,7 @@ public class DockerTaskRunner extends TaskRunner {
                 try {
                     // kill container if it's still running, this means there was an exception and the container didn't
                     // come to a normal end.
-                    safelyKillContainer(dockerClient, exec.getId(), logger);
+                    kill();
                     dockerClient.removeContainerCmd(exec.getId()).exec();
                 } catch (Exception ignored) {
 
@@ -347,15 +345,18 @@ public class DockerTaskRunner extends TaskRunner {
             }
         }
     }
-    
-    private void safelyKillContainer(DockerClient dockerClient, String containerId, Logger logger) {
-        var inspect = dockerClient.inspectContainerCmd(containerId).exec();
-        if (Boolean.TRUE.equals(inspect.getState().getRunning())) {
-            try {
+
+    private void kill(final DockerClient dockerClient, final String containerId, final Logger logger) {
+        try {
+            InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
+            if (Boolean.TRUE.equals(inspect.getState().getRunning())) {
                 dockerClient.killContainerCmd(containerId).exec();
-            } catch (Exception e) {
-                logger.error("Unable to kill a running container", e);
+                logger.debug("Container was killed.");
             }
+        } catch (NotFoundException ignore) {
+            // silently ignore - container does not exist anymore
+        } catch (Exception e) {
+            logger.error("Failed to kill running container.", e);
         }
     }
 
@@ -392,23 +393,27 @@ public class DockerTaskRunner extends TaskRunner {
     }
 
     private CreateContainerCmd configure(TaskCommands taskCommands, DockerClient dockerClient, RunContext runContext, Map<String, Object> additionalVars) throws IllegalVariableEvaluationException {
-        boolean volumesEnabled = runContext.<Boolean>pluginConfiguration("volume-enabled").orElse(Boolean.FALSE);
-        if (!volumesEnabled) {
+        Optional<Boolean> volumeEnabledConfig = runContext.pluginConfiguration(VOLUME_ENABLED_CONFIG);
+        if (volumeEnabledConfig.isEmpty()) {
             // check the legacy property and emit a warning if used
             Optional<Boolean> property = runContext.getApplicationContext().getProperty(
-                "kestra.tasks.scripts.docker.volume-enabled",
+                LEGACY_VOLUME_ENABLED_CONFIG,
                 Boolean.class
             );
             if (property.isPresent()) {
-                runContext.logger().warn("`kestra.tasks.scripts.docker.volume-enabled` is deprecated, please use the plugin configuration `volume-enabled` instead");
-                volumesEnabled = property.get();
+                runContext.logger().warn(
+                    "`{}` is deprecated, please use the plugin configuration `{}` instead",
+                    LEGACY_VOLUME_ENABLED_CONFIG,
+                    VOLUME_ENABLED_CONFIG
+                );
+                volumeEnabledConfig = property;
             }
         }
+        boolean volumesEnabled = volumeEnabledConfig.orElse(Boolean.FALSE);
 
         Path workingDirectory = taskCommands.getWorkingDirectory();
         String image = runContext.render(this.image, additionalVars);
-
-
+        
         CreateContainerCmd container = dockerClient.createContainerCmd(image);
         addMetadata(runContext, container);
 
@@ -570,15 +575,4 @@ public class DockerTaskRunner extends TaskRunner {
             );
         }
     }
-
-    /**
-     * {@inheritDoc}
-     **/
-    @Override
-    public void kill() {
-        if (killable.get() != null) {
-            killable.get().run();
-        }
-    }
-    
 }
