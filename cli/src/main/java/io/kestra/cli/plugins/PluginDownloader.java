@@ -70,7 +70,7 @@ public class PluginDownloader {
             .map(repositoryConfig -> {
                 var build = new RemoteRepository.Builder(
                     repositoryConfig.getId(),
-                    repositoryConfig.getType(),
+                    "default",
                     repositoryConfig.getUrl()
                 );
 
@@ -84,7 +84,7 @@ public class PluginDownloader {
 
                 return build.build();
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static RepositorySystem repositorySystem() {

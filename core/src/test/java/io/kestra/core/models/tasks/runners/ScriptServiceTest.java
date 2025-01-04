@@ -9,7 +9,7 @@ import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.runners.ScriptService;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class ScriptServiceTest {
     @Inject private RunContextFactory runContextFactory;
 
@@ -83,12 +83,12 @@ class ScriptServiceTest {
                 false
             );
             assertThat(commands, not(empty()));
-            assertThat(commands.get(0), is("my command with an internal storage file: " + localFileByInternalStorage.get(internalStorageUri)));
+            assertThat(commands.getFirst(), is("my command with an internal storage file: " + localFileByInternalStorage.get(internalStorageUri)));
             assertThat(Path.of(localFileByInternalStorage.get(internalStorageUri)).toFile().exists(), is(true));
             assertThat(commands.get(1), is("my command with some additional var usage: " + wdir));
 
             commands = ScriptService.replaceInternalStorage(runContext, Collections.emptyMap(), List.of("my command with an internal storage file: " + internalStorageUri), localFileByInternalStorage::put, true);
-            assertThat(commands.get(0), is("my command with an internal storage file: " + localFileByInternalStorage.get(internalStorageUri).substring(1)));
+            assertThat(commands.getFirst(), is("my command with an internal storage file: " + localFileByInternalStorage.get(internalStorageUri).substring(1)));
         } catch (IllegalVariableEvaluationException e) {
             throw new RuntimeException(e);
         } finally {
@@ -116,7 +116,7 @@ class ScriptServiceTest {
     void scriptCommands() {
         var scriptCommands = ScriptService.scriptCommands(List.of("interpreter"), List.of("beforeCommand"), List.of("command"));
         assertThat(scriptCommands, hasSize(2));
-        assertThat(scriptCommands.get(0), is("interpreter"));
+        assertThat(scriptCommands.getFirst(), is("interpreter"));
         assertThat(scriptCommands.get(1), is("beforeCommand\ncommand"));
     }
 

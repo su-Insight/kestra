@@ -3,16 +3,12 @@ name: Main
 on:
   push:
     branches:
-      - master
-      - release
       - develop
     tags:
       - v*
 
   pull_request:
     branches:
-      - master
-      - release
       - develop
   repository_dispatch:
     types: [ rebuild ]
@@ -23,6 +19,9 @@ on:
         required: false
         type: string
         default: "false"
+        options:
+          - "true"
+          - "false"
       plugin-version:
         description: 'Plugin version'
         required: false
@@ -37,6 +36,7 @@ jobs:
   check:
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
     name: Check & Publish
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -101,7 +101,7 @@ jobs:
           java-version: 21
 
       - name: Validate Gradle wrapper
-        uses: gradle/wrapper-validation-action@v3
+        uses: gradle/actions/wrapper-validation@v3
 
       # Gradle check
       - name: Build with Gradle
@@ -112,7 +112,52 @@ jobs:
           python3 -m pip install virtualenv
           echo $GOOGLE_SERVICE_ACCOUNT | base64 -d > ~/.gcp-service-account.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcp-service-account.json
-          ./gradlew check jacoco javadoc --no-daemon --priority=normal
+          ./gradlew check javadoc --parallel
+
+      # Sonar
+      - name: Analyze with Sonar
+        if: ${{ env.SONAR_TOKEN != 0 && (github.event.inputs.skip-test == 'false' || github.event.inputs.skip-test == '') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./gradlew sonar --info
+
+      # Allure check
+      - name: Auth to Google Cloud
+        id: auth
+        if: ${{ always() && env.GOOGLE_SERVICE_ACCOUNT != 0 }}
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GOOGLE_SERVICE_ACCOUNT }}'
+
+      - uses: rlespinasse/github-slug-action@v4
+
+      - name: Publish allure report
+        uses: andrcuns/allure-publish-action@v2.6.0
+        if: ${{ always() && env.GOOGLE_SERVICE_ACCOUNT != 0 && (github.event.inputs.skip-test == 'false' || github.event.inputs.skip-test == '') }}
+        env:
+          GITHUB_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JAVA_HOME: /usr/lib/jvm/default-jvm/
+        with:
+          storageType: gcs
+          resultsGlob: "**/build/allure-results"
+          bucket: internal-kestra-host
+          baseUrl: "https://internal.kestra.io"
+          prefix: ${{ format('{0}/{1}/{2}', github.repository, env.GITHUB_HEAD_REF_SLUG != '' && env.GITHUB_HEAD_REF_SLUG || github.ref_name, 'allure/java') }}
+          copyLatest: true
+          ignoreMissingResults: true
+
+      # Jacoco
+      - name: 'Set up Cloud SDK'
+        if: ${{ env.GOOGLE_SERVICE_ACCOUNT != 0 }}
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Copy jacoco files'
+        if: ${{ env.GOOGLE_SERVICE_ACCOUNT != 0 }}
+        run: |
+          mv build/reports/jacoco/testCodeCoverageReport build/reports/jacoco/test/
+          mv build/reports/jacoco/test/testCodeCoverageReport.xml build/reports/jacoco/jacocoTestReport.xml
+          gsutil -m rsync -d -r  build/reports/jacoco/test/ gs://internal-kestra-host/${{ format('{0}/{1}/{2}', github.repository, env.GITHUB_HEAD_REF_SLUG != '' && env.GITHUB_HEAD_REF_SLUG || github.ref_name, 'jacoco') }}
 
       # report test
       - name: Test Report
@@ -120,13 +165,6 @@ jobs:
         if: success() || failure()
         with:
           report_paths: '**/build/test-results/**/TEST-*.xml'
-
-      - name: Analyze with Sonar
-        if: ${{ env.SONAR_TOKEN != 0 }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./gradlew sonar --info
 
       # Codecov
       - uses: codecov/codecov-action@v4
@@ -136,7 +174,7 @@ jobs:
 
       # Shadow Jar
       - name: Build jars
-        run: ./gradlew executableJar --no-daemon --priority=normal
+        run: ./gradlew executableJar
 
       # Upload artifacts
       - name: Upload jar
@@ -162,18 +200,11 @@ jobs:
           files: |
             build/executable/*
 
-      - name: Flow to add BC
-        if: startsWith(github.ref, 'refs/tags/v')
-        continue-on-error: true
-        run: |
-          curl --location "http://15.188.182.127:8080/api/v1/executions/webhook/product/release_notes/${{secrets.KESTRA_WEBHOOK_KEY}}" \
-          --header 'Content-Type: application/json'
-
   docker:
     name: Publish docker
     runs-on: ubuntu-latest
     needs: check
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/develop'
     env:
       PLUGIN_VERSION: ${{ github.event.inputs.plugin-version != null && github.event.inputs.plugin-version || 'LATEST' }}
     strategy:
@@ -198,7 +229,10 @@ jobs:
               io.kestra.plugin:plugin-databricks:$PLUGIN_VERSION
               io.kestra.plugin:plugin-dataform:$PLUGIN_VERSION
               io.kestra.plugin:plugin-dbt:$PLUGIN_VERSION
+              io.kestra.plugin:plugin-debezium-db2:$PLUGIN_VERSION
+              io.kestra.plugin:plugin-debezium-mongodb:$PLUGIN_VERSION
               io.kestra.plugin:plugin-debezium-mysql:$PLUGIN_VERSION
+              io.kestra.plugin:plugin-debezium-oracle:$PLUGIN_VERSION
               io.kestra.plugin:plugin-debezium-postgres:$PLUGIN_VERSION
               io.kestra.plugin:plugin-debezium-sqlserver:$PLUGIN_VERSION
               io.kestra.plugin:plugin-docker:$PLUGIN_VERSION
@@ -303,16 +337,13 @@ jobs:
 
       # Docker setup
       - name: Set up QEMU
-        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/setup-buildx-action@v3
 
       # Docker Login
       - name: Login to DockerHub
-        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -320,7 +351,6 @@ jobs:
 
       # Docker Build and push
       - name: Push to Docker Hub
-        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -389,7 +419,7 @@ jobs:
           echo "signing.password=${SONATYPE_GPG_PASSWORD}" >> ~/.gradle/gradle.properties
           echo "signing.secretKeyRingFile=${HOME}/.gradle/secring.gpg" >> ~/.gradle/gradle.properties
           echo ${SONATYPE_GPG_FILE} | base64 -d > ~/.gradle/secring.gpg
-          ./gradlew publishToSonatype --no-daemon --priority=normal
+          ./gradlew publishToSonatype
 
       # Release
       - name: Release package to Maven Central
@@ -405,8 +435,7 @@ jobs:
           echo "signing.password=${SONATYPE_GPG_PASSWORD}" >> ~/.gradle/gradle.properties
           echo "signing.secretKeyRingFile=${HOME}/.gradle/secring.gpg" >> ~/.gradle/gradle.properties
           echo ${SONATYPE_GPG_FILE} | base64 -d > ~/.gradle/secring.gpg
-          ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository --no-daemon --priority=normal
-
+          ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository
   end:
     runs-on: ubuntu-latest
     needs:

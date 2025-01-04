@@ -6,9 +6,11 @@ import io.kestra.core.models.flows.State;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
+import io.kestra.core.utils.TestsUtils;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.Optional;
@@ -39,13 +41,10 @@ public class FlowConcurrencyCaseTest {
         assertThat(execution1.getState().isRunning(), is(true));
         assertThat(execution2.getState().getCurrent(), is(State.Type.CANCELLED));
 
-        var executionResult1  = new AtomicReference<Execution>();
-
         CountDownLatch latch1 = new CountDownLatch(1);
 
-        executionQueue.receive(e -> {
+        Flux<Execution> receive = TestsUtils.receive(executionQueue, e -> {
             if (e.getLeft().getId().equals(execution1.getId())) {
-                executionResult1.set(e.getLeft());
                 if (e.getLeft().getState().getCurrent() == State.Type.SUCCESS) {
                     latch1.countDown();
                 }
@@ -56,7 +55,7 @@ public class FlowConcurrencyCaseTest {
 
         latch1.await(1, TimeUnit.MINUTES);
 
-        assertThat(executionResult1.get().getState().getCurrent(), is(State.Type.SUCCESS));
+        assertThat(receive.blockLast().getState().getCurrent(), is(State.Type.SUCCESS));
     }
 
     public void flowConcurrencyFail() throws TimeoutException, InterruptedException {
@@ -66,13 +65,10 @@ public class FlowConcurrencyCaseTest {
         assertThat(execution1.getState().isRunning(), is(true));
         assertThat(execution2.getState().getCurrent(), is(State.Type.FAILED));
 
-        var executionResult1  = new AtomicReference<Execution>();
-
         CountDownLatch latch1 = new CountDownLatch(1);
 
-        executionQueue.receive(e -> {
+        Flux<Execution> receive = TestsUtils.receive(executionQueue, e -> {
             if (e.getLeft().getId().equals(execution1.getId())) {
-                executionResult1.set(e.getLeft());
                 if (e.getLeft().getState().getCurrent() == State.Type.SUCCESS) {
                     latch1.countDown();
                 }
@@ -83,7 +79,7 @@ public class FlowConcurrencyCaseTest {
 
         latch1.await(1, TimeUnit.MINUTES);
 
-        assertThat(executionResult1.get().getState().getCurrent(), is(State.Type.SUCCESS));
+        assertThat(receive.blockLast().getState().getCurrent(), is(State.Type.SUCCESS));
     }
 
     public void flowConcurrencyQueue() throws TimeoutException, InterruptedException {
@@ -104,7 +100,7 @@ public class FlowConcurrencyCaseTest {
         CountDownLatch latch2 = new CountDownLatch(1);
         CountDownLatch latch3 = new CountDownLatch(1);
 
-        executionQueue.receive(e -> {
+        Flux<Execution> receive = TestsUtils.receive(executionQueue, e -> {
             if (e.getLeft().getId().equals(execution1.getId())) {
                 executionResult1.set(e.getLeft());
                 if (e.getLeft().getState().getCurrent() == State.Type.SUCCESS) {
@@ -126,10 +122,11 @@ public class FlowConcurrencyCaseTest {
         latch1.await(1, TimeUnit.MINUTES);
         latch2.await(1, TimeUnit.MINUTES);
         latch3.await(1, TimeUnit.MINUTES);
+        receive.blockLast();
 
         assertThat(executionResult1.get().getState().getCurrent(), is(State.Type.SUCCESS));
         assertThat(executionResult2.get().getState().getCurrent(), is(State.Type.SUCCESS));
-        assertThat(executionResult2.get().getState().getHistories().get(0).getState(), is(State.Type.CREATED));
+        assertThat(executionResult2.get().getState().getHistories().getFirst().getState(), is(State.Type.CREATED));
         assertThat(executionResult2.get().getState().getHistories().get(1).getState(), is(State.Type.QUEUED));
         assertThat(executionResult2.get().getState().getHistories().get(2).getState(), is(State.Type.RUNNING));
     }
@@ -152,7 +149,7 @@ public class FlowConcurrencyCaseTest {
         CountDownLatch latch2 = new CountDownLatch(1);
         CountDownLatch latch3 = new CountDownLatch(1);
 
-        executionQueue.receive(e -> {
+        Flux<Execution> receive = TestsUtils.receive(executionQueue, e -> {
             if (e.getLeft().getId().equals(execution1.getId())) {
                 executionResult1.set(e.getLeft());
                 if (e.getLeft().getState().getCurrent() == State.Type.SUCCESS) {
@@ -174,10 +171,11 @@ public class FlowConcurrencyCaseTest {
         latch1.await(1, TimeUnit.MINUTES);
         latch2.await(1, TimeUnit.MINUTES);
         latch3.await(1, TimeUnit.MINUTES);
+        receive.blockLast();
 
         assertThat(executionResult1.get().getState().getCurrent(), is(State.Type.SUCCESS));
         assertThat(executionResult2.get().getState().getCurrent(), is(State.Type.SUCCESS));
-        assertThat(executionResult2.get().getState().getHistories().get(0).getState(), is(State.Type.CREATED));
+        assertThat(executionResult2.get().getState().getHistories().getFirst().getState(), is(State.Type.CREATED));
         assertThat(executionResult2.get().getState().getHistories().get(1).getState(), is(State.Type.QUEUED));
         assertThat(executionResult2.get().getState().getHistories().get(2).getState(), is(State.Type.RUNNING));
     }
@@ -199,7 +197,7 @@ public class FlowConcurrencyCaseTest {
         CountDownLatch latch1 = new CountDownLatch(1);
         CountDownLatch latch2 = new CountDownLatch(1);
 
-        executionQueue.receive(e -> {
+        Flux<Execution> receive = TestsUtils.receive(executionQueue, e -> {
             if (e.getLeft().getId().equals(execution1.getId())) {
                 executionResult1.set(e.getLeft());
                 if (e.getLeft().getState().getCurrent() == State.Type.SUCCESS) {
@@ -217,10 +215,11 @@ public class FlowConcurrencyCaseTest {
 
         latch1.await(1, TimeUnit.MINUTES);
         latch2.await(1, TimeUnit.MINUTES);
+        receive.blockLast();
 
         assertThat(executionResult1.get().getState().getCurrent(), is(State.Type.SUCCESS));
         assertThat(executionResult2.get().getState().getCurrent(), is(State.Type.CANCELLED));
-        assertThat(executionResult2.get().getState().getHistories().get(0).getState(), is(State.Type.CREATED));
+        assertThat(executionResult2.get().getState().getHistories().getFirst().getState(), is(State.Type.CREATED));
         assertThat(executionResult2.get().getState().getHistories().get(1).getState(), is(State.Type.CANCELLED));
     }
 }

@@ -1,5 +1,5 @@
 <template>
-    <div v-show="explorerVisible" class="w-25 p-3 sidebar" @click="$refs.tree.setCurrentKey(undefined)">
+    <div v-show="explorerVisible" class="p-3 sidebar" @click="$refs.tree.setCurrentKey(undefined)">
         <div class="d-flex flex-row">
             <el-select
                 v-model="filter"
@@ -114,7 +114,6 @@
             :allow-drop="(_, drop, dropType) => !drop.data?.leaf || dropType !== 'inner'"
             draggable
             node-key="id"
-            empty-text=""
             v-loading="items === undefined"
             :props="{class: 'node', isLeaf: 'leaf'}"
             class="mt-3"
@@ -133,22 +132,23 @@
             @node-drop="nodeMoved"
             @keydown.delete.prevent="deleteKeystroke"
         >
+            <template #empty>
+                <div class="m-5 empty">
+                    <img :src="FileExplorerEmpty">
+                    <h3>{{ $t("namespace files.no_items.heading") }}</h3>
+                    <p>{{ $t("namespace files.no_items.paragraph") }}</p>
+                </div>
+            </template>
             <template #default="{data, node}">
                 <el-dropdown
-                    :ref="`dropdown__${data.fileName}`"
-                    @contextmenu.prevent.stop="toggleDropdown(`dropdown__${data.fileName}`)"
+                    :ref="`dropdown__${data.id}`"
+                    @contextmenu.prevent.stop="toggleDropdown(`dropdown__${data.id}`)"
                     trigger="contextmenu"
                     class="w-100"
                 >
                     <el-row justify="space-between" class="w-100">
                         <el-col class="w-100">
-                            <span class="me-2">
-                                <img
-                                    :src="getIcon(!data.leaf, data.fileName)"
-                                    :alt="data.extension"
-                                    width="18"
-                                >
-                            </span>
+                            <TypeIcon :name="data.fileName" :folder="!data.leaf" class="me-2" />
                             <span class="filename"> {{ data.fileName }}</span>
                         </el-col>
                     </el-row>
@@ -333,13 +333,15 @@
 
     import Utils from "../../utils/utils";
 
+    import FileExplorerEmpty from "../../assets/icons/file_explorer_empty.svg"
+
     import Magnify from "vue-material-design-icons/Magnify.vue";
     import FilePlus from "vue-material-design-icons/FilePlus.vue";
     import FolderPlus from "vue-material-design-icons/FolderPlus.vue";
     import PlusBox from "vue-material-design-icons/PlusBox.vue";
     import FolderDownloadOutline from "vue-material-design-icons/FolderDownloadOutline.vue";
 
-    import {getVSIFileIcon, getVSIFolderIcon} from "file-extension-icon-js";
+    import TypeIcon from "../utils/icons/Type.vue"
 
     const DIALOG_DEFAULTS = {
         visible: false,
@@ -362,10 +364,12 @@
             FilePlus,
             FolderPlus,
             PlusBox,
-            FolderDownloadOutline
+            FolderDownloadOutline,
+            TypeIcon
         },
         data() {
             return {
+                FileExplorerEmpty,
                 namespace: undefined,
                 filter: "",
                 dialog: {...DIALOG_DEFAULTS},
@@ -381,7 +385,7 @@
         },
         computed: {
             ...mapState({
-                flows: (state) => state.flow.flows,
+                flow: (state) => state.flow.flow,
                 explorerVisible: (state) => state.editor.explorerVisible,
             }),
             folders() {
@@ -402,7 +406,7 @@
             },
         },
         methods: {
-            ...mapMutations("editor", ["changeOpenedTabs"]),
+            ...mapMutations("editor", ["toggleExplorerVisibility", "changeOpenedTabs"]),
             ...mapActions("namespace", [
                 "createDirectory",
                 "readDirectory",
@@ -446,7 +450,6 @@
                     const items = await this.readDirectory(payload);
 
                     this.renderNodes(items);
-
                     this.items = this.sorted(this.items)
                 }
 
@@ -502,18 +505,6 @@
                 })
 
                 this.filter = "";
-            },
-            getIcon(isFolder, name) {
-                if (isFolder) return getVSIFolderIcon("folder");
-
-                if (!name) return;
-
-                // Making sure icon is correct for 'yml' files
-                if (name.endsWith(".yml")) {
-                    name = name.replace(/\.yml$/, ".yaml");
-                }
-
-                return getVSIFileIcon(name);
             },
             toggleDropdown(reference) {
                 if (this.dropdownRef) {
@@ -631,7 +622,7 @@
                                 const folderIndex = currentFolder.findIndex(
                                     (item) =>
                                         typeof item === "object" &&
-                                        item.name === folderName
+                                        item.fileName === folderName
                                 );
                                 if (folderIndex === -1) {
                                     // If the folder doesn't exist, create it
@@ -763,8 +754,7 @@
                         extension: extension
                     });
 
-                    const folder = path.split("/");
-                    this.dialog.folder = folder[folder.length - 2] ?? undefined;
+                    this.dialog.folder = path.substring(0, path.lastIndexOf("/"));
                 }
 
                 if (!this.dialog.folder) {
@@ -773,23 +763,20 @@
                 } else {
                     const SELF = this;
                     (function pushItemToFolder(basePath = "", array) {
-                        for (let i = 0; i < array.length; i++) {
-                            const item = array[i];
+                        for (const item of array) {
                             const folderPath = `${basePath}${item.fileName}`;
-                            if (
-                                folderPath === SELF.dialog.folder &&
-                                Array.isArray(item.children)
-                            ) {
-                                item.children.push(NEW);
-                                item.children = SELF.sorted(item.children);
+
+                            if (folderPath === SELF.dialog.folder && Array.isArray(item.children)) {
+                                item.children = SELF.sorted([...item.children, NEW]);
                                 return true; // Return true if the folder is found and item is pushed
-                            } else if (Array.isArray(item.children)) {
-                                if (pushItemToFolder(`${folderPath}/`, item.children)) {
-                                    return true; // Return true if the folder is found and item is pushed in recursive call
-                                }
+                            }
+
+                            if (Array.isArray(item.children) && pushItemToFolder(`${folderPath}/`, item.children)) {
+                                return true; // Return true if the folder is found and item is pushed in recursive call
                             }
                         }
-                        return false; // Return false if the folder is not found
+
+                        return false;
                     })(undefined, this.items);
                 }
 
@@ -896,12 +883,13 @@
             },
         },
         watch: {
-            flows: {
+            flow: {
                 handler(flow) {
-                    if (flow && flow.length) {
+                    if (flow) {
                         this.changeOpenedTabs({
                             action: "open",
                             name: "Flow",
+                            path: "Flow.yaml",
                             persistent: true,
                         });
                     }
@@ -921,6 +909,10 @@
     .el-tree {
         height: calc(100% - 64px);
         overflow: hidden auto;
+
+        .el-tree__empty-block {
+            height: auto;
+        }
 
         &::-webkit-scrollbar {
             width: 2px;
@@ -948,10 +940,36 @@
 </style>
 
 <style lang="scss" scoped>
+    @import "@kestra-io/ui-libs/src/scss/variables.scss";
+
     .sidebar {
-        flex: unset;
         background: var(--card-bg);
         border-right: 1px solid var(--bs-border-color);
+
+        .empty {
+            position: relative;
+            top: 100px;
+            text-align: center;
+            color: white;
+
+            html.light & {
+                color: $tertiary;
+            }
+
+            & img {
+                margin-bottom: 2rem;
+            }
+
+            & h3 {
+                font-size: var(--font-size-lg);
+                font-weight: 500;
+                margin-bottom: .5rem;
+            }
+
+            & p {
+                font-size: var(--font-size-sm);
+            }
+        }
 
         :deep(.el-button):not(.el-dialog .el-button) {
             border: 0;

@@ -10,11 +10,11 @@ import io.kestra.core.models.executions.statistics.ExecutionCount;
 import io.kestra.core.models.executions.statistics.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.data.model.Sort;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +29,7 @@ import static org.hamcrest.Matchers.*;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
-@MicronautTest(transactional = false)
+@KestraTest
 public abstract class AbstractExecutionRepositoryTest {
     public static final String NAMESPACE = "io.kestra.unittest";
     public static final String FLOW = "full";
@@ -68,10 +68,10 @@ public abstract class AbstractExecutionRepositoryTest {
         );
 
         if (flowId == null) {
-            return execution.taskRunList(List.of(taskRuns.get(0), taskRuns.get(1), taskRuns.get(2)));
+            return execution.taskRunList(List.of(taskRuns.getFirst(), taskRuns.get(1), taskRuns.get(2)));
         }
 
-        return execution.taskRunList(List.of(taskRuns.get(0), taskRuns.get(1)));
+        return execution.taskRunList(List.of(taskRuns.getFirst(), taskRuns.get(1)));
     }
 
 
@@ -166,17 +166,17 @@ public abstract class AbstractExecutionRepositoryTest {
         ArrayListTotal<Execution> executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null, executionTriggerId, null);
         assertThat(executions.getTotal(), is(28L));
         assertThat(executions.size(), is(10));
-        assertThat(executions.get(0).getTrigger().getVariables().get("executionId"), is(executionTriggerId));
+        assertThat(executions.getFirst().getTrigger().getVariables().get("executionId"), is(executionTriggerId));
 
         executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null, null, ExecutionRepositoryInterface.ChildFilter.CHILD);
         assertThat(executions.getTotal(), is(28L));
         assertThat(executions.size(), is(10));
-        assertThat(executions.get(0).getTrigger().getVariables().get("executionId"), is(executionTriggerId));
+        assertThat(executions.getFirst().getTrigger().getVariables().get("executionId"), is(executionTriggerId));
 
         executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null, null, ExecutionRepositoryInterface.ChildFilter.MAIN);
         assertThat(executions.getTotal(), is(28L));
         assertThat(executions.size(), is(10));
-        assertThat(executions.get(0).getTrigger(), is(nullValue()));
+        assertThat(executions.getFirst().getTrigger(), is(nullValue()));
 
         executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null, null, null);
         assertThat(executions.getTotal(), is(56L));
@@ -528,6 +528,6 @@ public abstract class AbstractExecutionRepositoryTest {
         Optional<Execution> validation = executionRepository.findById(null, updated.getId());
         assertThat(validation.isPresent(), is(true));
         assertThat(validation.get().getLabels().size(), is(1));
-        assertThat(validation.get().getLabels().get(0), is(label));
+        assertThat(validation.get().getLabels().getFirst(), is(label));
     }
 }

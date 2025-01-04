@@ -20,35 +20,27 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.conditions.Condition;
 import io.kestra.core.models.conditions.ScheduleCondition;
-import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.tasks.Output;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.plugins.RegisteredPlugin;
 import io.kestra.core.serializers.JacksonMapper;
 import io.micronaut.core.annotation.Nullable;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
 
 @Singleton
 public class JsonSchemaGenerator {
@@ -63,6 +55,10 @@ public class JsonSchemaGenerator {
     Map<Class<?>, Object> defaultInstances = new HashMap<>();
 
     public <T> Map<String, Object> schemas(Class<? extends T> cls) {
+        return this.schemas(cls, false);
+    }
+
+    public <T> Map<String, Object> schemas(Class<? extends T> cls, boolean arrayOf) {
         SchemaGeneratorConfigBuilder builder = new SchemaGeneratorConfigBuilder(
             SchemaVersion.DRAFT_7,
             OptionPreset.PLAIN_JSON
@@ -75,6 +71,9 @@ public class JsonSchemaGenerator {
         SchemaGenerator generator = new SchemaGenerator(schemaGeneratorConfig);
         try {
             ObjectNode objectNode = generator.generateSchema(cls);
+            if (arrayOf) {
+                objectNode.put("type", "array");
+            }
             replaceAnyOfWithOneOf(objectNode);
 
             return JacksonMapper.toMap(objectNode);
@@ -246,7 +245,7 @@ public class JsonSchemaGenerator {
                             .put("lang", example.lang())
                             .put("title", example.title())
                         )
-                        .collect(Collectors.toList());
+                        .toList();
 
                     if (!examples.isEmpty()) {
                         collectedTypeAttributes.set("$examples", context.getGeneratorConfig().createArrayNode().addAll(examples));
@@ -260,7 +259,7 @@ public class JsonSchemaGenerator {
                             .put("unit", metric.unit())
                             .put("description", metric.description())
                         )
-                        .collect(Collectors.toList());
+                        .toList();
 
                     if (!metrics.isEmpty()) {
                         collectedTypeAttributes.set("$metrics", context.getGeneratorConfig().createArrayNode().addAll(metrics));
@@ -298,21 +297,21 @@ public class JsonSchemaGenerator {
                             .flatMap(registeredPlugin -> registeredPlugin.getTasks().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
                             .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .toList();
                     } else if (declaredType.getErasedType() == AbstractTrigger.class) {
                         return getRegisteredPlugins()
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getTriggers().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
                             .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .toList();
                     } else if (declaredType.getErasedType() == Condition.class) {
                         return getRegisteredPlugins()
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getConditions().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
                             .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .toList();
                     } else if (declaredType.getErasedType() == ScheduleCondition.class) {
                         return getRegisteredPlugins()
                             .stream()
@@ -320,14 +319,14 @@ public class JsonSchemaGenerator {
                             .filter(ScheduleCondition.class::isAssignableFrom)
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
                             .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .toList();
                     } else if (declaredType.getErasedType() == TaskRunner.class) {
                         return getRegisteredPlugins()
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getTaskRunners().stream())
                             .filter(Predicate.not(io.kestra.core.models.Plugin::isInternal))
                             .map(clz -> typeContext.resolveSubtype(declaredType, clz))
-                            .collect(Collectors.toList());
+                            .toList();
                     }
 
                     return null;

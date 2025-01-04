@@ -9,13 +9,10 @@ import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.services.ConditionService;
 import io.kestra.core.utils.Await;
-import io.micronaut.http.multipart.StreamingFileUpload;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
-import org.reactivestreams.Publisher;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -37,20 +34,8 @@ public class RunnerUtils {
     private FlowRepositoryInterface flowRepository;
 
     @Inject
+
     private ConditionService conditionService;
-
-    @Inject
-    private FlowInputOutput flowIO;
-
-    @Deprecated
-    public Map<String, Object> typedInputs(Flow flow, Execution execution, Map<String, Object> in, Publisher<StreamingFileUpload> files) throws IOException {
-        return flowIO.typedInputs(flow, execution, in, files);
-    }
-
-    @Deprecated
-    public Map<String, Object> typedInputs(Flow flow, Execution execution, Map<String, Object> in) {
-        return flowIO.typedInputs(flow, execution, in);
-    }
 
     public Execution runOne(String tenantId, String namespace, String flowId) throws TimeoutException {
         return this.runOne(tenantId, namespace, flowId, null, null, null, null);
@@ -158,11 +143,11 @@ public class RunnerUtils {
     public Execution awaitExecution(Predicate<Execution> predicate, Runnable executionEmitter, Duration duration) throws TimeoutException {
         AtomicReference<Execution> receive = new AtomicReference<>();
 
-        Runnable cancel = this.executionQueue.receive(current -> {
+        Runnable cancel = this.executionQueue.receive(null, current -> {
             if (predicate.test(current.getLeft())) {
                 receive.set(current.getLeft());
             }
-        });
+        }, false);
 
         executionEmitter.run();
 

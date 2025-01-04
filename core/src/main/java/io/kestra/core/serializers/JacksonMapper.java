@@ -23,9 +23,8 @@ import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
-import io.kestra.core.plugins.DefaultPluginRegistry;
 import io.kestra.core.plugins.PluginModule;
-import io.kestra.core.plugins.serdes.PluginDeserializer;
+import io.kestra.core.runners.RunContextModule;
 import io.kestra.core.serializers.ion.IonFactory;
 import io.kestra.core.serializers.ion.IonModule;
 import org.yaml.snakeyaml.LoaderOptions;
@@ -37,8 +36,8 @@ import java.util.TimeZone;
 
 public final class JacksonMapper {
     public static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<>() {};
-
-    private static final TypeReference<List<Object>> LIST_TYPE_REFERENCE = new TypeReference<>() {};
+    public static final TypeReference<List<Object>> LIST_TYPE_REFERENCE = new TypeReference<>() {};
+    public static final TypeReference<Object> OBJECT_TYPE_REFERENCE = new TypeReference<>() {};
 
     private JacksonMapper() {}
 
@@ -97,11 +96,8 @@ public final class JacksonMapper {
     public static List<Object> toList(String json) throws JsonProcessingException {
         return MAPPER.readValue(json, LIST_TYPE_REFERENCE);
     }
-
-    private static final TypeReference<Object> TYPE_REFERENCE_OBJECT = new TypeReference<>() {};
-
     public static Object toObject(String json) throws JsonProcessingException {
-        return MAPPER.readValue(json, TYPE_REFERENCE_OBJECT);
+        return MAPPER.readValue(json, OBJECT_TYPE_REFERENCE);
     }
 
     public static <T> T cast(Object object, Class<T> cls) throws JsonProcessingException {
@@ -125,12 +121,13 @@ public final class JacksonMapper {
     private static ObjectMapper configure(ObjectMapper mapper) {
         return mapper
             .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
-            .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .registerModule(new JavaTimeModule())
             .registerModule(new Jdk8Module())
             .registerModule(new ParameterNamesModule())
             .registerModules(new GuavaModule())
             .registerModule(new PluginModule())
+            .registerModule(new RunContextModule())
             .setTimeZone(TimeZone.getDefault());
     }
 
