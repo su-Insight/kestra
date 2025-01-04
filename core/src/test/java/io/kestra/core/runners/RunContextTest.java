@@ -19,10 +19,10 @@ import io.kestra.core.models.tasks.common.EncryptedString;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.PollingTriggerInterface;
 import io.kestra.core.models.triggers.TriggerContext;
+import io.kestra.core.plugins.PluginConfigurations;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.storages.StorageInterface;
-import io.kestra.core.tasks.test.PollingTrigger;
 import io.kestra.core.tasks.test.SleepTrigger;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.TestsUtils;
@@ -40,6 +40,7 @@ import lombok.experimental.SuperBuilder;
 import org.exparity.hamcrest.date.ZonedDateTimeMatchers;
 import org.junit.jupiter.api.Test;
 import org.slf4j.event.Level;
+import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.net.URI;
@@ -68,10 +69,13 @@ class RunContextTest extends AbstractMemoryRunnerTest {
     QueueInterface<LogEntry> workerTaskLogQueue;
 
     @Inject
-    TaskDefaultsCaseTest taskDefaultsCaseTest;
+    PluginDefaultsCaseTest pluginDefaultsCaseTest;
 
     @Inject
     RunContextFactory runContextFactory;
+
+    @Inject
+    RunContextInitializer runContextInitializer;
 
     @Inject
     StorageInterface storageInterface;
@@ -86,11 +90,14 @@ class RunContextTest extends AbstractMemoryRunnerTest {
     @Named(QueueFactoryInterface.WORKERTASKLOG_NAMED)
     private QueueInterface<LogEntry> logQueue;
 
+    @Inject
+    private PluginConfigurations pluginConfigurations;
+
     @Test
     void logs() throws TimeoutException {
         List<LogEntry> logs = new CopyOnWriteArrayList<>();
         LogEntry matchingLog;
-        workerTaskLogQueue.receive(either -> logs.add(either.getLeft()));
+        Flux<LogEntry> receive = TestsUtils.receive(workerTaskLogQueue, either -> logs.add(either.getLeft()));
 
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
 
@@ -104,7 +111,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(1).getId()));
         assertThat(matchingLog, notNullValue());
         assertThat(matchingLog.getLevel(), is(Level.WARN));
-        assertThat(matchingLog.getMessage(), is("second io.kestra.core.tasks.log.Log"));
+        assertThat(matchingLog.getMessage(), is("second io.kestra.plugin.core.log.Log"));
 
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(2).getId()));
         assertThat(matchingLog, notNullValue());
@@ -112,13 +119,14 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(matchingLog.getMessage(), is("third logs"));
 
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(3).getId()));
+        receive.blockLast();
         assertThat(matchingLog, nullValue());
     }
 
     @Test
     void inputsLarge() throws TimeoutException {
         List<LogEntry> logs = new CopyOnWriteArrayList<>();
-        workerTaskLogQueue.receive(either -> logs.add(either.getLeft()));
+        Flux<LogEntry> receive = TestsUtils.receive(workerTaskLogQueue, either -> logs.add(either.getLeft()));
 
         char[] chars = new char[1024 * 11];
         Arrays.fill(chars, 'a');
@@ -139,6 +147,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(execution.getTaskRunList().get(0).getState().getCurrent(), is(State.Type.SUCCESS));
 
         List<LogEntry> logEntries = TestsUtils.awaitLogs(logs, logEntry -> logEntry.getTaskRunId() != null && logEntry.getTaskRunId().equals(execution.getTaskRunList().get(1).getId()), count -> count > 1);
+        receive.blockLast();
         logEntries.sort(Comparator.comparingLong(value -> value.getTimestamp().toEpochMilli()));
 
         assertThat(logEntries.get(0).getTimestamp().toEpochMilli() + 1, is(logEntries.get(1).getTimestamp().toEpochMilli()));
@@ -160,22 +169,14 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
     @Test
     void taskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/task-defaults.yaml")));
-        taskDefaultsCaseTest.taskDefaults();
-    }
-
-    @Test
-    void tempFiles() throws IOException {
-        RunContext runContext = runContextFactory.of();
-        Path path = runContext.tempFile();
-
-        assertThat(path.toFile().getAbsolutePath().startsWith("/tmp/sub/dir/tmp/"), is(true));
+        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/plugin-defaults.yaml")));
+        pluginDefaultsCaseTest.taskDefaults();
     }
 
     @Test
     void largeInput() throws IOException, InterruptedException {
         RunContext runContext = runContextFactory.of();
-        Path path = runContext.tempFile();
+        Path path = runContext.workingDir().createTempFile();
 
         long size = 1024L * 1024 * 1024;
 
@@ -212,35 +213,6 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
         assertThat(runContext.metrics().get(3).getValue(), is(Duration.ofSeconds(123)));
         assertThat(runContext.metrics().get(3).getTags().size(), is(1));
-    }
-
-    @Test
-    void fileExtension() {
-        RunContext runContext = runContextFactory.of();
-
-        assertThat(runContext.fileExtension(null), nullValue());
-        assertThat(runContext.fileExtension(""), nullValue());
-        assertThat(runContext.fileExtension("/file/hello"), nullValue());
-        assertThat(runContext.fileExtension("/file/hello.txt"), is(".txt"));
-    }
-
-    @Test
-    void resolve() {
-        RunContext runContext = runContextFactory.of();
-        String baseDir = runContext.tempDir().toString();
-
-        Path path = runContext.resolve(Path.of("file.txt"));
-        assertThat(path.toString(), is(baseDir + "/file.txt"));
-
-        path = runContext.resolve(Path.of("subdir/file.txt"));
-        assertThat(path.toString(), is(baseDir + "/subdir/file.txt"));
-
-        path = runContext.resolve(null);
-        assertThat(path.toString(), is(baseDir));
-
-        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("/etc/passwd")));
-        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("../../etc/passwd")));
-        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("subdir/../../../etc/passwd")));
     }
 
     @Test
@@ -315,7 +287,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
     void secretTrigger() throws IllegalVariableEvaluationException {
         List<LogEntry> logs = new CopyOnWriteArrayList<>();
         List<LogEntry> matchingLog;
-        logQueue.receive(either -> logs.add(either.getLeft()));
+        Flux<LogEntry> receive = TestsUtils.receive(logQueue, either -> logs.add(either.getLeft()));
 
         LogTrigger trigger = LogTrigger.builder()
             .type(SleepTrigger.class.getName())
@@ -331,13 +303,13 @@ class RunContextTest extends AbstractMemoryRunnerTest {
             .conditionContext(mockedTrigger.getKey())
             .build();
 
-        RunContext runContext = mockedTrigger.getKey().getRunContext().forWorker(applicationContext, workerTrigger);
-        Optional<Execution> evaluate = trigger.evaluate(mockedTrigger.getKey().withRunContext(runContext), mockedTrigger.getValue());
+        RunContext runContext = runContextInitializer.forWorker((DefaultRunContext) workerTrigger.getConditionContext().getRunContext(), workerTrigger);
+        trigger.evaluate(mockedTrigger.getKey().withRunContext(runContext), mockedTrigger.getValue());
 
         matchingLog = TestsUtils.awaitLogs(logs, 3);
+        receive.blockLast();
         assertThat(matchingLog.stream().filter(logEntry -> logEntry.getLevel().equals(Level.INFO)).findFirst().orElse(null).getMessage(), is("john ******** doe"));
     }
-
 
     @SuperBuilder
     @ToString

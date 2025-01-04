@@ -14,23 +14,17 @@ public class WorkerTriggerThread extends AbstractWorkerTriggerThread {
     @Getter
     Optional<Execution> evaluate;
 
-    public WorkerTriggerThread(WorkerTrigger workerTrigger, PollingTriggerInterface pollingTrigger) {
-        super(workerTrigger.getConditionContext().getRunContext(), pollingTrigger.getClass().getName(), workerTrigger);
+    public WorkerTriggerThread(RunContext runContext, WorkerTrigger workerTrigger, PollingTriggerInterface pollingTrigger) {
+        super(runContext, pollingTrigger.getClass().getName(), workerTrigger);
         this.pollingTrigger = pollingTrigger;
     }
 
     @Override
-    public void run() {
-        Thread.currentThread().setContextClassLoader(this.pollingTrigger.getClass().getClassLoader());
-
-        try {
-            this.evaluate = this.pollingTrigger.evaluate(
-                workerTrigger.getConditionContext().withRunContext(runContext),
-                workerTrigger.getTriggerContext()
-            );
-            taskState = SUCCESS;
-        } catch (Exception e) {
-            this.exceptionHandler(this, e);
-        }
+    public void doRun() throws Exception {
+        this.evaluate = this.pollingTrigger.evaluate(
+            workerTrigger.getConditionContext().withRunContext(runContext),
+            workerTrigger.getTriggerContext()
+        );
+        taskState = SUCCESS;
     }
 }

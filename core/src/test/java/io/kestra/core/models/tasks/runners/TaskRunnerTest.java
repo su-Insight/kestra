@@ -2,8 +2,9 @@ package io.kestra.core.models.tasks.runners;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.runners.RunContext;
+import io.kestra.core.runners.RunContextFactory;
 import io.micronaut.context.ApplicationContext;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -16,13 +17,16 @@ import java.util.Map;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@MicronautTest
+@KestraTest
 public class TaskRunnerTest {
     public static final String ADDITIONAL_VAR_KEY = "additionalVarKey";
     public static final String ADDITIONAL_ENV_KEY = "ADDITIONAL_ENV_KEY";
 
     @Inject
     ApplicationContext applicationContext;
+
+    @Inject
+    RunContextFactory runContextFactory;
 
     @Test
     void additionalVarsAndEnv() throws IllegalVariableEvaluationException {
@@ -40,9 +44,8 @@ public class TaskRunnerTest {
             "scriptCommandsAdditionalEnvKey", "scriptCommandsEnvKey",
             "scriptCommandsAdditionalEnvValue", "scriptCommandsEnvValue"
         );
-        RunContext runContext = new RunContext(applicationContext,
-            contextVariables
-        );
+        RunContext runContext = runContextFactory.of(contextVariables);
+
         assertThat(taskRunner.additionalVars(runContext, taskCommands), is(Map.of(
             ScriptService.VAR_BUCKET_PATH, contextVariables.get("runnerBucketPath"),
             ScriptService.VAR_WORKING_DIR, TaskRunnerAdditional.RUNNER_WORKING_DIR,
@@ -147,6 +150,11 @@ public class TaskRunnerTest {
 
         @Override
         public List<String> getCommands() {
+            return null;
+        }
+
+        @Override
+        public TargetOS getTargetOS() {
             return null;
         }
 

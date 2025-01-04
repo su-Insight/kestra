@@ -15,33 +15,25 @@ public class WorkerTriggerRealtimeThread extends AbstractWorkerTriggerThread {
     Consumer<Execution> onNext;
 
     public WorkerTriggerRealtimeThread(
+        RunContext runContext,
         WorkerTrigger workerTrigger,
         RealtimeTriggerInterface realtimeTrigger,
         Consumer<? super Throwable> onError,
         Consumer<Execution> onNext
     ) {
-        super(workerTrigger.getConditionContext().getRunContext(), realtimeTrigger.getClass().getName(), workerTrigger);
+        super(runContext, realtimeTrigger.getClass().getName(), workerTrigger);
         this.streamingTrigger = realtimeTrigger;
         this.onError = onError;
         this.onNext = onNext;
     }
 
     @Override
-    public void run() {
-        Thread.currentThread().setContextClassLoader(this.streamingTrigger.getClass().getClassLoader());
-
-        Publisher<Execution> evaluate;
-        try {
-            evaluate = streamingTrigger.evaluate(
-                workerTrigger.getConditionContext().withRunContext(runContext),
-                workerTrigger.getTriggerContext()
-            );
-            taskState = SUCCESS;
-        } catch (Exception e) {
-            this.exceptionHandler(this, e);
-            return;
-        }
-
+    public void doRun() throws Exception {
+        Publisher<Execution> evaluate = streamingTrigger.evaluate(
+            workerTrigger.getConditionContext().withRunContext(runContext),
+            workerTrigger.getTriggerContext()
+        );
+        taskState = SUCCESS;
         Flux.from(evaluate)
             .onBackpressureBuffer()
             .doOnError(onError)

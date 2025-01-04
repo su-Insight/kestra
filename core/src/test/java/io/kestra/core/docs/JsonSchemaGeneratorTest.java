@@ -12,11 +12,11 @@ import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.plugins.RegisteredPlugin;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.tasks.debugs.Echo;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Dag;
-import io.kestra.core.tasks.log.Log;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.plugin.core.debug.Echo;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Dag;
+import io.kestra.plugin.core.log.Log;
+import io.kestra.core.junit.annotations.KestraTest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.inject.Inject;
 import lombok.Builder;
@@ -31,16 +31,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.net.URISyntaxException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class JsonSchemaGeneratorTest {
 
 
