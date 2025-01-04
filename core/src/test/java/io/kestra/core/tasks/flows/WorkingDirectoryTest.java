@@ -22,6 +22,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
@@ -121,14 +122,22 @@ public class WorkingDirectoryTest extends AbstractMemoryRunnerTest {
             assertThat(execution.getTaskRunList(), hasSize(2));
             assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
             
-            StorageContext storageContext = StorageContext.forTask(execution.getTaskRunList().get(1));
+            TaskRun taskRun = execution.getTaskRunList().get(0);
+            Map<String, Object> outputs = taskRun.getOutputs();
+            assertThat(outputs, hasKey("outputFiles"));
+            
+            StorageContext storageContext = StorageContext.forTask(taskRun);
             InternalStorage storage = new InternalStorage(
                 null,
                 storageContext
                 , storageInterface
             );
-            URI fileURI = URI.create("kestra:" + storageContext.getContextStorageURI() + "/output.txt");
-            assertThat(new String(storage.getFile(fileURI).readAllBytes()), is("Hello World"));
+            
+            URI uri = ((Map<String, String>) outputs.get("outputFiles")).values()
+                .stream()
+                .map(URI::create)
+                .toList().getFirst();
+            assertThat(new String(storage.getFile(uri).readAllBytes()), is("Hello World"));
         }
         
         public void inputFiles(RunnerUtils runnerUtils) throws TimeoutException, IOException {
@@ -174,7 +183,7 @@ public class WorkingDirectoryTest extends AbstractMemoryRunnerTest {
                     .filter(t -> t.getTaskId().equals("exists"))
                     .findFirst().get()
                     .getOutputs(),
-                nullValue()
+                is(Map.of("uris", Collections.emptyMap()))
             );
             assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
             assertTrue(storageInterface.exists(null, cacheURI));
