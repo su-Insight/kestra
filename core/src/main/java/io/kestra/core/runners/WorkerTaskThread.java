@@ -23,10 +23,19 @@ public class WorkerTaskThread extends AbstractWorkerThread {
     Output taskOutput;
 
     public WorkerTaskThread(WorkerTask workerTask, RunnableTask<?> task, RunContext runContext, MetricRegistry metricRegistry) {
-        super(runContext, task.getClass().getName());
+        super(runContext, task.getClass().getName(), task.getClass().getClassLoader());
         this.workerTask = workerTask;
         this.task = task;
         this.metricRegistry = metricRegistry;
+    }
+
+    @Override
+    public void signalStop() {
+        try {
+            task.stop();
+        } catch (Exception e) {
+            logger.warn("Error while stopping task: '{}'", getType(), e);
+        }
     }
 
     @Override
@@ -34,16 +43,14 @@ public class WorkerTaskThread extends AbstractWorkerThread {
         try {
             task.kill();
         } catch (Exception e) {
-            logger.warn("Error while killing task: '{}'", e.getMessage(), e);
+            logger.warn("Error while killing task: '{}'", getType(), e);
         } finally {
             super.kill(markAsKilled); //interrupt
         }
     }
 
     @Override
-    public void run() {
-        Thread.currentThread().setContextClassLoader(this.task.getClass().getClassLoader());
-
+    public void doRun() throws Exception {
         final Duration workerTaskTimeout = workerTask.getTask().getTimeout();
         try {
             if (workerTaskTimeout != null) {
@@ -74,9 +81,7 @@ public class WorkerTaskThread extends AbstractWorkerThread {
             }
         } catch (dev.failsafe.TimeoutExceededException e) {
             kill(false);
-            this.exceptionHandler(this, new TimeoutExceededException(workerTaskTimeout, e));
-        } catch (Exception e) {
-            this.exceptionHandler(this, e);
+            this.exceptionHandler(this, new TimeoutExceededException(workerTaskTimeout));
         }
     }
 }

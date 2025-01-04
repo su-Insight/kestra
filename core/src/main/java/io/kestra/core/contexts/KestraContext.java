@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Utility class for retrieving common information about a Kestra Server at runtime.
  */
+@SuppressWarnings("this-escape")
 public abstract class KestraContext {
 
     private static final Logger log = LoggerFactory.getLogger(KestraContext.class);
@@ -59,14 +60,14 @@ public abstract class KestraContext {
      * @return the string version.
      */
     public abstract String getVersion();
-    
+
     /**
      * Returns the Kestra Plugin Registry.
      *
      * @return the {@link PluginRegistry}.
      */
     public abstract PluginRegistry getPluginRegistry();
-    
+
     /**
      * Shutdowns the Kestra application.
      */
@@ -106,7 +107,7 @@ public abstract class KestraContext {
         public ServerType getServerType() {
             return Optional.ofNullable(environment)
                 .flatMap(env -> env.getProperty(KESTRA_SERVER_TYPE, ServerType.class))
-                .orElseThrow(() -> new IllegalStateException("Cannot found required environment property '" + KESTRA_SERVER_TYPE + "'."));
+                .orElse(ServerType.STANDALONE);
         }
 
         /** {@inheritDoc} **/
@@ -124,7 +125,7 @@ public abstract class KestraContext {
         public String getVersion() {
             return version;
         }
-        
+
         /** {@inheritDoc} **/
         @Override
         public PluginRegistry getPluginRegistry() {

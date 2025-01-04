@@ -11,6 +11,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 
 class FlowExpandCommandTest {
+    @SuppressWarnings("deprecation")
     @Test
     void run() {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -30,10 +31,10 @@ class FlowExpandCommandTest {
                     "# The list of tasks\n" +
                     "tasks:\n" +
                     "- id: t1\n" +
-                    "  type: io.kestra.core.tasks.debugs.Return\n" +
+                    "  type: io.kestra.plugin.core.debug.Return\n" +
                     "  format: \"Lorem ipsum dolor sit amet\"\n" +
                     "- id: t2\n" +
-                    "  type: io.kestra.core.tasks.debugs.Return\n" +
+                    "  type: io.kestra.plugin.core.debug.Return\n" +
                     "  format: |\n" +
                     "    Lorem ipsum dolor sit amet\n" +
                     "    Lorem ipsum dolor sit amet\n"

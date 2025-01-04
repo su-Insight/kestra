@@ -202,7 +202,7 @@ public class DocumentationGenerator {
                 e.getValue(),
                 null
             )))
-            .collect(Collectors.toList());
+            .toList();
     }
 
 
@@ -221,7 +221,7 @@ public class DocumentationGenerator {
                     throw new RuntimeException(e);
                 }
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static String docPath(RegisteredPlugin registeredPlugin) {
@@ -254,7 +254,7 @@ public class DocumentationGenerator {
 
         PebbleTemplate compiledTemplate = pebbleEngine.getLiteralTemplate(pebbleTemplate);
 
-        Writer writer = new JsonWriter(new StringWriter());
+        Writer writer = new JsonWriter();
         compiledTemplate.evaluate(writer, vars);
         String renderer = writer.toString();
 

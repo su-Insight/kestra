@@ -19,6 +19,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.Function;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 import java.util.stream.Collectors;
@@ -74,7 +75,7 @@ public class PluginScanner {
             long start = System.currentTimeMillis();
             Manifest manifest = new Manifest(IOUtils.toInputStream("Manifest-Version: 1.0\n" +
                 "X-Kestra-Title: core\n" +
-                "X-Kestra-Group: io.kestra.core.tasks\n",
+                "X-Kestra-Group: io.kestra.plugin.core\n",
                 StandardCharsets.UTF_8
             ));
 
@@ -104,44 +105,51 @@ public class PluginScanner {
         }
 
         final ServiceLoader<Plugin> sl = ServiceLoader.load(Plugin.class, classLoader);
-        sl.forEach(plugin -> {
-
-            if(plugin.getClass().isAnnotationPresent(Hidden.class)) {
-                return;
-            }
-
-            if (plugin instanceof Task task) {
-                log.debug("Loading Task plugin: '{}'", plugin.getClass());
-                tasks.add(task.getClass());
-            }
-            else if (plugin instanceof AbstractTrigger trigger) {
-                log.debug("Loading Trigger plugin: '{}'", plugin.getClass());
-                triggers.add(trigger.getClass());
-            }
-            else if (plugin instanceof Condition condition) {
-                log.debug("Loading Condition plugin: '{}'", plugin.getClass());
-                conditions.add(condition.getClass());
-            }
-            else if (plugin instanceof StorageInterface storage) {
-                log.debug("Loading Storage plugin: '{}'", plugin.getClass());
-                storages.add(storage.getClass());
-            }
-            else if (plugin instanceof SecretPluginInterface storage) {
-                log.debug("Loading SecretPlugin plugin: '{}'", plugin.getClass());
-                secrets.add(storage.getClass());
-            }
-            else if (plugin instanceof TaskRunner runner) {
-                log.debug("Loading TaskRunner plugin: '{}'", plugin.getClass());
-                taskRunners.add(runner.getClass());
-            }
-
-            if (plugin.getClass().isAnnotationPresent(io.kestra.core.models.annotations.Plugin.class)) {
-                String[] pluginAliases = plugin.getClass().getAnnotation(io.kestra.core.models.annotations.Plugin.class).aliases();
-                for (String alias:  pluginAliases) {
-                    aliases.put(alias, plugin.getClass());
+        try {
+            for (Plugin plugin : sl) {
+                if (plugin.getClass().isAnnotationPresent(Hidden.class)) {
+                    continue;
                 }
+
+                switch (plugin) {
+                    case Task task -> {
+                        log.debug("Loading Task plugin: '{}'", plugin.getClass());
+                        tasks.add(task.getClass());
+                    }
+                    case AbstractTrigger trigger -> {
+                        log.debug("Loading Trigger plugin: '{}'", plugin.getClass());
+                        triggers.add(trigger.getClass());
+                    }
+                    case Condition condition -> {
+                        log.debug("Loading Condition plugin: '{}'", plugin.getClass());
+                        conditions.add(condition.getClass());
+                    }
+                    case StorageInterface storage -> {
+                        log.debug("Loading Storage plugin: '{}'", plugin.getClass());
+                        storages.add(storage.getClass());
+                    }
+                    case SecretPluginInterface storage -> {
+                        log.debug("Loading SecretPlugin plugin: '{}'", plugin.getClass());
+                        secrets.add(storage.getClass());
+                    }
+                    case TaskRunner runner -> {
+                        log.debug("Loading TaskRunner plugin: '{}'", plugin.getClass());
+                        taskRunners.add(runner.getClass());
+                    }
+                    default -> {
+                    }
+                }
+
+                Plugin.getAliases(plugin.getClass()).forEach(alias -> aliases.put(alias, plugin.getClass()));
             }
-        });
+        } catch (ServiceConfigurationError | NoClassDefFoundError e) {
+            Object location = externalPlugin != null ? externalPlugin.getLocation() : "core";
+            log.error("Unable to load all plugin classes from '{}'. Cause: [{}] {}",
+                location,
+                e.getClass().getSimpleName(),
+                e.getMessage()
+            );
+        }
 
         var guidesDirectory = classLoader.getResource("doc/guides");
         if (guidesDirectory != null) {
@@ -172,7 +180,10 @@ public class PluginScanner {
             .secrets(secrets)
             .taskRunners(taskRunners)
             .guides(guides)
-            .aliases(aliases)
+            .aliases(aliases.entrySet().stream().collect(Collectors.toMap(
+                e -> e.getKey().toLowerCase(),
+                Function.identity()
+            )))
             .build();
     }
 

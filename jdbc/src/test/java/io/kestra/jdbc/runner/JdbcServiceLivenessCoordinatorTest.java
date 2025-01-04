@@ -7,6 +7,7 @@ import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State.Type;
 import io.kestra.core.models.tasks.ResolvedTask;
+import io.kestra.core.models.triggers.Trigger;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
@@ -28,13 +29,13 @@ import io.kestra.core.utils.TestsUtils;
 import io.kestra.jdbc.JdbcTestUtils;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.annotation.Property;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -44,14 +45,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.fail;
 
-@MicronautTest(transactional = false, environments =  {"test", "liveness"})
+@KestraTest(environments =  {"test", "liveness"})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // must be per-class to allow calling once init() which took a lot of time
 @Property(name = "kestra.server-type", value = "EXECUTOR")
 public abstract class JdbcServiceLivenessCoordinatorTest {
@@ -109,10 +109,7 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
         runner.setSchedulerEnabled(false);
         runner.setWorkerEnabled(false);
         runner.run();
-        AtomicReference<WorkerTaskResult> workerTaskResult = new AtomicReference<>(null);
-        workerTaskResultQueue.receive(either -> {
-            workerTaskResult.set(either.getLeft());
-
+        Flux<WorkerTaskResult> receive = TestsUtils.receive(workerTaskResultQueue, either -> {
             if (either.getLeft().getTaskRun().getState().getCurrent() == Type.SUCCESS) {
                 resubmitLatch.countDown();
             }
@@ -123,15 +120,17 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
         });
 
         workerJobQueue.emit(workerTask(Duration.ofSeconds(10)));
-        runningLatch.await(5, TimeUnit.SECONDS);
+        boolean runningLatchAwait = runningLatch.await(5, TimeUnit.SECONDS);
+        assertThat(runningLatchAwait, is(true));
         worker.shutdown(); // stop processing task
 
         // create second worker (this will revoke previously one).
         Worker newWorker = applicationContext.createBean(Worker.class, IdUtils.create(), 1, null);
         newWorker.run();
-        resubmitLatch.await(30, TimeUnit.SECONDS);
+        boolean resubmitLatchAwait = resubmitLatch.await(30, TimeUnit.SECONDS);
+        assertThat(resubmitLatchAwait, is(true));
+        assertThat(receive.blockLast().getTaskRun().getState().getCurrent(), is(Type.SUCCESS));
         newWorker.shutdown();
-        assertThat(workerTaskResult.get().getTaskRun().getState().getCurrent(), is(Type.SUCCESS));
     }
 
     @Test
@@ -146,10 +145,7 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
         WorkerTask workerTask = workerTask(Duration.ofSeconds(10));
         skipExecutionService.setSkipExecutions(List.of(workerTask.getTaskRun().getExecutionId()));
 
-        AtomicReference<WorkerTaskResult> workerTaskResult = new AtomicReference<>(null);
-        Runnable assertionStop = workerTaskResultQueue.receive(either -> {
-            workerTaskResult.set(either.getLeft());
-
+        Flux<WorkerTaskResult> receive = TestsUtils.receive(workerTaskResultQueue, either -> {
             if (either.getLeft().getTaskRun().getState().getCurrent() == Type.SUCCESS) {
                 // no resubmit should happen!
                 fail();
@@ -161,7 +157,8 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
         });
 
         workerJobQueue.emit(workerTask);
-        runningLatch.await(2, TimeUnit.SECONDS);
+        boolean runningLatchAwait = runningLatch.await(2, TimeUnit.SECONDS);
+        assertThat(runningLatchAwait, is(true));
         worker.shutdown();
 
         Worker newWorker = applicationContext.createBean(Worker.class, IdUtils.create(), 1, null);
@@ -169,9 +166,9 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
 
         // wait a little to be sure there is no resubmit
         Thread.sleep(500);
-        assertionStop.run();
+        receive.blockLast();
         newWorker.shutdown();
-        assertThat(workerTaskResult.get().getTaskRun().getState().getCurrent(), not(Type.SUCCESS));
+        assertThat(receive.blockLast().getTaskRun().getState().getCurrent(), not(Type.SUCCESS));
     }
 
     @Test
@@ -186,7 +183,7 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
 
         // 2 trigger should happen because of the resubmit
         CountDownLatch countDownLatch = new CountDownLatch(2);
-        workerJobQueue.receive(workerJob -> countDownLatch.countDown());
+        Flux<WorkerJob> receive = TestsUtils.receive(workerJobQueue, workerJob -> countDownLatch.countDown());
 
         workerJobQueue.emit(workerTrigger);
         Await.until(() -> worker.getEvaluateTriggerRunningCount()
@@ -203,6 +200,7 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
         boolean lastAwait = countDownLatch.await(15, TimeUnit.SECONDS);
 
         newWorker.shutdown();
+        receive.blockLast();
         assertThat(lastAwait, is(true));
     }
 
@@ -231,7 +229,7 @@ public abstract class JdbcServiceLivenessCoordinatorTest {
             .duration(sleep.toMillis())
             .build();
 
-        Map.Entry<ConditionContext, TriggerContext> mockedTrigger = TestsUtils.mockTrigger(runContextFactory, trigger);
+        Map.Entry<ConditionContext, Trigger> mockedTrigger = TestsUtils.mockTrigger(runContextFactory, trigger);
 
         return WorkerTrigger.builder()
             .trigger(trigger)

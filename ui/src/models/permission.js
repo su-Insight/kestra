@@ -1,5 +1,7 @@
 export default {
     FLOW: "FLOW",
     EXECUTION: "EXECUTION",
-    TEMPLATE: "TEMPLATE"
+    TEMPLATE: "TEMPLATE",
+    NAMESPACE: "NAMESPACE",
+    KVSTORE: "KVSTORE"
 }

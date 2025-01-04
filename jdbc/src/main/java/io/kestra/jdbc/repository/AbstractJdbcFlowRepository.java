@@ -262,8 +262,21 @@ public abstract class AbstractJdbcFlowRepository extends AbstractJdbcRepository 
             .getDslContextWrapper()
             .transactionResult(configuration -> {
                 SelectConditionStep<Record1<Object>> select =
-                    findByNamespaceSelect(tenantId, namespace)
+                    findByNamespaceSelect(namespace)
                     .and(this.defaultFilter(tenantId));
+
+                return this.jdbcRepository.fetch(select);
+            });
+    }
+
+    @Override
+    public List<Flow> findByNamespacePrefix(String tenantId, String namespacePrefix) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> {
+                SelectConditionStep<Record1<Object>> select =
+                    findByNamespacePrefixSelect(namespacePrefix)
+                        .and(this.defaultFilter(tenantId));
 
                 return this.jdbcRepository.fetch(select);
             });
@@ -275,23 +288,31 @@ public abstract class AbstractJdbcFlowRepository extends AbstractJdbcRepository 
             .getDslContextWrapper()
             .transactionResult(configuration -> {
                 SelectConditionStep<Record1<Object>> select =
-                    findByNamespaceSelect(tenantId, namespace)
+                    findByNamespaceSelect(namespace)
                     .and(this.defaultExecutionFilter(tenantId));
 
                 return this.jdbcRepository.fetch(select);
             }).stream().map(FlowForExecution::of).toList();
     }
 
-    private SelectConditionStep<Record1<Object>> findByNamespaceSelect(String tenantId, String namespace) {
+    private SelectConditionStep<Record1<Object>> findByNamespaceSelect(String namespace) {
         return this.jdbcRepository
             .getDslContextWrapper()
-            .transactionResult(configuration -> {
-                return DSL
-                    .using(configuration)
-                    .select(field("value"))
-                    .from(fromLastRevision(true))
-                    .where(field("namespace").eq(namespace));
-            });
+            .transactionResult(configuration -> DSL
+                .using(configuration)
+                .select(field("value"))
+                .from(fromLastRevision(true))
+                .where(field("namespace").eq(namespace)));
+    }
+
+    private SelectConditionStep<Record1<Object>> findByNamespacePrefixSelect(String namespacePrefix) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> DSL
+                .using(configuration)
+                .select(field("value"))
+                .from(fromLastRevision(true))
+                .where(DSL.or(field("namespace").eq(namespacePrefix), field("namespace").likeIgnoreCase(namespacePrefix + ".%"))));
     }
 
     @Override
@@ -465,7 +486,7 @@ public abstract class AbstractJdbcFlowRepository extends AbstractJdbcRepository 
 
         // flow exists, return it
         Optional<FlowWithSource> exists = this.findByIdWithSource(flow.getTenantId(), flow.getNamespace(), flow.getId());
-        if (exists.isPresent() && exists.get().isUpdatable(flow, flowSource)) {
+        if (exists.isPresent() && exists.get().equals(flow, flowSource)) {
             return exists.get();
         }
 
@@ -483,7 +504,11 @@ public abstract class AbstractJdbcFlowRepository extends AbstractJdbcRepository 
         this.jdbcRepository.persist(flow, fields);
 
         flowQueue.emit(flow);
-        eventPublisher.publishEvent(new CrudEvent<>(flow, crudEventType));
+        if (exists.isPresent()) {
+            eventPublisher.publishEvent(new CrudEvent<>(flow, exists.get(), crudEventType));
+        } else {
+            eventPublisher.publishEvent(new CrudEvent<>(flow, crudEventType));
+        }
 
         return FlowWithSource.of(flow, flowSource);
     }
