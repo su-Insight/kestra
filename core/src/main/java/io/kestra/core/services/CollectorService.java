@@ -26,6 +26,7 @@ import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 
 @Singleton
 @Slf4j
@@ -89,19 +90,26 @@ public class CollectorService {
         return defaultUsage;
     }
 
-    public Usage metrics() {
-        return metrics(true);
+    public Usage metrics(boolean details) {
+        ZonedDateTime to = ZonedDateTime.now();
+
+        ZonedDateTime from = to
+            .toLocalDate()
+            .atStartOfDay(ZoneId.systemDefault())
+            .minusDays(1);
+
+        return metrics(details, from, to);
     }
 
-    private Usage metrics(boolean details) {
+    public Usage metrics(boolean details, ZonedDateTime from, ZonedDateTime to) {
         Usage.UsageBuilder<?, ?> builder = defaultUsage()
             .toBuilder()
             .uuid(IdUtils.create());
 
         if (details) {
             builder = builder
-            .flows(FlowUsage.of(flowRepository))
-            .executions(ExecutionUsage.of(executionRepository));
+                .flows(FlowUsage.of(flowRepository))
+                .executions(ExecutionUsage.of(executionRepository, from, to));
         }
         return builder.build();
     }

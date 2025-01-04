@@ -10,7 +10,7 @@ import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.retrys.Constant;
 import io.kestra.core.models.validations.ModelValidator;
 import io.kestra.core.utils.TestsUtils;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +30,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@MicronautTest
+@KestraTest
 class YamlFlowParserTest {
     private static ObjectMapper mapper = JacksonMapper.ofJson();
 
@@ -100,7 +100,7 @@ class YamlFlowParserTest {
         );
 
         assertThat(exception.getConstraintViolations().size(), is(1));
-        assertThat(new ArrayList<>(exception.getConstraintViolations()).get(0).getMessage(), is("must not be empty"));
+        assertThat(new ArrayList<>(exception.getConstraintViolations()).getFirst().getMessage(), is("must not be empty"));
     }
 
     @Test
@@ -136,8 +136,8 @@ class YamlFlowParserTest {
         Flow flow = this.parse("flows/tests/inputs-old.yaml");
 
         assertThat(flow.getInputs().size(), is(1));
-        assertThat(flow.getInputs().get(0).getId(), is("myInput"));
-        assertThat(flow.getInputs().get(0).getType(), is(Type.STRING));
+        assertThat(flow.getInputs().getFirst().getId(), is("myInput"));
+        assertThat(flow.getInputs().getFirst().getType(), is(Type.STRING));
     }
 
     @Test
@@ -158,7 +158,7 @@ class YamlFlowParserTest {
         );
 
         assertThat(exception.getConstraintViolations().size(), is(2));
-        assertThat(new ArrayList<>(exception.getConstraintViolations()).get(0).getMessage(), containsString("must not be empty"));
+        assertThat(new ArrayList<>(exception.getConstraintViolations()).getFirst().getMessage(), containsString("must not be empty"));
         assertThat(new ArrayList<>(exception.getConstraintViolations()).get(1).getMessage(), is("must not be empty"));
     }
 
@@ -167,7 +167,7 @@ class YamlFlowParserTest {
         Flow flow = this.parse("flows/valids/minimal.yaml");
 
         String s = mapper.writeValueAsString(flow);
-        assertThat(s, is("{\"id\":\"minimal\",\"namespace\":\"io.kestra.tests\",\"revision\":2,\"disabled\":false,\"deleted\":false,\"tasks\":[{\"id\":\"date\",\"type\":\"io.kestra.core.tasks.debugs.Return\",\"format\":\"{{taskrun.startDate}}\"}]}"));
+        assertThat(s, is("{\"id\":\"minimal\",\"namespace\":\"io.kestra.tests\",\"revision\":2,\"disabled\":false,\"deleted\":false,\"tasks\":[{\"id\":\"date\",\"type\":\"io.kestra.plugin.core.debug.Return\",\"format\":\"{{taskrun.startDate}}\"}]}"));
     }
 
     @Test
@@ -187,7 +187,7 @@ class YamlFlowParserTest {
         );
 
         assertThat(exception.getConstraintViolations().size(), is(2));
-        assertThat(exception.getConstraintViolations().stream().filter(e -> e.getMessage().contains("Invalid type")).findFirst().orElseThrow().getMessage(), containsString("Invalid type: io.kestra.core.tasks.debugs.MissingOne"));
+        assertThat(exception.getConstraintViolations().stream().filter(e -> e.getMessage().contains("Invalid type")).findFirst().orElseThrow().getMessage(), containsString("Invalid type: io.kestra.plugin.core.debug.MissingOne"));
     }
 
     @Test
@@ -197,9 +197,9 @@ class YamlFlowParserTest {
             () -> this.parse("flows/invalids/invalid-property.yaml")
         );
 
-        assertThat(exception.getMessage(), is("Unrecognized field \"invalid\" (class io.kestra.core.tasks.debugs.Return), not marked as ignorable (10 known properties: \"logLevel\", \"timeout\", \"format\", \"retry\", \"type\", \"id\", \"description\", \"workerGroup\", \"disabled\", \"allowFailure\"])"));
+        assertThat(exception.getMessage(), is("Unrecognized field \"invalid\" (class io.kestra.plugin.core.debug.Return), not marked as ignorable (10 known properties: \"logLevel\", \"timeout\", \"format\", \"retry\", \"type\", \"id\", \"description\", \"workerGroup\", \"disabled\", \"allowFailure\"])"));
         assertThat(exception.getConstraintViolations().size(), is(1));
-        assertThat(exception.getConstraintViolations().iterator().next().getPropertyPath().toString(), is("io.kestra.core.models.flows.Flow[\"tasks\"]->java.util.ArrayList[0]->io.kestra.core.tasks.debugs.Return[\"invalid\"]"));
+        assertThat(exception.getConstraintViolations().iterator().next().getPropertyPath().toString(), is("io.kestra.core.models.flows.Flow[\"tasks\"]->java.util.ArrayList[0]->io.kestra.plugin.core.debug.Return[\"invalid\"]"));
     }
 
     @Test
@@ -235,7 +235,7 @@ class YamlFlowParserTest {
         );
 
         assertThat(exception.getConstraintViolations().size(), is(1));
-        assertThat(new ArrayList<>(exception.getConstraintViolations()).get(0).getMessage(), containsString("Duplicate field 'variables.tf'"));
+        assertThat(new ArrayList<>(exception.getConstraintViolations()).getFirst().getMessage(), containsString("Duplicate field 'variables.tf'"));
     }
 
     private Flow parse(String path) {

@@ -12,9 +12,10 @@ import io.kestra.core.schedulers.ScheduleContextInterface;
 import io.kestra.jdbc.runner.JdbcIndexerInterface;
 import io.kestra.jdbc.runner.JdbcSchedulerContext;
 import io.micronaut.data.model.Pageable;
-import jakarta.inject.Singleton;
 import org.jooq.*;
 import org.jooq.impl.DSL;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -22,7 +23,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
-@Singleton
 public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcRepository implements TriggerRepositoryInterface, JdbcIndexerInterface<Trigger> {
     protected io.kestra.jdbc.AbstractJdbcRepository<Trigger> jdbcRepository;
 
@@ -262,6 +262,41 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
 
                 return this.jdbcRepository.fetchPage(context, select, pageable);
             });
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Flux<Trigger> find(String query, String tenantId, String namespace) {
+        return Flux.create(
+            emitter -> this.jdbcRepository
+                .getDslContextWrapper()
+                .transaction(configuration -> {
+                    DSLContext context = DSL.using(configuration);
+
+                    var select = context
+                        .select(
+                            field("value")
+                        )
+                        .hint(context.configuration().dialect() == SQLDialect.MYSQL ? "SQL_CALC_FOUND_ROWS" : null)
+                        .from(this.jdbcRepository.getTable())
+                        .where(this.defaultFilter(tenantId));
+                    if (namespace != null) {
+                        select =  select.and(DSL.or(field("namespace").eq(namespace), field("namespace").likeIgnoreCase(namespace + ".%")));
+                    }
+                    if (query != null) {
+                        select = select.and(this.fullTextCondition(query));
+                    }
+
+                    select.fetch()
+                    .map(this.jdbcRepository::map)
+                    .forEach(emitter::next);
+
+                    emitter.complete();
+
+                }),
+            FluxSink.OverflowStrategy.BUFFER
+        );
+
     }
 
     protected Condition fullTextCondition(String query) {

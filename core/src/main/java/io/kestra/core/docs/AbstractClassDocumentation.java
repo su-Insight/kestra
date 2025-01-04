@@ -12,6 +12,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@SuppressWarnings("this-escape")
 @Getter
 @EqualsAndHashCode
 @ToString
@@ -83,7 +84,7 @@ public abstract class AbstractClassDocumentation<T> {
                         (String) r.get("code")
                     ))
                 ))
-                .collect(Collectors.toList());
+                .toList();
         }
 
         if (this.propertiesSchema.containsKey("properties")) {

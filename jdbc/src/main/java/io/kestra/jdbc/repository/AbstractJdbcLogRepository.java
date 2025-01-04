@@ -9,7 +9,6 @@ import io.kestra.core.utils.DateUtils;
 import io.kestra.jdbc.runner.JdbcIndexerInterface;
 import io.micronaut.data.model.Pageable;
 import jakarta.annotation.Nullable;
-import jakarta.inject.Singleton;
 import org.jooq.Record;
 import org.jooq.*;
 import org.jooq.impl.DSL;
@@ -25,7 +24,6 @@ import java.util.Comparator;
 import java.util.*;
 import java.util.stream.Collectors;
 
-@Singleton
 public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository implements LogRepositoryInterface, JdbcIndexerInterface<LogEntry> {
     protected io.kestra.jdbc.AbstractJdbcRepository<LogEntry> jdbcRepository;
 
@@ -72,11 +70,11 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
         @Nullable ZonedDateTime endDate
     ) {
         if (namespace != null) {
-            select.and(DSL.or(field("namespace").eq(namespace), field("namespace").likeIgnoreCase(namespace + ".%")));
+            select = select.and(DSL.or(field("namespace").eq(namespace), field("namespace").likeIgnoreCase(namespace + ".%")));
         }
 
         if (flowId != null) {
-            select.and(field("flow_id").eq(flowId));
+            select = select.and(field("flow_id").eq(flowId));
         }
 
         if (minLevel != null) {
@@ -116,9 +114,9 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
 
         List<Field<?>> dateFields = new ArrayList<>(groupByFields(Duration.between(finalStartDate, finalEndDate), "timestamp", groupBy));
         List<Field<?>> selectFields = new ArrayList<>(fields);
-        selectFields.addAll(List.of(
+        selectFields.add(
             DSL.count().as("count")
-        ));
+        );
 
         selectFields.addAll(dateFields);
 
@@ -211,7 +209,7 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                         .flatMap(levelLongMap -> levelLongMap.entrySet().stream())
                         .collect(Collectors.groupingBy(Map.Entry::getKey, Collectors.summingLong(Map.Entry::getValue)));
 
-                    return logStatistics.get(0).toBuilder().counts(collect).build();
+                    return logStatistics.getFirst().toBuilder().counts(collect).build();
                 })
                 .findFirst()
                 .orElse(LogStatistics.builder().timestamp(currentDate.toInstant()).groupBy(groupByType.val()).build());
@@ -371,22 +369,54 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                     .and(field("execution_id").eq(executionId));
 
                 if (taskId != null) {
-                    delete.and(field("task_id").eq(taskId));
+                    delete = delete.and(field("task_id").eq(taskId));
                 }
 
                 if (taskRunId != null) {
-                    delete.and(field("taskrun_id").eq(taskRunId));
+                    delete = delete.and(field("taskrun_id").eq(taskRunId));
                 }
 
                 if (minLevel != null) {
-                    delete.and(minLevel(minLevel));
+                    delete = delete.and(minLevel(minLevel));
                 }
 
                 if (attempt != null) {
-                    delete.and(field("attempt_number").eq(attempt));
+                    delete = delete.and(field("attempt_number").eq(attempt));
                 }
 
                 delete.execute();
+            });
+    }
+
+    @Override
+    public int deleteByQuery(String tenantId, String namespace, String flowId, List<Level> logLevels, ZonedDateTime startDate, ZonedDateTime endDate) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> {
+                DSLContext context = DSL.using(configuration);
+
+                var delete = context
+                    .delete(this.jdbcRepository.getTable())
+                    .where(this.defaultFilter(tenantId))
+                    .and(field("timestamp").lessOrEqual(endDate.toOffsetDateTime()));
+
+                if (startDate != null) {
+                    delete = delete.and(field("timestamp").greaterOrEqual(startDate.toOffsetDateTime()));
+                }
+
+                if (namespace != null) {
+                    delete = delete.and(field("namespace").eq(namespace));
+                }
+
+                if (flowId != null) {
+                    delete = delete.and(field("flow_id").eq(flowId));
+                }
+
+                if (logLevels != null) {
+                    delete = delete.and(field("level").in(logLevels));
+                }
+
+                return delete.execute();
             });
     }
 
@@ -405,7 +435,7 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                 select = select.and(condition);
 
                 if (minLevel != null) {
-                    select.and(minLevel(minLevel));
+                    select = select.and(minLevel(minLevel));
                 }
 
                 return this.jdbcRepository.fetchPage(context, select, pageable
@@ -426,7 +456,7 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                 select = select.and(condition);
 
                 if (minLevel != null) {
-                    select.and(minLevel(minLevel));
+                    select = select.and(minLevel(minLevel));
                 }
 
                 return this.jdbcRepository.fetch(select

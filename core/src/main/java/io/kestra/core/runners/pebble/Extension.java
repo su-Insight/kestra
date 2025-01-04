@@ -27,6 +27,9 @@ public class Extension extends AbstractExtension {
     private SecretFunction secretFunction;
 
     @Inject
+    private KvFunction kvFunction;
+
+    @Inject
     private ReadFileFunction readFileFunction;
 
     @Inject
@@ -70,6 +73,7 @@ public class Extension extends AbstractExtension {
         filters.put("jq", new JqFilter());
         filters.put("escapeChar", new EscapeCharFilter());
         filters.put("json", new JsonFilter());
+        filters.put("jsonEncode", new JsonEncodeFilter());
         filters.put("keys", new KeysFilter());
         filters.put("number", new NumberFilter());
         filters.put("urldecode", new UrlDecoderFilter());
@@ -84,6 +88,7 @@ public class Extension extends AbstractExtension {
         filters.put("yaml", new YamlFilter());
         filters.put("startsWith", new StartsWithFilter());
         filters.put("endsWith", new EndsWithFilter());
+        filters.put("values", new ValuesFilter());
         return filters;
     }
 
@@ -102,8 +107,10 @@ public class Extension extends AbstractExtension {
 
         functions.put("now", new NowFunction());
         functions.put("json", new JsonFunction());
+        functions.put("jsonDecode", new JsonDecodeFunction());
         functions.put("currentEachOutput", new CurrentEachOutputFunction());
         functions.put("secret", secretFunction);
+        functions.put("kv", kvFunction);
         functions.put("read", readFileFunction);
         if (this.renderFunction != null) {
             functions.put("render", renderFunction);
@@ -115,6 +122,7 @@ public class Extension extends AbstractExtension {
         functions.put("decrypt", new DecryptFunction());
         functions.put("yaml", new YamlFunction());
         functions.put("printContext", new PrintContextFunction());
+        functions.put("ionDecode", new IonDecodeFunction());
 
         return functions;
     }
