@@ -2,8 +2,9 @@ package io.kestra.core.services;
 
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.TaskRun;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -11,10 +12,18 @@ import java.util.List;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class SkipExecutionServiceTest {
     @Inject
     private SkipExecutionService skipExecutionService;
+
+    @BeforeEach
+    void resetAll() {
+        skipExecutionService.setSkipExecutions(null);
+        skipExecutionService.setSkipFlows(null);
+        skipExecutionService.setSkipNamespaces(null);
+        skipExecutionService.setSkipTenants(null);
+    }
 
     @Test
     void skipExecutionByExecutionId() {
@@ -64,5 +73,26 @@ class SkipExecutionServiceTest {
         assertThat(skipExecutionService.skipExecution("wrong", "namespace", "skip", "random"), is(false));
         assertThat(skipExecutionService.skipExecution(null, "namespace", "not_skipped", "random"), is(false));
         assertThat(skipExecutionService.skipExecution("tenant", "namespace", "not_skipped", "random"), is(false));
+    }
+
+    @Test
+    void skipExecutionByNamespace() {
+        skipExecutionService.setSkipNamespaces(List.of("tenant|namespace"));
+
+        assertThat(skipExecutionService.skipExecution("tenant", "namespace", "someFlow", "someExecution"), is(true));
+        assertThat(skipExecutionService.skipExecution(null, "namespace", "someFlow", "someExecution"), is(false));
+        assertThat(skipExecutionService.skipExecution("anotherTenant", "namespace", "someFlow", "someExecution"), is(false));
+        assertThat(skipExecutionService.skipExecution("tenant", "namespace", "anotherFlow", "anotherExecution"), is(true));
+        assertThat(skipExecutionService.skipExecution("tenant", "other.namespace", "someFlow", "someExecution"), is(false));
+    }
+
+    @Test
+    void skipExecutionByTenantId() {
+        skipExecutionService.setSkipTenants(List.of("tenant"));
+
+        assertThat(skipExecutionService.skipExecution("tenant", "namespace", "someFlow", "someExecution"), is(true));
+        assertThat(skipExecutionService.skipExecution("anotherTenant", "namespace", "someFlow", "someExecution"), is(false));
+        assertThat(skipExecutionService.skipExecution("tenant", "another.namespace", "someFlow", "someExecution"), is(true));
+        assertThat(skipExecutionService.skipExecution("anotherTenant", "another.namespace", "someFlow", "someExecution"), is(false));
     }
 }

@@ -10,7 +10,6 @@
     "revision": "Révision",
     "Language": "Langue",
     "Set default page": "Définir la page par défaut",
-    "settings": "Paramètres",
     "theme": "Thème",
     "flows": "Flows",
     "flow": "Flow",
@@ -40,6 +39,7 @@
     "is deprecated": "est déprécié(e)",
     "success": "Succès",
     "save": "Enregistrer",
+    "save task": "Enregistrer la tâche",
     "saved": "Enregistrement réussi",
     "saved done": "<em>{name}</em> est enregistré avec succès",
     "multiple saved done": "{name} ont été enregistré(e)s",
@@ -268,7 +268,7 @@
     "template": "Template",
     "template creation": "Création de template",
     "templates": "Templates",
-    "templates deprecated": "Les templates sont obsolètes. Veuillez utiliser des sous-flux au lieu des templates. Consultez <a href=\"https://kestra.io/docs/migrations/templates\" target=\"_blank\">section Migrations</a> expliquant comment vous pouvez migrer vers les sous-flux.",
+    "templates deprecated": "Les templates sont obsolètes. Veuillez utiliser des sous-flux au lieu des templates. Consultez <a href=\"https://kestra.io/docs/migration-guide/templates\" target=\"_blank\">section Migrations</a> expliquant comment vous pouvez migrer vers les sous-flux.",
     "no result": "Aucun résultat pour la selection courante.",
     "trigger": "Déclencheur",
     "triggers": "Déclencheurs",
@@ -297,10 +297,19 @@
     "errors": {
       "404": {
         "title": "Page introuvable",
-        "content": "L'URL demandé est introuvable sur ce serveur. <span class=\"text-muted\">C'est tout ce que nous savons.</span>",
+        "content": "L'URL demandée n'a pas été trouvée sur ce serveur.<br />C'est tout ce que nous savons.",
         "flow or execution": "Le flow ou l'exécution demandé est introuvable."
+      },
+      "401": {
+        "title": "Non authentifié",
+        "content": "Vous devez être authentifié pour accéder à cette page."
+      },
+      "403": {
+        "title": "Accès refusé",
+        "content": "Vous n'avez pas les permissions suffisantes pour accéder à cette page."
       }
     },
+    "back_to_dashboard": "Retour au tableau de bord",
     "copy logs": "Copier les logs",
     "download logs": "Télécharger les logs",
     "delete logs": "Supprimer les logs",
@@ -560,6 +569,13 @@
     "encoding": "Encodage",
     "all executions": "Toutes les exécutions",
     "trigger execution id": "Id parent",
+    "triggers_state": {
+      "state": "État",
+      "options": {
+        "enabled": "Activé",
+        "disabled": "Désactivé"
+      }
+    },
     "trigger filter": {
       "title": "Filtrer les enfants",
       "options": {
@@ -570,55 +586,59 @@
     },
     "namespace files": {
       "toggle": {
-        "show": "Afficher les fichiers de l'espace de noms",
-        "hide": "Masquer les fichiers de l'espace de noms"
+          "show": "Afficher les fichiers de l'espace de noms",
+          "hide": "Masquer les fichiers de l'espace de noms"
       },
       "filter": "Filtrer",
+      "no_items": {
+        "heading": "Il n'y a aucun fichier ici!",
+        "paragraph": "Créez ou importez vos fichiers pour commencer."
+      },
       "tree": {
-        "expand": "Développer tous les dossiers",
-        "collapse": "Réduire tous les dossiers"
+          "expand": "Développer tous les dossiers",
+          "collapse": "Réduire tous les dossiers"
       },
       "create": {
-        "label": "Créer",
-        "file": "Créer un fichier",
-        "folder": "Créer un dossier"
+          "label": "Créer",
+          "file": "Créer un fichier",
+          "folder": "Créer un dossier"
       },
       "rename": {
-        "label": "Renommer",
-        "file": "Renommer le fichier",
-        "folder": "Renommer le dossier",
-        "new_file": "Nouveau nom avec extension :",
-        "new_folder": "Nouveau nom de dossier :"
+          "label": "Renommer",
+          "file": "Renommer le fichier",
+          "folder": "Renommer le dossier",
+          "new_file": "Nouveau nom avec extension :",
+          "new_folder": "Nouveau nom de dossier :"
       },
       "delete": {
-        "label": "Supprimer",
-        "file": "Supprimer le fichier",
-        "folder": "Supprimer le dossier"
+          "label": "Supprimer",
+          "file": "Supprimer le fichier",
+          "folder": "Supprimer le dossier"
       },
       "import": {
-        "import": "Importer",
-        "file": "Importer un fichier",
-        "folder": "Importer un dossier",
-        "success": "Fichier(s) importé(s) avec succès",
-        "error": "Des erreurs se sont produites lors de l'importation du(des) fichier(s)"
+          "import": "Importer",
+          "files": "Importer des fichiers",
+          "folder": "Importer un dossier",
+          "success": "Fichier(s) importé(s) avec succès",
+          "error": "Des erreurs se sont produites lors de l'importation du(des) fichier(s)"
       },
-      "export": "Exporter les fichiers du namespace",
+      "export": "Exporter les fichiers de l'espace de noms",
       "dialog": {
-        "name": {
-          "file": "Nom avec extension :",
-          "folder": "Nom du dossier :"
-        },
-        "parent_folder": "Dossier parent :",
-        "file_deletion": "Confirmer la suppression du fichier",
-        "folder_deletion": "Confirmer la suppression du dossier",
-        "file_deletion_description": "Êtes-vous sûr de vouloir supprimer ce fichier ?",
-        "folder_deletion_description": "Êtes-vous sûr de vouloir supprimer ce dossier et tous ses contenus ?",
-        "confirm": "Confirmer"
+          "name": {
+              "file": "Nom avec extension :",
+              "folder": "Nom du dossier :"
+          },
+          "parent_folder": "Dossier parent :",
+          "file_deletion": "Confirmer la suppression du fichier",
+          "folder_deletion": "Confirmer la suppression du dossier",
+          "file_deletion_description": "Êtes-vous sûr de vouloir supprimer ce fichier ?",
+          "folder_deletion_description": "Êtes-vous sûr de vouloir supprimer ce dossier et tous ses contenus ?",
+          "confirm": "Confirmer"
       },
       "path": {
-        "copy": "Copier le chemin",
-        "success": "Chemin copié dans le presse-papiers",
-        "error": "Des erreurs se sont produites lors de la copie du chemin dans le presse-papiers"
+          "copy": "Copier le chemin",
+          "success": "Chemin copié dans le presse-papiers",
+          "error": "Des erreurs se sont produites lors de la copie du chemin dans le presse-papiers"
       }
     },
     "relative": "Relative",
@@ -629,6 +649,9 @@
     "continue backfill": "Continuer le backfill",
     "delete backfill": "Supprimer le backfill",
     "pause backfill": "Mettre en pause le backfill",
+    "continue backfills": "Continuer les backfills",
+    "delete backfills": "Supprimer les backfills",
+    "pause backfills": "Mettre en pause les backfills",
     "backfill executions": "Backfill d'exécutions",
     "execute backfill": "Exécuter le backfill",
     "backfill": "Backfill",
@@ -670,6 +693,117 @@
       "title2": "Cherchez des tâches et des déclencheurs pour créer vos flux.",
       "search": "Cherchez à travers +{count} plugins"
     },
-    "no inputs": "Ce flow n'a pas d'entrée."
+    "no inputs": "Ce flow n'a pas d'entrée.",
+    "settings": {
+      "label": "Paramètres",
+      "blocks": {
+        "configuration": {
+          "label": "Configuration Principale",
+          "fields": {
+            "language": "Langue",
+            "default_namespace": "Espace de noms par défaut",
+            "log_level": "Niveau d'affichage des journaux par défaut",
+            "log_display": "Affichage des journaux par défaut",
+            "execute_flow": "Exécuter le flow"
+          }
+        },
+        "theme": {
+          "label": "Préférences de thème",
+          "fields": {
+            "mode": "Mode thème",
+            "editor_theme": "Thème de l'éditeur",
+            "editor_font_size": "Taille de Police de l'éditeur",
+            "editor_font_family": "Police de caractères de l'éditeur",
+            "editor_folding_stratgy": "Stratégie de Pliage Automatique ou Multi-Lignes de l'Éditeur",
+            "environment_name": "Nom de l'Environnement",
+            "environment_color": "Couleur de l'Environnement"
+          }
+        },
+        "localization": {
+          "label": "Paramètres de Date et d'Heure",
+          "note": "Remarque ce paramètre est utilisé pour afficher les propriétés de date et d'heure dans l'interface utilisateur. Pour planifier vos flux dans un fuseau horaire différent de l'UTC, assurez-vous de définir la propriété de fuseau horaire sur le déclencheur de planification dans le code de votre",
+          "fields": {
+            "time_zone": "Fuseau Horaire",
+            "date_format": "Format de Date"
+          }
+        },
+        "export": {
+          "label": "Exporter",
+          "fields": {
+            "flows": "Exporter tous les Flux",
+            "templates": "Exporter tous les modèles"
+          }
+        }
+      }
+    },
+    "onboarding": {
+      "next": "Suivant",
+      "previous": "Précédent",
+      "finish": "Finir",
+      "skip": "Passer le tutoriel",
+      "steps": {
+        "0": {
+          "title": "Bienvenue chez Kestra!",
+          "content": "Nous sommes ravis de vous avoir ici.<br />Créons votre premier flux.",
+          "primary": "Allons-y!"
+        },
+        "1": {
+          "title": "Choisissez un cas d'utilisation<br />et nous vous montrerons comment faire!",
+          "primary": "Suivant"
+        },
+        "2": {
+          "title": "Éditeur de code",
+          "content": "Votre flux est écrit en YAML avec autocomplétion et validation de la syntaxe. Si simple!",
+          "primary": "Suivant"
+        },
+        "3": {
+          "title": "Vue topologique",
+          "content": "La vue de dépendance se met à jour en temps réel. Essayez d'ajouter une nouvelle tâche et voyez!",
+          "primary": "Suivant"
+        },
+        "4": {
+          "title": "Il est temps de l'exécuter.",
+          "content": "\"Exécuter\" pour lancer votre flux."
+        },
+        "5": {
+          "title": "Confirmez et lancez!",
+          "content": "\"Exécuter\" et voyez votre flux en action."
+        },
+        "6": {
+          "title": "Vous êtes prêt!",
+          "content": "Consultez les onglets Logs et Outputs pour suivre la progression de votre exécution.<br /><br />Ensuite, rendez-vous sur la page Flows pour explorer d'autres cas d'utilisation.",
+          "primary": "Créer un nouveau flux",
+          "secondary": "Explorer d'autres flux"
+        }
+      }
+    },
+    "enable concurrency": "Activer la concurrence",
+    "auditlogs": "Journaux d'audit",
+    "iam": "IAM",
+    "tenant": "Tenant",
+    "tenants": "Tenants",
+    "ee-tooltip": {
+      "features-blocked": "Cette fonctionnalité nécessite l'édition Enterprise.",
+      "button": "Contactez-nous"
+    },
+    "flow_only": "Disponible uniquement sur l'onglet Flow.",
+    "bulk unpause backfills": "Reprendre {count} backfill",
+    "bulk pause backfills": "Mettre en pause {count} backfill",
+    "bulk delete backfills": "Supprimer {count} backfill",
+    "bulk unlock": "Débloquer {count} triggers",
+    "bulk disabled status": {
+      "true": "Désactiver {count} triggers",
+      "false": "Activer {count} triggers"
+    },
+    "unlock": "Débloquer",
+    "bulk success unpause backfills": "{count} backfills redémarrés",
+    "bulk success pause backfills": "{count} backfills mis en pause",
+    "bulk success delete backfills": "{count} backfills supprimés",
+    "bulk success unlock": "{count} triggers débloqués",
+    "bulk success disabled status": {
+      "true": "{count} triggers désactivés",
+      "false": "{count} triggers activés"
+    },
+    "workerId": "Worker Id"
   }
 }

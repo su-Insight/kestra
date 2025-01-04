@@ -12,13 +12,23 @@ import java.util.List;
 public class SkipExecutionService {
     private volatile List<String> skipExecutions = Collections.emptyList();
     private volatile List<FlowId> skipFlows = Collections.emptyList();
+    private volatile List<NamespaceId> skipNamespaces = Collections.emptyList();
+    private volatile List<String> skipTenants = Collections.emptyList();
 
     public synchronized void setSkipExecutions(List<String> skipExecutions) {
-        this.skipExecutions = skipExecutions;
+        this.skipExecutions = skipExecutions == null ? Collections.emptyList() : skipExecutions;
     }
 
     public synchronized void setSkipFlows(List<String> skipFlows) {
-        this.skipFlows = skipFlows == null ? Collections.emptyList() : skipFlows.stream().map(flow -> FlowId.from(flow)).toList();
+        this.skipFlows = skipFlows == null ? Collections.emptyList() : skipFlows.stream().map(FlowId::from).toList();
+    }
+
+    public synchronized void setSkipNamespaces(List<String> skipNamespaces) {
+        this.skipNamespaces = skipNamespaces == null ? Collections.emptyList() : skipNamespaces.stream().map(NamespaceId::from).toList();
+    }
+
+    public synchronized void setSkipTenants(List<String> skipTenants) {
+        this.skipTenants = skipTenants == null ? Collections.emptyList() : skipTenants;
     }
 
     /**
@@ -38,17 +48,30 @@ public class SkipExecutionService {
 
     @VisibleForTesting
     boolean skipExecution(String tenant, String namespace, String flow, String executionId) {
-        return skipExecutions.contains(executionId) ||
-            skipFlows.contains(new FlowId(tenant, namespace, flow));
+        return (tenant != null && skipTenants.contains(tenant)) ||
+            skipNamespaces.contains(new NamespaceId(tenant, namespace)) ||
+            skipFlows.contains(new FlowId(tenant, namespace, flow)) ||
+            (executionId != null && skipExecutions.contains(executionId));
+    }
+
+    private static String[] splitIdParts(String id) {
+        return id.split("\\|");
     }
 
     record FlowId(String tenant, String namespace, String flow) {
         static FlowId from(String flowId) {
-            String[] parts = flowId.split("\\|");
+            String[] parts = SkipExecutionService.splitIdParts(flowId);
             if (parts.length == 3) {
                 return new FlowId(parts[0], parts[1], parts[2]);
             }
             return new FlowId(null, parts[0], parts[1]);
+        }
+    };
+
+    record NamespaceId(String tenant, String namespace) {
+        static NamespaceId from(String namespaceId) {
+            String[] parts = SkipExecutionService.splitIdParts(namespaceId);
+            return new NamespaceId(parts[0], parts[1]);
         }
     };
 }

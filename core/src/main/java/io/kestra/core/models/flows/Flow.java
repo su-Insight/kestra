@@ -1,6 +1,7 @@
 package io.kestra.core.models.flows;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
@@ -49,7 +50,11 @@ import java.util.stream.Stream;
 @EqualsAndHashCode
 @FlowValidation
 public class Flow extends AbstractFlow {
-    private static final ObjectMapper jsonMapper = JacksonMapper.ofJson().copy()
+    private static final ObjectMapper NON_DEFAULT_OBJECT_MAPPER = JacksonMapper.ofYaml()
+        .copy()
+        .setSerializationInclusion(JsonInclude.Include.NON_DEFAULT);
+
+    private static final ObjectMapper WITHOUT_REVISION_OBJECT_MAPPER = NON_DEFAULT_OBJECT_MAPPER.copy()
         .setAnnotationIntrospector(new JacksonAnnotationIntrospector() {
             @Override
             public boolean hasIgnoreMarker(final AnnotatedMember m) {
@@ -82,7 +87,21 @@ public class Flow extends AbstractFlow {
     List<AbstractTrigger> triggers;
 
     @Valid
-    List<TaskDefault> taskDefaults;
+    List<PluginDefault> pluginDefaults;
+
+    @Valid
+    List<PluginDefault> taskDefaults;
+
+    @Deprecated
+    public void setTaskDefaults(List<PluginDefault> taskDefaults) {
+        this.pluginDefaults = taskDefaults;
+        this.taskDefaults = taskDefaults;
+    }
+
+    @Deprecated
+    public List<PluginDefault> getTaskDefaults() {
+        return this.taskDefaults;
+    }
 
     @Valid
     Concurrency concurrency;
@@ -150,7 +169,7 @@ public class Flow extends AbstractFlow {
         return Stream.of(
                 Optional.ofNullable(triggers).orElse(Collections.emptyList()).stream().map(AbstractTrigger::getType),
                 allTasks().map(Task::getType),
-                Optional.ofNullable(taskDefaults).orElse(Collections.emptyList()).stream().map(TaskDefault::getType)
+                Optional.ofNullable(pluginDefaults).orElse(Collections.emptyList()).stream().map(PluginDefault::getType)
             ).reduce(Stream::concat).orElse(Stream.empty())
             .distinct();
     }
@@ -167,7 +186,7 @@ public class Flow extends AbstractFlow {
     public List<Task> allTasksWithChilds() {
         return allTasks()
             .flatMap(this::allTasksWithChilds)
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private Stream<Task> allTasksWithChilds(Task task) {
@@ -190,7 +209,7 @@ public class Flow extends AbstractFlow {
     public List<String> allTriggerIds() {
         return this.triggers != null ? this.triggers.stream()
             .map(AbstractTrigger::getId)
-            .collect(Collectors.toList()) : new ArrayList<>();
+            .toList() : new ArrayList<>();
     }
 
     public List<String> allTasksWithChildsAndTriggerIds() {
@@ -199,7 +218,7 @@ public class Flow extends AbstractFlow {
                 .map(Task::getId),
             this.allTriggerIds().stream()
         )
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public List<Task> allErrorsWithChilds() {
@@ -240,9 +259,10 @@ public class Flow extends AbstractFlow {
 
     public Flow updateTask(String taskId, Task newValue) throws InternalException {
         Task task = this.findTaskByTaskId(taskId);
-        Map<String, Object> map = JacksonMapper.toMap(this);
 
-        return JacksonMapper.toMap(
+        Map<String, Object> map = NON_DEFAULT_OBJECT_MAPPER.convertValue(this, JacksonMapper.MAP_TYPE_REFERENCE);
+
+        return NON_DEFAULT_OBJECT_MAPPER.convertValue(
             recursiveUpdate(map, task, newValue),
             Flow.class
         );
@@ -254,7 +274,7 @@ public class Flow extends AbstractFlow {
             if (value.containsKey("id") && value.get("id").equals(previous.getId()) &&
                 value.containsKey("type") && value.get("type").equals(previous.getType())
             ) {
-                return JacksonMapper.toMap(newValue);
+                return NON_DEFAULT_OBJECT_MAPPER.convertValue(newValue, JacksonMapper.MAP_TYPE_REFERENCE);
             } else {
                 return value
                     .entrySet()
@@ -270,7 +290,7 @@ public class Flow extends AbstractFlow {
             return value
                 .stream()
                 .map(r -> recursiveUpdate(r, previous, newValue))
-                .collect(Collectors.toList());
+                .toList();
         } else {
             return object;
         }
@@ -284,12 +304,12 @@ public class Flow extends AbstractFlow {
         return this.getListeners()
             .stream()
             .flatMap(listener -> listener.getTasks().stream())
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public boolean equalsWithoutRevision(Flow o) {
         try {
-            return jsonMapper.writeValueAsString(this).equals(jsonMapper.writeValueAsString(o));
+            return WITHOUT_REVISION_OBJECT_MAPPER.writeValueAsString(this).equals(WITHOUT_REVISION_OBJECT_MAPPER.writeValueAsString(o));
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }

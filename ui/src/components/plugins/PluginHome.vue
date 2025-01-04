@@ -16,8 +16,8 @@
             clearable
         />
     </el-row>
-    <section class="container plugins-container pb-2">
-        <el-tooltip v-for="(plugin, index) in pluginsList" :key="index" effect="light">
+    <section class="container plugins-container">
+        <el-tooltip v-for="(plugin, index) in pluginsList" :show-after="1000" :key="index" effect="light">
             <template #content>
                 <div class="tasks-tooltips">
                     <p v-if="plugin?.tasks.filter(t => t.toLowerCase().includes(searchInput)).length > 0">
@@ -68,7 +68,12 @@
                 </div>
             </template>
             <div v-if="isVisible(plugin)" class="plugin-card" @click="openGroup(plugin)">
-                <task-icon class="size" :only-icon="true" :cls="hasIcon(plugin.subGroup) ? plugin.subGroup : plugin.group" :icons="icons" />
+                <task-icon
+                    class="size"
+                    :only-icon="true"
+                    :cls="hasIcon(plugin.subGroup) ? plugin.subGroup : plugin.group"
+                    :icons="icons"
+                />
                 <span class="text-truncate">{{ plugin.title.capitalize() }}</span>
             </div>
         </el-tooltip>
@@ -144,11 +149,17 @@
         },
         methods: {
             openGroup(plugin) {
-                if (plugin.tasks.length > 0) {
-                    this.openPlugin(plugin.tasks[0])
-                }
+                this.openPlugin(
+                    plugin.tasks?.[0] ??
+                        plugin.triggers?.[0] ??
+                        plugin.conditions?.[0] ??
+                        plugin.taskRunners?.[0]
+                )
             },
             openPlugin(cls) {
+                if (!cls) {
+                    return;
+                }
                 this.$router.push({name: "plugins/view", params: {cls: cls}})
             },
             isVisible(plugin) {
@@ -186,6 +197,7 @@
         margin: 0 auto;
         justify-content: center;
         align-items: flex-start;
+        padding-bottom: 4rem;
     }
 
     .tasks-tooltips {

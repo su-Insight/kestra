@@ -30,7 +30,7 @@
                 </div>
                 <div class="right-align">
                     <el-form-item class="submit">
-                        <el-button :icon="Flash" class="flow-run-trigger-button" @click="onSubmit($refs.form)" type="primary" native-type="submit" :disabled="flow.disabled || haveBadLabels">
+                        <el-button :icon="Flash" class="flow-run-trigger-button" :class="{'onboarding-glow': guidedProperties.tourStarted}" @click="onSubmit($refs.form)" type="primary" native-type="submit" :disabled="flow.disabled || haveBadLabels">
                             {{ $t('launch execution') }}
                         </el-button>
                         <el-text v-if="haveBadLabels" type="danger" size="small">
@@ -53,7 +53,6 @@
     import {executeTask} from "../../utils/submitTask"
     import InputsForm from "../../components/inputs/InputsForm.vue";
     import LabelInput from "../../components/labels/LabelInput.vue";
-    import {pageFromRoute} from "../../utils/eventsRouter";
     import {executeFlowBehaviours, storageKeys} from "../../utils/constants";
     import Inputs from "../../utils/inputs";
 
@@ -81,8 +80,8 @@
         },
         emits: ["executionTrigger", "updateInputs", "updateLabels"],
         computed: {
-            ...mapState("core", ["guidedProperties"]),
             ...mapState("execution", ["flow", "execution"]),
+            ...mapState("core", ["guidedProperties"]),
             haveBadLabels() {
                 return this.executionLabels.some(label => (label.key && !label.value) || (!label.key && label.value));
             },
@@ -118,61 +117,35 @@
                         this.inputs[input.id] =  Inputs.normalize(input.type, value);
                     });
             },
-            onSubmit(formRef) {
-                if (this.$tours["guidedTour"].isRunning.value) {
-                    this.finishTour();
+            purgeInputs(inputs){
+                for (let input in inputs) {
+                    if (inputs[input] === undefined || inputs[input] === "") {
+                        inputs[input] = null;
+                    }
                 }
+                return inputs;
+            },
+            onSubmit(formRef) {
                 if (formRef) {
                     formRef.validate((valid) => {
                         if (!valid) {
                             return false;
                         }
 
-                        executeTask(this, this.flow, this.inputs, {
+                        const inputs = this.purgeInputs(this.inputs)
+                        executeTask(this, this.flow, inputs, {
                             redirect: this.redirect,
                             newTab: this.newTab,
                             id: this.flow.id,
                             namespace: this.flow.namespace,
                             labels: this.executionLabels
                                 .filter(label => label.key && label.value)
-                                .map(label => `${label.key}:${label.value}`)
+                                .map(label => `${label.key}:${label.value}`),
+                            nextStep: true
                         })
                         this.$emit("executionTrigger");
                     });
                 }
-            },
-            finishTour() {
-                this.$store.dispatch("api/events", {
-                    type: "ONBOARDING",
-                    onboarding: {
-                        step: this.$tours["guidedTour"].currentStep._value,
-                        action: "execute",
-                    },
-                    page: pageFromRoute(this.$router.currentRoute.value)
-                });
-
-                this.$store.dispatch("api/events", {
-                    type: "ONBOARDING",
-                    onboarding: {
-                        step: this.$tours["guidedTour"].currentStep._value,
-                        action: "finish",
-                    },
-                    page: pageFromRoute(this.$router.currentRoute.value)
-                });
-
-                localStorage.setItem("tourDoneOrSkip", "true");
-
-                this.$store.commit("core/setGuidedProperties", {
-                    tourStarted: false,
-                    flowSource: undefined,
-                    saveFlow: false,
-                    executeFlow: false,
-                    validateInputs: false,
-                    monacoRange: undefined,
-                    monacoDisableRange: undefined
-                });
-
-                return this.$tours["guidedTour"].finish();
             },
 
             state(input) {
@@ -201,14 +174,6 @@
                     this.$emit("updateLabels", this.executionLabels);
                 },
                 deep: true
-            },
-            guidedProperties: {
-                handler() {
-                    if (this.guidedProperties.validateInputs) {
-                        this.onSubmit(this.$refs.form);
-                    }
-                },
-                deep: true
             }
         }
     };
@@ -221,6 +186,19 @@
             border: 0;
             font-size: var(--el-font-size-extra-small);
             background: transparent;
+        }
+    }
+
+    .onboarding-glow {
+        animation: glowAnimation 1s infinite alternate;
+    }
+
+    @keyframes glowAnimation {
+        0% {
+            box-shadow: 0px 0px 0px 0px #8405FF;
+        }
+        100% {
+            box-shadow: 0px 0px 50px 2px #8405FF;
         }
     }
 </style>

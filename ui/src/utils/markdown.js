@@ -7,6 +7,7 @@ import {fromHighlighter} from "@shikijs/markdown-it/core"
 import {getHighlighterCore} from "shiki/core"
 import githubDark from "shiki/themes/github-dark.mjs";
 import githubLight from "shiki/themes/github-light.mjs";
+import {linkTag} from "./markdown_plugins/link";
 
 export default class Markdown {
     static async render(markdown, options) {
@@ -20,6 +21,8 @@ export default class Markdown {
             ],
             langs: [
                 import("shiki/langs/yaml.mjs"),
+                import("shiki/langs/python.mjs"),
+                import("shiki/langs/javascript.mjs")
             ],
             loadWasm: import("shiki/wasm")
         })
@@ -42,7 +45,8 @@ export default class Markdown {
             .use(container, "info")
             .use(fromHighlighter(highlighter, {
                 theme: darkTheme ? "github-dark" : "github-light",
-            }));
+            }))
+            .use(linkTag);
 
         md.set({
             html: true,

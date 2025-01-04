@@ -10,7 +10,6 @@
     "revision": "Revision",
     "Language": "Language",
     "Set default page": "Set default page",
-    "settings": "Settings",
     "theme": "Theme",
     "flows": "Flows",
     "flow": "Flow",
@@ -41,6 +40,7 @@
     "is deprecated": "is deprecated",
     "success": "Success",
     "save": "Save",
+    "save task": "Save Task",
     "saved": "Successfully saved",
     "saved done": "<em>{name}</em> is successfully saved",
     "multiple saved done": "{name} have been saved",
@@ -279,7 +279,7 @@
     "template": "Template",
     "template creation": "Template creation",
     "templates": "Templates",
-    "templates deprecated": "Templates are deprecated. Please use subflows instead. See the <a href=\"https://kestra.io/docs/migrations/templates\" target=\"_blank\">Migrations section</a> explaining how you can migrate from templates to subflows.",
+    "templates deprecated": "Templates are deprecated. Please use subflows instead. See the <a href=\"https://kestra.io/docs/migration-guide/templates\" target=\"_blank\">Migrations section</a> explaining how you can migrate from templates to subflows.",
     "no result": "No results for the current selection",
     "trigger": "Trigger",
     "triggers": "Triggers",
@@ -308,10 +308,19 @@
     "errors": {
       "404": {
         "title": "Page not found",
-        "content": "The requested URL was not found on this server. <span class=\"text-muted\">That’s all we know.</span>",
+        "content": "The requested URL was not found on this server.<br />That’s all we know.",
         "flow or execution": "The flow or execution you are looking for does not exist."
+      },
+      "401": {
+        "title": "Unauthorized",
+        "content": "You need to be authenticated to access this page."
+      },
+      "403": {
+        "title": "Access denied",
+        "content": "You don't have the required permissions to access this page."
       }
     },
+    "back_to_dashboard": "Back to dashboard",
     "copy logs": "Copy logs",
     "download logs": "Download logs",
     "delete logs": "Delete logs",
@@ -398,11 +407,13 @@
     "onboarding-content": {
       "step1": {
         "title": "Welcome to Kestra!",
-        "content": "Kestra uses a declarative interface to create a language-agnostic workflow definition in a YAML file format. Follow the next steps to create your first workflow."
+        "content": "We're thrilled to have you here.<br />Let's create your first flow.",
+        "action": "Let's go!"
       },
       "step2": {
-        "title": "This is the built-in code editor",
-        "content": "You can edit your flow directly here from the UI. To add comments to your code, use <code>#</code>. Kestra provides autocompletion for all workflow components, including tasks, triggers and inputs. Start typing and use the keyboard shortcut <kbd>CTRL or ⌘ + SPACE</kbd> to leverage the autocompletion feature."
+        "title": "Choose a use-case<br />and we'll show you how it's done!",
+        "content": "You can edit your flow directly here from the UI. To add comments to your code, use <code>#</code>. Kestra provides autocompletion for all workflow components, including tasks, triggers and inputs. Start typing and use the keyboard shortcut <kbd>CTRL or ⌘ + SPACE</kbd> to leverage the autocompletion feature.",
+        "action": "Next"
       },
       "step3": {
         "title": "Let's write your first flow!",
@@ -467,6 +478,7 @@
       "triggerSchedule1": "Here we use the 'Schedule' trigger to run the flow every minute."
     },
     "Skip tour": "Skip tour",
+    "Skip tutorial": "Skip Tutorial",
     "Next step": "Next step",
     "Previous step": "Previous step",
     "Finish": "Finish",
@@ -513,7 +525,7 @@
     "can not save": "Can not save",
     "flow must have id and namespace": "Flow must have an id and a namespace.",
     "readonly property": "Read-only property",
-    "namespace and id readonly": "Namespace and id are read-only. They were reinitialized to their initial value.",
+    "namespace and id readonly": "The properties `namespace` and `id` cannot be changed — they are now set to their initial values. If you want to rename a flow or change its namespace, you can create a new flow and remove the old one.",
     "avg": "Average",
     "sum": "Sum",
     "min": "Min",
@@ -542,7 +554,7 @@
     "environment color setting": "Environment color",
     "slack support": "Ask any question via Slack",
     "join community": "Join the Community",
-    "reach us": "Reach out to us",
+    "reach us": "Talk to us",
     "new version": "New version {version} available!",
     "error detected": "Error(s) detected",
     "warning detected": "Warning(s) detected",
@@ -584,6 +596,13 @@
     "advanced configuration": "Advanced configuration",
     "all executions": "All executions",
     "trigger execution id": "Trigger Execution Id",
+    "triggers_state": {
+      "state": "State",
+      "options": {
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      }
+    },
     "trigger filter": {
       "title": "Filter children executions",
       "options": {
@@ -598,6 +617,10 @@
         "hide": "Hide namespace files"
       },
       "filter": "Filter",
+      "no_items": {
+        "heading": "There are no files here!",
+        "paragraph": "Create or import your files to get started."
+      },
       "tree": {
         "expand": "Expand all folders",
         "collapse": "Collapse all folders"
@@ -621,7 +644,7 @@
       },
       "import": {
         "import": "Import",
-        "file": "Import file",
+        "files": "Import files",
         "folder": "Import folder",
         "success": "File(s) successfully imported",
         "error": "Error(s) occurred while importing the file(s)"
@@ -648,6 +671,9 @@
     "continue backfill": "Continue the backfill",
     "delete backfill": "Delete the backfill",
     "pause backfill": "Pause the backfill",
+    "continue backfills": "Continue backfills",
+    "delete backfills": "Delete backfills",
+    "pause backfills": "Pause backfills",
     "backfill executions": "Backfill executions",
     "execute backfill": "Execute backfill",
     "relative": "Relative",
@@ -694,6 +720,117 @@
       "title2": "Search for tasks and triggers to build your flow.",
       "search": "Search across +{count} plugins"
     },
-    "no inputs": "This flow has no inputs."
+    "no inputs": "This flow has no inputs.",
+    "settings": {
+      "label": "Settings",
+      "blocks": {
+        "configuration": {
+          "label": "Main Configuration",
+          "fields": {
+            "language": "Language",
+            "default_namespace": "Default Namespace",
+            "log_level": "Default Log Level",
+            "log_display": "Default Log Display",
+            "execute_flow": "Execute the Flow"
+          }
+        },
+        "theme": {
+          "label": "Theme Preferences",
+          "fields": {
+            "mode": "Theme Mode",
+            "editor_theme": "Editor Theme",
+            "editor_font_size": "Editor Font Size",
+            "editor_font_family": "Editor Font Family",
+            "editor_folding_stratgy": "Editor Automatic Fold or Multi Lines",
+            "environment_name": "Environment Name",
+            "environment_color": "Environment Color"
+          }
+        },
+        "localization": {
+          "label": "Date and Time Settings",
+          "note": "Note that this setting is used for displaying date and time properties in the UI. To schedule your flows in a timezone different than UTC, make sure to set the timezone property on the Schedule trigger in your flow code or your plugin defaults.",
+          "fields": {
+            "time_zone": "Time Zone",
+            "date_format": "Date Format"
+          }
+        },
+        "export": {
+          "label": "Export",
+          "fields": {
+            "flows": "Export All Flows",
+            "templates": "Export All Templates"
+          }
+        }
+      }
+    },
+    "onboarding": {
+      "next": "Next",
+      "previous": "Previous",
+      "finish": "Finish",
+      "skip": "Skip Tutorial",
+      "steps": {
+        "0": {
+          "title": "Welcome to Kestra!",
+          "content": "We're thrilled to have you here.<br />Let's create your first flow.",
+          "primary": "Let's go!"
+        },
+        "1": {
+          "title": "Choose a use-case<br />and we'll show you how it's done!",
+          "primary": "Next"
+        },
+        "2": {
+          "title": "Code Editor",
+          "content": "Your flow is written in YAML with autocompletion and syntax validation. So simple!",
+          "primary": "Next"
+        },
+        "3": {
+          "title": "Topology View",
+          "content": "The dependency view is updating in real time. Try adding a new task and see!",
+          "primary": "Next"
+        },
+        "4": {
+          "title": "It's time to run it.",
+          "content": "\"Execute\" to launch your flow."
+        },
+        "5": {
+          "title": "Confirm and launch!",
+          "content": "\"Execute\" and see your flow in action."
+        },
+        "6": {
+          "title": "You’re all set!",
+          "content": "Check the Logs and Outputs tabs to track your execution progress.<br /><br />Then, head over to the Flows page to explore other use cases.",
+          "primary": "Create a new flow",
+          "secondary": "Explore other Flows"
+        }
+      }
+    },
+    "enable concurrency": "Enable concurrency",
+    "auditlogs": "Audit Logs",
+    "iam": "IAM",
+    "tenant": "Tenant",
+    "tenants": "Tenants",
+    "ee-tooltip": {
+      "features-blocked": "This feature requires Enterprise Edition.",
+      "button": "Talk to us"
+    },
+    "flow_only": "Only available on Flow tab.",
+    "bulk unpause backfills": "Unpause {count} backfill",
+    "bulk pause backfills": "Pause {count} backfill",
+    "bulk delete backfills": "Delete {count} backfill",
+    "bulk unlock": "Unlock {count} triggers",
+    "bulk disabled status": {
+      "true": "Disable {count} triggers",
+      "false": "Enable {count} triggers"
+    },
+    "unlock": "Unlock",
+    "bulk success unpause backfills": "{count} backfills unpaused",
+    "bulk success pause backfills": "{count} backfills paused",
+    "bulk success delete backfills": "{count} backfills deleted",
+    "bulk success unlock": "{count} triggers unlocked",
+    "bulk success disabled status": {
+      "true": "{count} trigger(s) disabled",
+      "false": "{count} trigger(s) enabled"
+    },
+    "workerId": "Worker Id"
   }
 }
