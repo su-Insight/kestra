@@ -13,7 +13,7 @@ import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithException;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.triggers.*;
-import io.kestra.core.models.triggers.types.Schedule;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.queues.WorkerTriggerResultQueueInterface;
@@ -67,7 +67,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
     private final RunContextFactory runContextFactory;
     private final MetricRegistry metricRegistry;
     private final ConditionService conditionService;
-    private final TaskDefaultService taskDefaultService;
+    private final PluginDefaultService pluginDefaultService;
     private final WorkerGroupService workerGroupService;
     private final LogService logService;
 
@@ -90,6 +90,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
 
     private final AtomicReference<ServiceState> state = new AtomicReference<>();
     private final ApplicationEventPublisher<ServiceStateChangeEvent> eventPublisher;
+    protected final List<Runnable> receiveCancellations = new ArrayList<>();
 
     @SuppressWarnings("unchecked")
     @Inject
@@ -107,7 +108,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
         this.runContextFactory = applicationContext.getBean(RunContextFactory.class);
         this.metricRegistry = applicationContext.getBean(MetricRegistry.class);
         this.conditionService = applicationContext.getBean(ConditionService.class);
-        this.taskDefaultService = applicationContext.getBean(TaskDefaultService.class);
+        this.pluginDefaultService = applicationContext.getBean(PluginDefaultService.class);
         this.workerGroupService = applicationContext.getBean(WorkerGroupService.class);
         this.logService = applicationContext.getBean(LogService.class);
         this.eventPublisher = applicationContext.getBean(ApplicationEventPublisher.class);
@@ -200,7 +201,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
         });
 
         // listen to WorkerTriggerResult from worker triggers
-        this.workerTriggerResultQueue.receive(
+        this.receiveCancellations.add(this.workerTriggerResultQueue.receive(
             null,
             Scheduler.class,
             either -> {
@@ -227,7 +228,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
                     this.triggerState.update(Trigger.of(workerTriggerResult.getTriggerContext(), nextExecutionDate));
                 }
             }
-        );
+        ));
         setState(ServiceState.RUNNING);
     }
 
@@ -679,7 +680,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
 
     private Optional<SchedulerExecutionWithTrigger> evaluateScheduleTrigger(FlowWithWorkerTrigger flowWithTrigger) {
         try {
-            FlowWithWorkerTrigger flowWithWorkerTrigger = flowWithTrigger.from(taskDefaultService.injectDefaults(
+            FlowWithWorkerTrigger flowWithWorkerTrigger = flowWithTrigger.from(pluginDefaultService.injectDefaults(
                 flowWithTrigger.getFlow(),
                 flowWithTrigger.getConditionContext().getRunContext().logger()
             ));
@@ -753,7 +754,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
 
     private void sendWorkerTriggerToWorker(FlowWithWorkerTrigger flowWithTrigger) throws InternalException {
         FlowWithWorkerTrigger flowWithTriggerWithDefault = flowWithTrigger.from(
-            taskDefaultService.injectDefaults(flowWithTrigger.getFlow(),
+            pluginDefaultService.injectDefaults(flowWithTrigger.getFlow(),
                 flowWithTrigger.getConditionContext().getRunContext().logger())
         );
 
@@ -799,6 +800,7 @@ public abstract class AbstractScheduler implements Scheduler, Service {
             } catch (Exception e) {
                 log.error("Unexpected error while terminating scheduler.", e);
             }
+            this.receiveCancellations.forEach(Runnable::run);
             this.scheduleExecutor.shutdown();
             setState(ServiceState.TERMINATED_GRACEFULLY);
 

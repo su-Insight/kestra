@@ -13,6 +13,8 @@ export default defineConfig({
     resolve: {
         alias: {
             "override": path.resolve(__dirname, "src/override/"),
+            // allow to render at runtime
+            vue: "vue/dist/vue.esm-bundler.js"
         },
     },
     plugins: [

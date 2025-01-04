@@ -9,12 +9,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.apache.commons.io.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.URI;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Predicate;
@@ -28,6 +30,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 @Setter
 @NoArgsConstructor
 public class LocalStorage implements StorageInterface {
+    private static final Logger log = LoggerFactory.getLogger(LocalStorage.class);
 
     @PluginProperty
     @NotNull
@@ -63,22 +66,40 @@ public class LocalStorage implements StorageInterface {
     @Override
     public List<URI> allByPrefix(String tenantId, URI prefix, boolean includeDirectories) throws IOException {
         Path fsPath = getPath(tenantId, prefix);
-        try (Stream<Path> walk = Files.walk(fsPath)) {
-            return walk.sorted(Comparator.reverseOrder())
-                .filter(path -> includeDirectories || !Files.isDirectory(path))
-                .map(path -> {
-                    Path relativePath = fsPath.relativize(path);
-                    return relativePath + (Files.isDirectory(path) && !relativePath.toString().isEmpty() ? "/" : "");
-                })
-                .filter(Predicate.not(String::isEmpty))
-                .map(path -> {
-                    String prefixPath = prefix.getPath();
-                    return URI.create("kestra://" + prefixPath + (prefixPath.endsWith("/") ? "" : "/") + path);
-                })
-                .toList();
-        } catch (NoSuchFileException e) {
-            return Collections.emptyList();
-        }
+        List<URI> uris = new ArrayList<>();
+        Files.walkFileTree(fsPath, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                if (includeDirectories) {
+                    uris.add(URI.create(dir + "/"));
+                }
+                return super.preVisitDirectory(dir, attrs);
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                uris.add(URI.create(file.toString()));
+                return FileVisitResult.CONTINUE;
+            }
+
+            // This can happen for concurrent deletion while traversing folders so we skip in such case
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                log.warn("Failed to visit file " + file + " while searching all by prefix for path " + prefix.getPath(), exc);
+                return FileVisitResult.SKIP_SUBTREE;
+            }
+        });
+
+        URI fsPathUri = URI.create(fsPath.toString());
+        return uris.stream().sorted(Comparator.reverseOrder())
+            .map(fsPathUri::relativize)
+            .map(URI::getPath)
+            .filter(Predicate.not(String::isEmpty))
+            .map(path -> {
+                String prefixPath = prefix.getPath();
+                return URI.create("kestra://" + prefixPath + (prefixPath.endsWith("/") ? "" : "/") + path);
+            })
+            .toList();
     }
 
     @Override
@@ -108,8 +129,8 @@ public class LocalStorage implements StorageInterface {
     public URI put(String tenantId, URI uri, InputStream data) throws IOException {
         File file = getPath(tenantId, uri).toFile();
         File parent = file.getParentFile();
-        if (!parent.exists() && !parent.mkdirs()) {
-            throw new RuntimeException("Cannot create directory: " + parent.getAbsolutePath());
+        if (!parent.exists()) {
+            parent.mkdirs();
         }
 
         try (data; OutputStream outStream = new FileOutputStream(file)) {

@@ -7,7 +7,7 @@ import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.tasks.flows.Sequential;
+import io.kestra.plugin.core.flow.Sequential;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -38,13 +38,13 @@ import java.util.Optional;
                 "    type: io.kestra.core.tasks.test.BadSequential",
                 "    tasks:",
                 "      - id: 1st",
-                "        type: io.kestra.core.tasks.debugs.Return",
+                "        type: io.kestra.plugin.core.debug.Return",
                 "        format: \"{{task.id}} > {{taskrun.startDate}}\"",
                 "      - id: 2nd",
-                "        type: io.kestra.core.tasks.debugs.Return",
+                "        type: io.kestra.plugin.core.debug.Return",
                 "        format: \"{{task.id}} > {{taskrun.id}}\"",
                 "  - id: last",
-                "    type: io.kestra.core.tasks.debugs.Return",
+                "    type: io.kestra.plugin.core.debug.Return",
                 "    format: \"{{task.id}} > {{taskrun.startDate}}\""
             }
         )

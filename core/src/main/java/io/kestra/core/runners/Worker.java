@@ -25,7 +25,7 @@ import io.kestra.core.server.Service;
 import io.kestra.core.server.ServiceStateChangeEvent;
 import io.kestra.core.services.LogService;
 import io.kestra.core.services.WorkerGroupService;
-import io.kestra.core.tasks.flows.WorkingDirectory;
+import io.kestra.plugin.core.flow.WorkingDirectory;
 import io.kestra.core.utils.Await;
 import io.kestra.core.utils.ExecutorsUtils;
 import io.kestra.core.utils.Hashing;
@@ -46,6 +46,7 @@ import org.slf4j.event.Level;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -125,6 +126,8 @@ public class Worker implements Service, Runnable, AutoCloseable {
 
     private final AtomicReference<ServiceState> state = new AtomicReference<>();
 
+    private final List<Runnable> receiveCancellations = new ArrayList<>();
+
     /**
      * Creates a new {@link Worker} instance.
      *
@@ -170,7 +173,7 @@ public class Worker implements Service, Runnable, AutoCloseable {
     @Override
     public void run() {
         setState(ServiceState.RUNNING);
-        this.executionKilledQueue.receive(executionKilled -> {
+        this.receiveCancellations.addFirst(this.executionKilledQueue.receive(executionKilled -> {
             if (executionKilled == null || !executionKilled.isLeft()) {
                 return;
             }
@@ -201,9 +204,9 @@ public class Worker implements Service, Runnable, AutoCloseable {
                         .forEach(AbstractWorkerThread::kill);
                 }
             }
-        });
+        }));
 
-        this.workerJobQueue.receive(
+        this.receiveCancellations.addFirst(this.workerJobQueue.receive(
             this.workerGroup,
             Worker.class,
             either -> {
@@ -222,7 +225,7 @@ public class Worker implements Service, Runnable, AutoCloseable {
                     }
                 });
             }
-        );
+        ));
     }
 
     private void setState(final ServiceState state) {
@@ -258,14 +261,18 @@ public class Worker implements Service, Runnable, AutoCloseable {
         if (workerTask.getTask() instanceof RunnableTask) {
             this.run(workerTask, true);
         } else if (workerTask.getTask() instanceof WorkingDirectory workingDirectory) {
-            RunContext runContext = workerTask.getRunContext().forWorkingDirectory(applicationContext, workerTask);
 
+            final RunContext workingDirectoryRunContext = workerTask
+                .getRunContext()
+                .forWorkingDirectory(applicationContext, workerTask);
+
+            RunContext runContext = workingDirectoryRunContext;
             try {
                 // preExecuteTasks
                 try {
-                    workingDirectory.preExecuteTasks(runContext, workerTask.getTaskRun());
+                    workingDirectory.preExecuteTasks(workingDirectoryRunContext, workerTask.getTaskRun());
                 } catch (Exception e) {
-                    runContext.logger().error("Failed preExecuteTasks on WorkingDirectory: {}", e.getMessage(), e);
+                    workingDirectoryRunContext.logger().error("Failed preExecuteTasks on WorkingDirectory: {}", e.getMessage(), e);
                     workerTask = workerTask.fail();
                     this.workerTaskResultQueue.emit(new WorkerTaskResult(workerTask));
                     this.logTerminated(workerTask);
@@ -292,18 +299,17 @@ public class Worker implements Service, Runnable, AutoCloseable {
 
                     runContext = runContext.updateVariables(workerTaskResult, workerTask.getTaskRun());
                 }
-                
+
                 // postExecuteTasks
                 try {
-                    workingDirectory.postExecuteTasks(runContext, workerTask.getTaskRun());
+                    workingDirectory.postExecuteTasks(workingDirectoryRunContext, workerTask.getTaskRun());
                 } catch (Exception e) {
-                    runContext.logger().error("Failed postExecuteTasks on WorkingDirectory: {}", e.getMessage(), e);
+                    workingDirectoryRunContext.logger().error("Failed postExecuteTasks on WorkingDirectory: {}", e.getMessage(), e);
                     workerTask = workerTask.fail();
                     this.workerTaskResultQueue.emit(new WorkerTaskResult(workerTask));
-                    this.logTerminated(workerTask);
-                    return;
                 }
             } finally {
+                this.logTerminated(workerTask);
                 runContext.cleanup();
             }
         } else {
@@ -477,7 +483,7 @@ public class Worker implements Service, Runnable, AutoCloseable {
 
             this.logTerminated(workerTask);
 
-            //FIXME should we remove it from the killedExecution set ?
+            killedExecution.remove(workerTask.getTaskRun().getExecutionId());
 
             return workerTaskResult;
         }
@@ -721,13 +727,20 @@ public class Worker implements Service, Runnable, AutoCloseable {
         }
 
         setState(ServiceState.TERMINATING);
-        workerJobQueue.pause();
+
+        try {
+            // close the WorkerJob queue to stop receiving new JobTask execution.
+            workerJobQueue.close();
+        } catch (IOException e) {
+            log.error("Failed to close the WorkerJobQueue");
+        }
 
         final boolean terminatedGracefully;
         if (!skipGracefulTermination.get()) {
             terminatedGracefully = waitForTasksCompletion(timeout);
         } else {
             log.info("Terminating now and skip waiting for tasks completions.");
+            this.receiveCancellations.forEach(Runnable::run);
             this.executorService.shutdownNow();
             closeQueue();
             terminatedGracefully = false;
@@ -742,46 +755,55 @@ public class Worker implements Service, Runnable, AutoCloseable {
     }
 
     private boolean waitForTasksCompletion(final Duration timeout) {
+        final Instant deadline = Instant.now().plus(timeout);
+
+        final List<AbstractWorkerThread> threads;
+        synchronized (this) {
+            // copy to avoid concurrent modification exception on iteration.
+            threads = new ArrayList<>(this.workerThreadReferences);
+        }
+
+        // signals all worker tasks and triggers of the shutdown.
+        threads.forEach(AbstractWorkerThread::signalStop);
+
+        AtomicReference<ServiceState> shutdownState = new AtomicReference<>();
         // start shutdown
         new Thread(
             () -> {
                 try {
+                    this.receiveCancellations.forEach(Runnable::run);
                     this.executorService.shutdown();
-                    this.executorService.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS);
+
+                    long remaining = Math.max(0, Instant.now().until(deadline, ChronoUnit.MILLIS));
+
+                    // wait for all realtime triggers to cleanly stop.
+                    awaitForRealtimeTriggers(threads, Duration.ofMillis(remaining));
+
+                    boolean gracefullyShutdown = this.executorService.awaitTermination(remaining, TimeUnit.MILLISECONDS);
+                    if (!gracefullyShutdown) {
+                        log.warn("Worker still has some pending threads after `terminationGracePeriod`. Forcing shutdown now.");
+                        this.executorService.shutdownNow();
+                    }
+
+                    shutdownState.set(gracefullyShutdown ? TERMINATED_GRACEFULLY : TERMINATED_FORCED);
                 } catch (InterruptedException e) {
-                    log.error("Fail to shutdown the worker", e);
+                    log.error("Failed to shutdown the worker. Thread was interrupted");
+                    shutdownState.set(TERMINATED_FORCED);
                 }
             },
             "worker-shutdown"
         ).start();
 
-        // interrupt RealtimeThread since never ending
-        this.workerThreadReferences
-            .stream()
-            .filter(t -> t instanceof WorkerTriggerRealtimeThread)
-            .map(t -> (WorkerTriggerRealtimeThread) t)
-            .forEach(t -> {
-                t.interrupt();
-
-                logService.logTrigger(
-                    t.getWorkerTrigger().getTriggerContext(),
-                    t.getWorkerTrigger().getConditionContext().getRunContext().logger(),
-                    Level.INFO,
-                    "Type {} interrupted",
-                    t.getWorkerTrigger().getTrigger().getType()
-                );
-            });
 
         // wait for task completion
-        final AtomicBoolean cleanShutdown = new AtomicBoolean(false);
         Await.until(
             () -> {
-                if (this.executorService.isTerminated() || this.workerThreadReferences.isEmpty()) {
+                ServiceState serviceState = shutdownState.get();
+                if (serviceState == TERMINATED_FORCED || serviceState == TERMINATED_GRACEFULLY) {
                     log.info("All working threads are terminated.");
 
                     // we ensure that last produce message are send
                     closeQueue();
-                    cleanShutdown.set(true);
                     return true;
                 }
 
@@ -794,8 +816,32 @@ public class Worker implements Service, Runnable, AutoCloseable {
             Duration.ofSeconds(1)
         );
 
-        // cleanup
-        return cleanShutdown.get();
+        return shutdownState.get() == TERMINATED_GRACEFULLY;
+    }
+
+    private void awaitForRealtimeTriggers(final List<AbstractWorkerThread> threads,
+                                          final Duration timeout) {
+        final Instant deadline = Instant.now().plus(timeout);
+        for (AbstractWorkerThread thread : threads) {
+            if (thread instanceof WorkerTriggerRealtimeThread t) {
+                long remaining = Math.max(0, Instant.now().until(deadline, ChronoUnit.MILLIS));
+
+                if (!t.awaitStop(Duration.ofMillis(remaining))) {
+                    final String type = t.getWorkerTrigger().getTrigger().getType();
+                    log.debug("Failed to stop trigger '{}' before timeout elapsed.", type);
+                    // As a last resort, we try to stop the trigger via Thread.interrupt.
+                    // If the trigger doesn't respond to interrupts, it may never terminate.
+                    t.interrupt();
+                    logService.logTrigger(
+                        t.getWorkerTrigger().getTriggerContext(),
+                        t.getWorkerTrigger().getConditionContext().getRunContext().logger(),
+                        Level.INFO,
+                        "Type {} interrupted",
+                        type
+                    );
+                }
+            }
+        }
     }
 
     private void closeQueue() {
@@ -809,6 +855,7 @@ public class Worker implements Service, Runnable, AutoCloseable {
 
     @VisibleForTesting
     public void shutdown() {
+        this.receiveCancellations.forEach(Runnable::run);
         this.executorService.shutdownNow();
     }
 
