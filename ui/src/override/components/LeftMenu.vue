@@ -1,7 +1,7 @@
 <template>
     <sidebar-menu
         id="side-menu"
-        :menu="menu"
+        :menu="localMenu"
         @update:collapsed="onToggleCollapse"
         width="268px"
         :collapsed="collapsed"
@@ -15,13 +15,14 @@
             <Environment />
         </template>
 
-        <template #footer>
-            <span class="version">{{ configs.version }}</span>
-        </template>
+        <template #footer />
 
         <template #toggle-icon>
-            <chevron-right v-if="collapsed" />
-            <chevron-left v-else />
+            <el-button>
+                <chevron-double-right v-if="collapsed" />
+                <chevron-double-left v-else />
+            </el-button>
+            <span class="version">{{ configs.version }}</span>
         </template>
     </sidebar-menu>
 </template>
@@ -29,31 +30,43 @@
 <script>
     import {SidebarMenu} from "vue-sidebar-menu";
     import Environment from "../../components/layout/Environment.vue";
-    import ChevronLeft from "vue-material-design-icons/ChevronLeft.vue";
-    import ChevronRight from "vue-material-design-icons/ChevronRight.vue";
+    import ChevronDoubleLeft from "vue-material-design-icons/ChevronDoubleLeft.vue";
+    import ChevronDoubleRight from "vue-material-design-icons/ChevronDoubleRight.vue";
     import FileTreeOutline from "vue-material-design-icons/FileTreeOutline.vue";
     import ContentCopy from "vue-material-design-icons/ContentCopy.vue";
     import TimelineClockOutline from "vue-material-design-icons/TimelineClockOutline.vue";
     import TimelineTextOutline from "vue-material-design-icons/TimelineTextOutline.vue";
-    import NotebookOutline from "vue-material-design-icons/NotebookOutline.vue";
-    import Ballot from "vue-material-design-icons/Ballot.vue";
+    import ChartTimeline from "vue-material-design-icons/ChartTimeline.vue";
+    import BallotOutline from "vue-material-design-icons/BallotOutline.vue";
     import FolderEditOutline from "vue-material-design-icons/FolderEditOutline.vue";
-    import AccountSupervisorOutline from "vue-material-design-icons/AccountSupervisorOutline.vue";
+    import ShieldAccountVariantOutline from "vue-material-design-icons/ShieldAccountVariantOutline.vue";
     import CogOutline from "vue-material-design-icons/CogOutline.vue";
     import ViewDashboardVariantOutline from "vue-material-design-icons/ViewDashboardVariantOutline.vue";
     import TimerCogOutline from "vue-material-design-icons/TimerCogOutline.vue";
     import {mapState} from "vuex";
-    import AccountHardHatOutline from "vue-material-design-icons/AccountHardHatOutline.vue";
+    import ChartBoxOutline from "vue-material-design-icons/ChartBoxOutline.vue";
+    import ServerOutline from "vue-material-design-icons/ServerOutline.vue";
+    import {shallowRef} from "vue";
 
     export default {
         components: {
-            ChevronLeft,
-            ChevronRight,
+            ChevronDoubleLeft,
+            ChevronDoubleRight,
             SidebarMenu,
-            Environment,
+            Environment
         },
         emits: ["menu-collapse"],
         methods: {
+            flattenMenu(menu) {
+                return menu.reduce((acc, item) => {
+                    if (item.child) {
+                        acc.push(...this.flattenMenu(item.child));
+                    }
+
+                    acc.push(item);
+                    return acc;
+                }, []);
+            },
             onToggleCollapse(folded) {
                 this.collapsed = folded;
                 localStorage.setItem("menuCollapsed", folded ? "true" : "false");
@@ -71,7 +84,7 @@
                             r.class = "vsm--link_active";
                         }
 
-                        if (r.child && r.child.some(c => this.$route.path.startsWith(c.href))) {
+                        if (r.child && r.child.some(c => this.$route.path.startsWith(c.href) || c.routes?.includes(this.$route.name))) {
                             r.class = "vsm--link_active";
                             r.child = this.disabledCurrentRoute(r.child);
                         }
@@ -88,15 +101,7 @@
                         href: {name: "home"},
                         title: this.$t("homeDashboard.title"),
                         icon: {
-                            element: ViewDashboardVariantOutline,
-                            class: "menu-icon",
-                        },
-                    },
-                    {
-                        href: {name: "editor"},
-                        title: this.$t("editor"),
-                        icon: {
-                            element: FolderEditOutline,
+                            element: shallowRef(ViewDashboardVariantOutline),
                             class: "menu-icon",
                         },
                     },
@@ -105,17 +110,25 @@
                         routes: this.routeStartWith("flows"),
                         title: this.$t("flows"),
                         icon: {
-                            element: FileTreeOutline,
+                            element: shallowRef(FileTreeOutline),
                             class: "menu-icon",
                         },
                         exact: false,
+                    },
+                    {
+                        href: {name: "editor"},
+                        title: this.$t("editor"),
+                        icon: {
+                            element: shallowRef(FolderEditOutline),
+                            class: "menu-icon",
+                        },
                     },
                     {
                         href: {name: "templates/list"},
                         routes: this.routeStartWith("templates"),
                         title: this.$t("templates"),
                         icon: {
-                            element: ContentCopy,
+                            element: shallowRef(ContentCopy),
                             class: "menu-icon",
                         },
                         hidden: !this.configs.isTemplateEnabled
@@ -125,7 +138,7 @@
                         routes: this.routeStartWith("executions"),
                         title: this.$t("executions"),
                         icon: {
-                            element: TimelineClockOutline,
+                            element: shallowRef(TimelineClockOutline),
                             class: "menu-icon"
                         },
                     },
@@ -134,7 +147,7 @@
                         routes: this.routeStartWith("taskruns"),
                         title: this.$t("taskruns"),
                         icon: {
-                            element: TimelineTextOutline,
+                            element: shallowRef(ChartTimeline),
                             class: "menu-icon"
                         },
                         hidden: !this.configs.isTaskRunEnabled
@@ -144,7 +157,7 @@
                         routes: this.routeStartWith("logs"),
                         title: this.$t("logs"),
                         icon: {
-                            element: NotebookOutline,
+                            element: shallowRef(TimelineTextOutline),
                             class: "menu-icon"
                         },
                     },
@@ -153,7 +166,7 @@
                         routes: this.routeStartWith("blueprints"),
                         title: this.$t("blueprints.title"),
                         icon: {
-                            element: Ballot,
+                            element: shallowRef(BallotOutline),
                             class: "menu-icon"
                         },
                     },
@@ -161,7 +174,7 @@
                         title: this.$t("administration"),
                         routes: this.routeStartWith("admin"),
                         icon: {
-                            element: AccountSupervisorOutline,
+                            element: shallowRef(ShieldAccountVariantOutline),
                             class: "menu-icon"
                         },
                         child: [
@@ -170,16 +183,25 @@
                                 routes: this.routeStartWith("admin/triggers"),
                                 title: this.$t("triggers"),
                                 icon: {
-                                    element: TimerCogOutline,
+                                    element: shallowRef(TimerCogOutline),
                                     class: "menu-icon"
                                 }
                             },
                             {
-                                href: {name: "admin/workers"},
-                                routes: this.routeStartWith("admin/workers"),
-                                title: this.$t("workers"),
+                                href: {name: "admin/cluster/services"},
+                                routes: this.routeStartWith("admin/cluster/services"),
+                                title: this.$t("cluster"),
                                 icon: {
-                                    element: AccountHardHatOutline,
+                                    element: shallowRef(ServerOutline),
+                                    class: "menu-icon"
+                                },
+                            },
+                            {
+                                href: {name: "admin/stats"},
+                                routes: this.routeStartWith("admin/stats"),
+                                title: this.$t("stats"),
+                                icon: {
+                                    element: shallowRef(ChartBoxOutline),
                                     class: "menu-icon"
                                 },
                             }
@@ -190,41 +212,54 @@
                         routes: this.routeStartWith("admin/settings"),
                         title: this.$t("settings"),
                         icon: {
-                            element: CogOutline,
+                            element: shallowRef(CogOutline),
                             class: "menu-icon"
                         }
                     }
                 ];
             },
             expandParentIfNeeded() {
-                document.querySelectorAll(".vsm--link_level-1.vsm--link_active:not(.vsm--link_open)[aria-haspopup]").forEach(e => e.click());
+                document.querySelectorAll(".vsm--link.vsm--link_level-1.vsm--link_active:not(.vsm--link_open)[aria-haspopup]").forEach(e => {
+                    e.click()
+                });
             }
+        },
+        updated() {
+            // Required here because in mounted() the menu is not yet rendered
+            this.expandParentIfNeeded();
         },
         watch: {
             menu: {
-                handler() {
-                    this.$el.querySelectorAll(".vsm--item span").forEach(e => {
-                        //empty icon name on mouseover
-                        e.setAttribute("title", "")
-                    });
-                    this.expandParentIfNeeded();
+                handler(newVal, oldVal) {
+                    // Check if the active menu item has changed, if yes then update the menu
+                    if (JSON.stringify(this.flattenMenu(newVal).map(e => e.class?.includes("vsm--link_active") ?? false)) !==
+                        JSON.stringify(this.flattenMenu(oldVal).map(e => e.class?.includes("vsm--link_active") ?? false))) {
+                        this.localMenu = newVal;
+                        this.$el.querySelectorAll(".vsm--item span").forEach(e => {
+                            //empty icon name on mouseover
+                            e.setAttribute("title", "")
+                        });
+                    }
                 },
-                flush: 'post'
-            }
+                flush: "post",
+                deep: true
+            },
         },
         data() {
             return {
                 collapsed: localStorage.getItem("menuCollapsed") === "true",
+                localMenu: []
             };
         },
         computed: {
-            ...mapState("misc", ["configs"]),
+            ...
+                mapState("misc", ["configs"]),
             menu() {
                 return this.disabledCurrentRoute(this.generateMenu());
             }
         },
         mounted() {
-            this.expandParentIfNeeded();
+            this.localMenu = this.menu;
         }
     };
 </script>
@@ -264,16 +299,18 @@
             }
         }
 
+
         span.version {
             transition: 0.2s all;
             white-space: nowrap;
-            font-size: var(--el-font-size-extra-small);
+            font-size: var(--font-size-xs);
             text-align: center;
             display: block;
-            color: var(--bs-gray-400);
+            color: var(--bs-gray-600);
+            width: auto;
 
             html.dark & {
-                color: var(--bs-gray-600);
+                color: var(--bs-gray-800);
             }
         }
 
@@ -318,11 +355,21 @@
         }
 
         .vsm--toggle-btn {
-            padding-top: 4px;
+            padding-top: 16px;
+            padding-bottom: 16px;
+            font-size: 20px;
             background: transparent;
             color: var(--bs-secondary);
-            height: 30px;
             border-top: 1px solid var(--bs-border-color);
+
+            .el-button {
+                padding: 8px;
+                margin-right: 15px;
+                transition: margin-right 0.2s ease;
+                html.dark & {
+                    background: var(--bs-gray-500);
+                }
+            }
         }
 
 
@@ -375,8 +422,13 @@
                 padding: 0 5px;
             }
 
+            .el-button {
+                margin-right: 0;
+            }
+
             span.version {
                 opacity: 0;
+                width: 0;
             }
         }
     }

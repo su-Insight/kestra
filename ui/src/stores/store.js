@@ -2,6 +2,7 @@ import api from "./api"
 import auth from "./auth"
 import core from "./core"
 import execution from "./executions"
+import filters from "./filters";
 import flow from "./flow"
 import graph from "./graph"
 import layout from "./layout"
@@ -13,12 +14,13 @@ import stat from "./stat"
 import template from "./template"
 import taskrun from "./taskruns"
 import trigger from "./trigger";
-import worker from "./worker";
+import service from "./service";
 
 export default {
     modules: {
         api,
         core,
+        filters,
         flow,
         template,
         execution,
@@ -32,6 +34,6 @@ export default {
         plugin,
         taskrun,
         trigger,
-        worker
+        service
     }
 }

@@ -78,6 +78,14 @@ class JsonSchemaGeneratorTest {
             assertThat((List<String>) flow.get("required"), not(contains("deleted")));
             assertThat((List<String>) flow.get("required"), hasItems("id", "namespace", "tasks"));
 
+            Map<String, Object> items = map(
+                properties(flow)
+                .get("tasks")
+                .get("items")
+            );
+            assertThat(items.containsKey("anyOf"), is(false));
+            assertThat(items.containsKey("oneOf"), is(true));
+
             var bash = definitions.get("io.kestra.core.tasks.log.Log-1");
             assertThat((List<String>) bash.get("required"), not(contains("level")));
             assertThat((String) ((Map<String, Map<String, Object>>) bash.get("properties")).get("level").get("markdownDescription"), containsString("Default value is : `INFO`"));
@@ -88,6 +96,10 @@ class JsonSchemaGeneratorTest {
 
             var bashType = definitions.get("io.kestra.core.tasks.log.Log-2");
             assertThat(bashType, is(notNullValue()));
+
+            var properties = (Map<String, Map<String, Object>>) flow.get("properties");
+            var listeners = properties.get("listeners");
+            assertThat(listeners.get("$deprecated"), is(true));
         });
     }
 
@@ -123,9 +135,11 @@ class JsonSchemaGeneratorTest {
 
             Map<String, Object> jsonSchema = jsonSchemaGenerator.generate(AbstractTrigger.class, AbstractTrigger.class);
 
+            System.out.println(jsonSchema.get("properties"));
             assertThat((Map<String, Object>) jsonSchema.get("properties"), allOf(
-                Matchers.aMapWithSize(1),
-                hasKey("conditions")
+                Matchers.aMapWithSize(2),
+                hasKey("conditions"),
+                hasKey("stopAfter")
             ));
         });
     }
@@ -184,7 +198,6 @@ class JsonSchemaGeneratorTest {
     @Test
     void testEnum() {
         Map<String, Object> generate = jsonSchemaGenerator.properties(Task.class, TaskWithEnum.class);
-        System.out.println(generate);
         assertThat(generate, is(not(nullValue())));
         assertThat(((Map<String, Map<String, Object>>) generate.get("properties")).size(), is(4));
         assertThat(((Map<String, Map<String, Object>>) generate.get("properties")).get("stringWithDefault").get("default"), is("default"));
@@ -193,6 +206,10 @@ class JsonSchemaGeneratorTest {
     @SuppressWarnings("unchecked")
     private Map<String, Map<String, Object>> properties(Map<String, Object> generate) {
         return (Map<String, Map<String, Object>>) generate.get("properties");
+    }
+
+    private Map<String, Object> map(Object object) {
+        return (Map<String, Object>) object;
     }
 
     @SuperBuilder

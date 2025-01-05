@@ -27,5 +27,18 @@ export const editorViewTypes = {
 export const storageKeys = {
     DISPLAY_EXECUTIONS_COLUMNS: "displayExecutionsColumns",
     DISPLAY_FLOW_EXECUTIONS_COLUMNS: "displayFlowExecutionsColumns",
-    SELECTED_TENANT: "selectedTenant"
+    SELECTED_TENANT: "selectedTenant",
+    EXECUTE_FLOW_BEHAVIOUR: "executeFlowBehaviour",
+    DEFAULT_NAMESPACE: "defaultNamespace",
+    LATEST_NAMESPACE: "latestNamespace",
+    PAGINATION_SIZE: "paginationSize",
+    EXECUTIONS_FILTERS: "executionsSavedFilters",
+    FLOWS_FILTERS: "flowsSavedFilters",
+    LOGS_FILTERS: "logsSavedFilters",
 }
+
+export const executeFlowBehaviours = {
+    SAME_TAB: "same tab",
+    NEW_TAB: "new tab"
+}
+

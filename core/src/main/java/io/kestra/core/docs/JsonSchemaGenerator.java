@@ -12,8 +12,8 @@ import com.github.victools.jsonschema.generator.impl.DefinitionKey;
 import com.github.victools.jsonschema.generator.naming.DefaultSchemaDefinitionNamingStrategy;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
-import com.github.victools.jsonschema.module.javax.validation.JavaxValidationModule;
-import com.github.victools.jsonschema.module.javax.validation.JavaxValidationOption;
+import com.github.victools.jsonschema.module.jakarta.validation.JakartaValidationModule;
+import com.github.victools.jsonschema.module.jakarta.validation.JakartaValidationOption;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.models.annotations.Plugin;
@@ -21,6 +21,7 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.conditions.Condition;
 import io.kestra.core.models.conditions.ScheduleCondition;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.script.ScriptRunner;
 import io.kestra.core.models.tasks.Output;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
@@ -59,6 +60,11 @@ public class JsonSchemaGenerator {
         SchemaGenerator generator = new SchemaGenerator(schemaGeneratorConfig);
         try {
             ObjectNode objectNode = generator.generateSchema(cls);
+            objectNode.findParents("anyOf").forEach(jsonNode -> {
+                if (jsonNode instanceof ObjectNode oNode) {
+                    oNode.set("oneOf", oNode.remove("anyOf"));
+                }
+            });
 
             Map<String, Object> map = JacksonMapper.toMap(objectNode);
 
@@ -177,10 +183,10 @@ public class JsonSchemaGenerator {
     protected void build(SchemaGeneratorConfigBuilder builder, boolean draft7) {
         builder
 
-            .with(new JavaxValidationModule(
-                JavaxValidationOption.NOT_NULLABLE_METHOD_IS_REQUIRED,
-                JavaxValidationOption.NOT_NULLABLE_FIELD_IS_REQUIRED,
-                JavaxValidationOption.INCLUDE_PATTERN_EXPRESSIONS
+            .with(new JakartaValidationModule(
+                JakartaValidationOption.NOT_NULLABLE_METHOD_IS_REQUIRED,
+                JakartaValidationOption.NOT_NULLABLE_FIELD_IS_REQUIRED,
+                JakartaValidationOption.INCLUDE_PATTERN_EXPRESSIONS
             ))
             .with(new Swagger2Module())
             .with(Option.DEFINITIONS_FOR_ALL_OBJECTS)
@@ -247,6 +253,11 @@ public class JsonSchemaGenerator {
             if (schema != null && schema.deprecated()) {
                 memberAttributes.put("$deprecated", true);
             }
+
+            Deprecated deprecated = member.getAnnotationConsideringFieldAndGetter(Deprecated.class);
+            if (deprecated != null) {
+                memberAttributes.put("$deprecated", true);
+            }
         });
 
         // Add Plugin annotation special docs
@@ -304,7 +315,6 @@ public class JsonSchemaGenerator {
             builder.forTypesInGeneral()
                 .withSubtypeResolver((declaredType, context) -> {
                     TypeContext typeContext = context.getTypeContext();
-
                     if (declaredType.getErasedType() == Task.class) {
                         return getRegisteredPlugins()
                             .stream()
@@ -328,6 +338,12 @@ public class JsonSchemaGenerator {
                             .stream()
                             .flatMap(registeredPlugin -> registeredPlugin.getConditions().stream())
                             .filter(ScheduleCondition.class::isAssignableFrom)
+                            .map(clz -> typeContext.resolveSubtype(declaredType, clz))
+                            .collect(Collectors.toList());
+                    } else if (declaredType.getErasedType() == ScriptRunner.class) {
+                        return getRegisteredPlugins()
+                            .stream()
+                            .flatMap(registeredPlugin -> registeredPlugin.getScriptRunner().stream())
                             .map(clz -> typeContext.resolveSubtype(declaredType, clz))
                             .collect(Collectors.toList());
                     }
