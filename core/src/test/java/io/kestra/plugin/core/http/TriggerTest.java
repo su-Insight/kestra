@@ -10,11 +10,13 @@ import io.kestra.core.schedulers.DefaultScheduler;
 import io.kestra.core.schedulers.SchedulerTriggerStateInterface;
 import io.kestra.core.services.FlowListenersInterface;
 import io.kestra.core.utils.IdUtils;
+import io.kestra.core.utils.TestsUtils;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
@@ -58,7 +60,7 @@ class TriggerTest {
             AtomicReference<Execution> last = new AtomicReference<>();
 
             // wait for execution
-            Runnable receive = executionQueue.receive(TriggerTest.class, execution -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, TriggerTest.class, execution -> {
                 if (execution.getLeft().getFlowId().equals("http-listen")) {
                     last.set(execution.getLeft());
 
@@ -70,11 +72,8 @@ class TriggerTest {
             scheduler.run();
             repositoryLoader.load(Objects.requireNonNull(TriggerTest.class.getClassLoader().getResource("flows/valids/http-listen.yaml")));
 
-            try {
-                assertTrue(queueCount.await(1, TimeUnit.MINUTES));
-            } finally {
-                receive.run();
-            }
+            assertTrue(queueCount.await(1, TimeUnit.MINUTES));
+            receive.blockLast();
         }
     }
 
@@ -83,19 +82,19 @@ class TriggerTest {
         // mock flow listeners
         CountDownLatch queueCount = new CountDownLatch(1);
 
-        // scheduler
         Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, null);
+        // scheduler
         try (
-                AbstractScheduler scheduler = new DefaultScheduler(
-                        this.applicationContext,
-                        this.flowListenersService,
-                        this.triggerState
-                );
+            AbstractScheduler scheduler = new DefaultScheduler(
+                this.applicationContext,
+                this.flowListenersService,
+                this.triggerState
+            );
         ) {
             AtomicReference<Execution> last = new AtomicReference<>();
 
             // wait for execution
-            Runnable receive = executionQueue.receive(TriggerTest.class, execution -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, TriggerTest.class, execution -> {
                 if (execution.getLeft().getFlowId().equals("http-listen-encrypted")) {
                     last.set(execution.getLeft());
 
@@ -107,11 +106,9 @@ class TriggerTest {
             scheduler.run();
             repositoryLoader.load(Objects.requireNonNull(TriggerTest.class.getClassLoader().getResource("flows/valids/http-listen-encrypted.yaml")));
 
-            try {
-                assertTrue(queueCount.await(1, TimeUnit.MINUTES));
-            } finally {
-                receive.run();
-            }
+            assertTrue(queueCount.await(1, TimeUnit.MINUTES));
+            worker.shutdown();
+            receive.blockLast();
         }
     }
 }
