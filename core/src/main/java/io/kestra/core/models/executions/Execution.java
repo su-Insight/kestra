@@ -9,35 +9,40 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Streams;
-import io.kestra.core.models.Label;
-import io.kestra.core.serializers.ListOrMapOfLabelDeserializer;
-import io.kestra.core.serializers.ListOrMapOfLabelSerializer;
-import lombok.Builder;
-import lombok.Value;
-import lombok.With;
-import lombok.extern.slf4j.Slf4j;
 import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.DeletedInterface;
+import io.kestra.core.models.Label;
+import io.kestra.core.models.TenantInterface;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
 import io.kestra.core.runners.FlowableUtils;
 import io.kestra.core.runners.RunContextLogger;
+import io.kestra.core.serializers.ListOrMapOfLabelDeserializer;
+import io.kestra.core.serializers.ListOrMapOfLabelSerializer;
 import io.kestra.core.utils.MapUtils;
+import io.micronaut.core.annotation.Nullable;
+import io.swagger.v3.oas.annotations.Hidden;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import lombok.Builder;
+import lombok.Value;
+import lombok.With;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.CRC32;
-import io.micronaut.core.annotation.Nullable;
-import javax.validation.constraints.NotNull;
 
 @Value
 @Builder(toBuilder = true)
 @Slf4j
-public class Execution implements DeletedInterface {
+public class Execution implements DeletedInterface, TenantInterface {
     @With
+    @Hidden
+    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
     String tenantId;
 
     @NotNull
@@ -59,6 +64,10 @@ public class Execution implements DeletedInterface {
     @With
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     Map<String, Object> inputs;
+
+    @With
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    Map<String, Object> outputs;
 
     @With
     @JsonSerialize(using = ListOrMapOfLabelSerializer.class)
@@ -109,6 +118,7 @@ public class Execution implements DeletedInterface {
             this.flowRevision,
             this.taskRunList,
             this.inputs,
+            this.outputs,
             this.labels,
             this.variables,
             this.state.withState(state),
@@ -140,6 +150,7 @@ public class Execution implements DeletedInterface {
             this.flowRevision,
             newTaskRunList,
             this.inputs,
+            this.outputs,
             this.labels,
             this.variables,
             this.state,
@@ -159,6 +170,7 @@ public class Execution implements DeletedInterface {
             this.flowRevision,
             taskRunList,
             this.inputs,
+            this.outputs,
             this.labels,
             this.variables,
             state,
@@ -235,8 +247,16 @@ public class Execution implements DeletedInterface {
 
         List<TaskRun> errorsFlow = this.findTaskRunByTasks(resolvedErrors, parentTaskRun);
 
-        if (errorsFlow.size() > 0 || this.hasFailed(resolvedTasks, parentTaskRun)) {
+        // Check if flow has failed task
+        if (!errorsFlow.isEmpty() || this.hasFailed(resolvedTasks, parentTaskRun)) {
+            // Check if among the failed task, they will be retried
+            if (!this.hasFailedNoRetry(resolvedTasks, parentTaskRun)) {
+
+                return new ArrayList<>();
+            }
+
             return resolvedErrors == null ? new ArrayList<>() : resolvedErrors;
+
         }
 
         return resolvedTasks;
@@ -381,6 +401,19 @@ public class Execution implements DeletedInterface {
             .anyMatch(taskRun -> taskRun.getState().isFailed());
     }
 
+    public boolean hasFailedNoRetry(List<ResolvedTask> resolvedTasks, TaskRun parentTaskRun) {
+        return this.findTaskRunByTasks(resolvedTasks, parentTaskRun)
+            .stream()
+            .anyMatch(taskRun -> {
+                ResolvedTask resolvedTask = resolvedTasks.stream().filter(t -> t.getTask().getId().equals(taskRun.getTaskId())).findFirst().orElse(null);
+                if (resolvedTask == null) {
+                    log.warn("Can't find task for taskRun '{}' in parentTaskRun '{}'", taskRun.getId(), parentTaskRun.getId());
+                    return false;
+                }
+                return !taskRun.shouldBeRetried(resolvedTask.getTask()) && taskRun.getState().isFailed();
+            });
+    }
+
     public boolean hasCreated() {
         return this.taskRunList != null && this.taskRunList
             .stream()
@@ -408,12 +441,12 @@ public class Execution implements DeletedInterface {
     }
 
     public State.Type guessFinalState(Flow flow) {
-        return this.guessFinalState(ResolvedTask.of(flow.getTasks()), null);
+        return this.guessFinalState(ResolvedTask.of(flow.getTasks()), null, false);
     }
 
-    public State.Type guessFinalState(List<ResolvedTask> currentTasks, TaskRun parentTaskRun) {
+    public State.Type guessFinalState(List<ResolvedTask> currentTasks, TaskRun parentTaskRun, boolean allowFailure) {
         List<TaskRun> taskRuns = this.findTaskRunByTasks(currentTasks, parentTaskRun);
-        return this
+        var state = this
             .findLastByState(taskRuns, State.Type.KILLED)
             .map(taskRun -> taskRun.getState().getCurrent())
             .or(() -> this
@@ -429,10 +462,15 @@ public class Execution implements DeletedInterface {
                 .map(taskRun -> taskRun.getState().getCurrent())
             )
             .orElse(State.Type.SUCCESS);
+
+        if (state == State.Type.FAILED && allowFailure) {
+            return State.Type.WARNING;
+        }
+        return state;
     }
 
     @JsonIgnore
-    public boolean hasTaskRunJoinable(TaskRun taskRun)  {
+    public boolean hasTaskRunJoinable(TaskRun taskRun) {
         if (this.taskRunList == null) {
             return true;
         }
@@ -522,17 +560,17 @@ public class Execution implements DeletedInterface {
             })
             .filter(Objects::nonNull)
             .orElseGet(() -> new FailedExecutionWithLog(
-                this.state.getCurrent() != State.Type.FAILED ? this.withState(State.Type.FAILED) : this,
-                RunContextLogger.logEntries(loggingEventFromException(e), LogEntry.of(this))
-            )
-        );
+                    this.state.getCurrent() != State.Type.FAILED ? this.withState(State.Type.FAILED) : this,
+                    RunContextLogger.logEntries(loggingEventFromException(e), LogEntry.of(this))
+                )
+            );
     }
 
     /**
      * Create a new attempt for failed worker execution
      *
      * @param taskRun the task run where we need to add an attempt
-     * @param e the exception raise
+     * @param e       the exception raise
      * @return new taskRun with added attempt
      */
     private static FailedTaskRunWithLog newAttemptsTaskRunForFailedExecution(TaskRun taskRun, Exception e) {
@@ -552,9 +590,9 @@ public class Execution implements DeletedInterface {
     /**
      * Add exception log to last attempts
      *
-     * @param taskRun the task run where we need to add an attempt
+     * @param taskRun     the task run where we need to add an attempt
      * @param lastAttempt the lastAttempt found to add
-     * @param e the exception raise
+     * @param e           the exception raise
      * @return new taskRun with updated attempt with logs
      */
     private static FailedTaskRunWithLog lastAttemptsTaskRunForFailedExecution(TaskRun taskRun, TaskRunAttempt lastAttempt, Exception e) {
@@ -589,6 +627,7 @@ public class Execution implements DeletedInterface {
 
     /**
      * Transform an exception to {@link ILoggingEvent}
+     *
      * @param e the current execption
      * @return the {@link ILoggingEvent} waited to generate {@link LogEntry}
      */
@@ -691,7 +730,7 @@ public class Execution implements DeletedInterface {
      * @return List of parent {@link TaskRun}
      */
     public List<TaskRun> findChilds(TaskRun taskRun) {
-        if (taskRun.getParentTaskRunId() == null) {
+        if (taskRun.getParentTaskRunId() == null || this.taskRunList == null) {
             return new ArrayList<>();
         }
 

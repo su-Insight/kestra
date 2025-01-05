@@ -1,24 +1,41 @@
 package io.kestra.repository.mysql;
 
+import io.kestra.core.queues.QueueService;
 import io.kestra.core.repositories.ArrayListTotal;
 import io.kestra.jdbc.AbstractJdbcRepository;
-import io.micronaut.context.ApplicationContext;
+import io.kestra.jdbc.JdbcTableConfig;
+import io.kestra.jdbc.JooqDSLContextWrapper;
+import io.micronaut.context.annotation.EachBean;
+import io.micronaut.context.annotation.Parameter;
 import io.micronaut.data.model.Pageable;
-import org.jooq.*;
+import jakarta.inject.Inject;
+import org.jooq.Condition;
+import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.Record;
+import org.jooq.RecordMapper;
+import org.jooq.SelectConditionStep;
 import org.jooq.impl.DSL;
 
+import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class MysqlRepository<T>  extends AbstractJdbcRepository<T> {
-    public MysqlRepository(Class<T> cls, ApplicationContext applicationContext) {
-        super(cls, applicationContext);
+@MysqlRepositoryEnabled
+@EachBean(JdbcTableConfig.class)
+public class MysqlRepository<T> extends AbstractJdbcRepository<T> {
 
+    @Inject
+    public MysqlRepository(@Parameter JdbcTableConfig jdbcTableConfig,
+                           QueueService queueService,
+                           JooqDSLContextWrapper dslContextWrapper) {
+        super(jdbcTableConfig, queueService, dslContextWrapper);
         this.table = DSL.table(DSL.quotedName(this.getTable().getName()));
     }
 
+    /** {@inheritDoc} **/
+    @Override
     public Condition fullTextCondition(List<String> fields, String query) {
         if (query == null || query.equals("*")) {
             return DSL.trueCondition();
@@ -30,7 +47,7 @@ public class MysqlRepository<T>  extends AbstractJdbcRepository<T> {
             .map(s -> "+" + s + "*")
             .collect(Collectors.joining(" "));
 
-        if (match.length() == 0) {
+        if (match.isEmpty()) {
             return DSL.falseCondition();
         }
 
@@ -46,5 +63,13 @@ public class MysqlRepository<T>  extends AbstractJdbcRepository<T> {
             map,
             DSL.using(configuration).fetchOne("SELECT FOUND_ROWS()").into(Integer.class)
         ));
+    }
+
+    public Field<Integer> weekFromTimestamp(Field<Timestamp> timestampField) {
+        // DAYOFWEEK > 5 means you have less than 3 days in the first week of the year so we choose mode 2 (see https://www.w3resource.com/mysql/date-and-time-functions/mysql-week-function.php)
+        return DSL.when(
+            DSL.field("DAYOFWEEK(CONCAT(YEAR({0}), '-01-01')) > 5", Boolean.class, timestampField),
+            DSL.field("WEEK({0}, 2)", Integer.class, timestampField)
+        ).otherwise(DSL.field("WEEK({0}, 3)", Integer.class, timestampField));
     }
 }

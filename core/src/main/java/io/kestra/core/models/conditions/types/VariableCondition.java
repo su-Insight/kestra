@@ -14,8 +14,8 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 
 @SuperBuilder
 @ToString
@@ -23,13 +23,13 @@ import javax.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Condition based on variables expression",
-    description = "If the result is an empty string, a string containing only space or `false`, the condition will be false"
+    title = "Condition based on variable expression.",
+    description = "If the result is an empty string, a string containing only space or `false`, the condition will be considered as false."
 )
 @Plugin(
     examples = {
         @Example(
-            title = "A condition that will return false for a missing variable",
+            title = "A condition that will return false for a missing variable.",
             full = true,
             code = {
                 "- conditions:",

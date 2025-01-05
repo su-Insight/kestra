@@ -1,13 +1,11 @@
 package io.kestra.core.docs;
 
+import io.kestra.core.models.annotations.PluginSubGroup;
 import io.kestra.core.plugins.RegisteredPlugin;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.AbstractMap;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -27,7 +25,9 @@ public class Plugin {
     private List<String> controllers;
     private List<String> storages;
     private List<String> secrets;
+    private List<String> scriptRunners;
     private List<String> guides;
+    private List<PluginSubGroup.PluginCategory> categories;
 
     public static Plugin of(RegisteredPlugin registeredPlugin) {
         Plugin plugin = new Plugin();
@@ -38,7 +38,6 @@ public class Plugin {
         plugin.longDescription = registeredPlugin.longDescription();
         plugin.version = registeredPlugin.version();
         plugin.guides = registeredPlugin.getGuides();
-
         plugin.manifest = registeredPlugin
             .getManifest()
             .getMainAttributes()
@@ -49,6 +48,14 @@ public class Plugin {
                 e.getValue().toString()
             ))
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        plugin.categories =  registeredPlugin
+            .allClass()
+            .stream()
+            .map(clazz -> clazz.getPackage().getDeclaredAnnotation(PluginSubGroup.class))
+            .filter(Objects::nonNull)
+            .flatMap(r -> Arrays.stream(r.categories()))
+            .distinct()
+            .toList();
 
         plugin.tasks = className(filter(registeredPlugin.getTasks()).toArray(Class[]::new));
         plugin.triggers = className(filter(registeredPlugin.getTriggers()).toArray(Class[]::new));
@@ -56,6 +63,7 @@ public class Plugin {
         plugin.controllers = className(filter(registeredPlugin.getControllers()).toArray(Class[]::new));
         plugin.storages = className(filter(registeredPlugin.getStorages()).toArray(Class[]::new));
         plugin.secrets = className(filter(registeredPlugin.getSecrets()).toArray(Class[]::new));
+        plugin.scriptRunners = className(filter(registeredPlugin.getScriptRunner()).toArray(Class[]::new));
 
         return plugin;
     }

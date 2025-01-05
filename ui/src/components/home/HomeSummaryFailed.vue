@@ -8,7 +8,10 @@
             :restore-url="false"
             :statuses="['FAILED', 'KILLED', 'WARNING']"
             embed
-            :hidden="['id', 'state.endDate', 'triggers', 'selection', 'labels', 'inputs', 'taskRunList.taskId']"
+            :topbar="false"
+            :hidden="['id', 'state.endDate', 'triggers', 'selection', 'labels', 'inputs', 'taskRunList.taskId' , 'flowRevision']"
+            :flow-id="flowId"
+            :namespace="namespace"
         />
     </el-card>
 </template>
@@ -24,6 +27,16 @@
                 type: Object,
                 required: true
             },
+            flowId: {
+                type: String,
+                required: true,
+                default: undefined
+            },
+            namespace: {
+                type: String,
+                required: true,
+                default: undefined
+            }
         },
         computed: {
         }

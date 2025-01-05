@@ -20,8 +20,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,72 +39,89 @@ import java.util.Optional;
         "If you want to execute a group of sequential tasks for each value in parallel, you can wrap the list of `tasks` " +
         "with the [Sequential task](https://kestra.io/plugins/core/tasks/flows/io.kestra.core.tasks.flows.sequential).\n" +
         "If your list of values is large, you can limit the number of concurrent tasks using the `concurrent` property.\n\n" +
-        "We highly recommend triggering a subflow for each value instead of specifying many tasks wrapped in a `Sequential` task. " +
-        "This allows much better scalability and modularity. Check the [flow best practices documentation](https://kestra.io/docs/developer-guide/best-practice) " +
-        "and the [following Blueprint](https://demo.kestra.io/ui/blueprints/community/128) for more details."
+        "We highly recommend triggering a subflow for each value (e.g. using the [ForEachItem](https://kestra.io/plugins/core/tasks/flows/io.kestra.core.tasks.flows.foreachitem) task) instead of specifying many tasks wrapped in a `Sequential` task. " +
+        "This allows better scalability and modularity. Check the [flow best practices documentation](https://kestra.io/docs/best-practices/flows) for more details."
 )
 @Plugin(
     examples = {
         @Example(
+            full = true,
             code = {
-                "value: '[\"value 1\", \"value 2\", \"value 3\"]'",
+                "id: each-parallel",
+                "namespace: io.kestra.tests",
+                "",
                 "tasks:",
-                "  - id: each-value",
-                "    type: io.kestra.core.tasks.debugs.Return",
-                "    format: \"{{ task.id }} with current value '{{ taskrun.value }}'\"",
+                "  - id: each-parallel",
+                "    type: io.kestra.core.tasks.flows.EachParallel",
+                "    value: '[\"value 1\", \"value 2\", \"value 3\"]'",
+                "    tasks:",
+                "      - id: each-value",
+                "        type: io.kestra.core.tasks.debugs.Return",
+                "        format: \"{{ task.id }} with current value '{{ taskrun.value }}'\"",
             }
         ),
         @Example(
+            full = true,
             code = {
-                "value: ",
-                "- value 1",
-                "- value 2",
-                "- value 3",
+                "id: each-parallel",
+                "namespace: io.kestra.tests",
+                "",
                 "tasks:",
-                "  - id: each-value",
-                "    type: io.kestra.core.tasks.debugs.Return",
-                "    format: \"{{ task.id }} with current value '{{ taskrun.value }}'\"",
+                "  - id: each-parallel",
+                "    type: io.kestra.core.tasks.flows.EachParallel",
+                "    value: ",
+                "      - value 1",
+                "      - value 2",
+                "      - value 3",
+                "    tasks:",
+                "      - id: each-value",
+                "        type: io.kestra.core.tasks.debugs.Return",
+                "        format: \"{{ task.id }} with current value '{{ taskrun.value }}'\"",
             }
         ),
         @Example(
             title = "Handling each value in parallel but only 1 child task for each value at the same time.",
             code = {
-                "value: '[\"value 1\", \"value 2\", \"value 3\"]'",
+                "id: each-parallel",
+                "namespace: io.kestra.tests",
+                "",
                 "tasks:",
-                "  - id: seq",
-                "    type: io.kestra.core.tasks.flows.Sequential",
+                "  - id: each-parallel",
+                "    type: io.kestra.core.tasks.flows.EachParallel",
+                "    value: '[\"value 1\", \"value 2\", \"value 3\"]'",
                 "    tasks:",
-                "    - id: t1",
-                "      type: io.kestra.plugin.scripts.shell.Commands",
-                "      commands:",
-                "        - 'echo \"{{task.id}} > {{ parents[0].taskrun.value }}",
-                "        - 'sleep 1'",
-                "    - id: t2",
-                "      type: io.kestra.plugin.scripts.shell.Commands",
-                "      commands:",
-                "        - 'echo \"{{task.id}} > {{ parents[0].taskrun.value }}",
-                "        - 'sleep 1'"
+                "      - id: seq",
+                "        type: io.kestra.core.tasks.flows.Sequential",
+                "        tasks:",
+                "        - id: t1",
+                "          type: io.kestra.plugin.scripts.shell.Commands",
+                "          commands:",
+                "            - 'echo \"{{task.id}} > {{ parents[0].taskrun.value }}",
+                "            - 'sleep 1'",
+                "        - id: t2",
+                "          type: io.kestra.plugin.scripts.shell.Commands",
+                "          commands:",
+                "            - 'echo \"{{task.id}} > {{ parents[0].taskrun.value }}",
+                "            - 'sleep 1'"
             }
         )
     }
 )
 public class EachParallel extends Parallel implements FlowableTask<VoidOutput> {
     @NotNull
-    @NotBlank
     @Builder.Default
     @Schema(
-        title = "Number of concurrent parallel tasks",
-        description = "If the value is `0`, no limit exist and all the tasks will start at the same time"
+        title = "Number of concurrent parallel tasks that can be running at any point in time.",
+        description = "If the value is `0`, no limit exist and all the tasks will start at the same time."
     )
     @PluginProperty
     private final Integer concurrent = 0;
 
     @NotNull
-    @NotBlank
     @PluginProperty(dynamic = true)
     @Schema(
-        title = "The list of values for this task",
-        description = "The value car be passed as a String, a list of String, or a list of objects",
+        title = "The list of values for this task.",
+        description = "The value can be passed as a string, a list of strings, or a list of objects.",
         anyOf = {String.class, Object[].class}
     )
     private Object value;
@@ -134,7 +150,7 @@ public class EachParallel extends Parallel implements FlowableTask<VoidOutput> {
     public Optional<State.Type> resolveState(RunContext runContext, Execution execution, TaskRun parentTaskRun) throws IllegalVariableEvaluationException {
         List<ResolvedTask> childTasks = this.childTasks(runContext, parentTaskRun);
 
-        if (childTasks.size() == 0) {
+        if (childTasks.isEmpty()) {
             return Optional.of(State.Type.SUCCESS);
         }
 
@@ -143,7 +159,8 @@ public class EachParallel extends Parallel implements FlowableTask<VoidOutput> {
             childTasks,
             FlowableUtils.resolveTasks(this.getErrors(), parentTaskRun),
             parentTaskRun,
-            runContext
+            runContext,
+            this.isAllowFailure()
         );
     }
 
