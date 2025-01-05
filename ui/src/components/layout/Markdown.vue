@@ -92,6 +92,20 @@
             padding: 8px 16px;
             color: var(--el-color-warning);
             border-radius: var(--el-border-radius-base);
+            margin-bottom: var(--spacer);
+
+            p:last-child {
+                margin-bottom: 0;
+            }
+        }
+
+        .info {
+            background-color: var(--el-color-info-light-9);
+            border: 1px solid var(--el-color-info-light-5);
+            padding: 8px 16px;
+            color: var(--el-color-info);
+            border-radius: var(--el-border-radius-base);
+            margin-bottom: var(--spacer);
 
             p:last-child {
                 margin-bottom: 0;

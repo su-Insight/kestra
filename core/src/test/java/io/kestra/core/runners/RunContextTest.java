@@ -1,16 +1,27 @@
 package io.kestra.core.runners;
 
+import io.kestra.core.encryption.EncryptionService;
+import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.metrics.MetricRegistry;
+import io.kestra.core.models.Label;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
+import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.executions.metrics.Timer;
+import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.models.flows.Type;
+import io.kestra.core.models.flows.input.StringInput;
+import io.kestra.core.models.tasks.common.EncryptedString;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.storages.StorageInterface;
+import io.kestra.core.tasks.test.PollingTrigger;
+import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.TestsUtils;
 import io.micronaut.context.annotation.Property;
+import io.micronaut.context.annotation.Value;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.exparity.hamcrest.date.ZonedDateTimeMatchers;
@@ -21,6 +32,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
@@ -31,6 +43,7 @@ import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Property(name = "kestra.tasks.tmp-dir.path", value = "/tmp/sub/dir/tmp/")
 class RunContextTest extends AbstractMemoryRunnerTest {
@@ -50,6 +63,9 @@ class RunContextTest extends AbstractMemoryRunnerTest {
     @Inject
     MetricRegistry metricRegistry;
 
+    @Value("${kestra.encryption.secret-key}")
+    private String secretKey;
+
     @Test
     void logs() throws TimeoutException {
         List<LogEntry> logs = new CopyOnWriteArrayList<>();
@@ -58,7 +74,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
 
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(5));
 
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(0).getId()));
         assertThat(matchingLog, notNullValue());
@@ -74,6 +90,9 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(matchingLog, notNullValue());
         assertThat(matchingLog.getLevel(), is(Level.ERROR));
         assertThat(matchingLog.getMessage(), is("third logs"));
+
+        matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(3).getId()));
+        assertThat(matchingLog, nullValue());
     }
 
     @Test
@@ -145,13 +164,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         p.destroy();
 
         URI uri = runContext.putTempFile(path.toFile());
-        assertThat(storageInterface.size(null, uri), is(size + 1));
-    }
-
-    @Test
-    void invalidTaskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/invalid-task-defaults.yaml")));
-        taskDefaultsCaseTest.invalidTaskDefaults();
+        assertThat(storageInterface.getAttributes(null, uri).getSize(), is(size + 1));
     }
 
     @Test
@@ -189,5 +202,91 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(runContext.fileExtension(""), nullValue());
         assertThat(runContext.fileExtension("/file/hello"), nullValue());
         assertThat(runContext.fileExtension("/file/hello.txt"), is(".txt"));
+    }
+
+    @Test
+    void resolve() {
+        RunContext runContext = runContextFactory.of();
+        String baseDir = runContext.tempDir().toString();
+
+        Path path = runContext.resolve(Path.of("file.txt"));
+        assertThat(path.toString(), is(baseDir + "/file.txt"));
+
+        path = runContext.resolve(Path.of("subdir/file.txt"));
+        assertThat(path.toString(), is(baseDir + "/subdir/file.txt"));
+
+        path = runContext.resolve(null);
+        assertThat(path.toString(), is(baseDir));
+
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("/etc/passwd")));
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("../../etc/passwd")));
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("subdir/../../../etc/passwd")));
+    }
+
+    @Test
+    void encrypt() throws GeneralSecurityException {
+        // given
+        RunContext runContext = runContextFactory.of();
+        String plainText = "toto";
+
+        String encrypted = runContext.encrypt(plainText);
+        String decrypted = EncryptionService.decrypt(secretKey, encrypted);
+
+        assertThat(encrypted, not(plainText));
+        assertThat(decrypted, is(plainText));
+    }
+
+    @Test
+    void encryptedStringOutput() throws TimeoutException {
+        Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "encrypted-string");
+
+        assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+        assertThat(execution.getTaskRunList(), hasSize(2));
+        TaskRun hello = execution.findTaskRunsByTaskId("hello").get(0);
+        Map<String, String> valueOutput = (Map<String, String>) hello.getOutputs().get("value");
+        assertThat(valueOutput.size(), is(2));
+        assertThat(valueOutput.get("type"), is(EncryptedString.TYPE));
+        // the value is encrypted so it's not the plaintext value of the task property
+        assertThat(valueOutput.get("value"), not("Hello World"));
+        TaskRun returnTask = execution.findTaskRunsByTaskId("return").get(0);
+        // the output is automatically decrypted so the return has the decrypted value of the hello task output
+        assertThat(returnTask.getOutputs().get("value"), is("Hello World"));
+    }
+
+    @Test
+    void withDefaultInput() throws IllegalVariableEvaluationException {
+        Flow flow = Flow.builder().id("triggerWithDefaultInput").namespace("io.kestra.test").revision(1).inputs(List.of(StringInput.builder().id("test").type(Type.STRING).defaults("test").build())).build();
+        Execution execution = Execution.builder().id(IdUtils.create()).flowId("triggerWithDefaultInput").namespace("io.kestra.test").state(new State()).build();
+
+        RunContext runContext = runContextFactory.of(flow, execution);
+
+        assertThat(runContext.render("{{inputs.test}}"), is("test"));
+    }
+
+    @Test
+    void withNullLabel() throws IllegalVariableEvaluationException {
+        Flow flow = Flow.builder().id("triggerWithDefaultInput").namespace("io.kestra.test").revision(1).inputs(List.of(StringInput.builder().id("test").type(Type.STRING).defaults("test").build())).build();
+        Execution execution = Execution.builder().id(IdUtils.create()).flowId("triggerWithDefaultInput").namespace("io.kestra.test").state(new State()).labels(List.of(new Label("key", null))).build();
+
+        RunContext runContext = runContextFactory.of(flow, execution);
+
+        assertThat(runContext.render("{{inputs.test}}"), is("test"));
+    }
+
+    @Test
+    void renderMap() throws IllegalVariableEvaluationException {
+        RunContext runContext = runContextFactory.of(Map.of(
+            "key", "default",
+            "value", "default"
+        ));
+
+        Map<String, String> rendered = runContext.renderMap(Map.of("{{key}}", "{{value}}"));
+        assertThat(rendered.get("default"), is("default"));
+
+        rendered = runContext.renderMap(Map.of("{{key}}", "{{value}}"), Map.of(
+            "key", "key",
+            "value", "value"
+        ));
+        assertThat(rendered.get("key"), is("value"));
     }
 }

@@ -1,11 +1,11 @@
 <template>
-    <div class="d-flex pagination">
+    <div class="d-flex pagination" :class="{'top': top}">
         <div class="flex-grow-1 d-sm-none d-md-inline-block page-size">
             <el-select
+                v-if="!top"
                 size="small"
                 :model-value="internalSize"
                 @update:model-value="pageSizeChange"
-                :persistent="false"
             >
                 <el-option
                     v-for="item in pageOptions"
@@ -15,7 +15,7 @@
                 />
             </el-select>
         </div>
-        <div>
+        <div v-if="isPaginationDisplayed">
             <el-pagination
                 v-model:current-page="internalPage"
                 :page-size="internalSize"
@@ -39,12 +39,15 @@
     </div>
 </template>
 <script>
+    import {storageKeys} from "../../utils/constants";
+
     export default {
         props: {
             total: {type: Number, default: 0},
             max: {type: Number, default: undefined},
             size: {type: Number, required: true, default: 25},
-            page: {type: Number, required: true}
+            page: {type: Number, required: true},
+            top: {type: Boolean, required: false, default: false}
         },
         emits: ["page-changed"],
         data() {
@@ -60,14 +63,22 @@
         },
         methods: {
             initState() {
+                let internalSize = parseInt(localStorage.getItem(storageKeys.PAGINATION_SIZE) || this.$route.query.size || this.size)
+                let internalPage = parseInt(this.$route.query.page || this.page)
+                this.$emit("page-changed", {
+                    page: internalPage,
+                    size: internalSize,
+                });
+
                 return {
-                    internalSize: parseInt(this.$route.query.size || this.size),
-                    internalPage: parseInt(this.$route.query.page || this.page)
+                    internalSize: internalSize,
+                    internalPage: internalPage
                 }
             },
-            pageSizeChange(value) {
+            pageSizeChange: function (value) {
                 this.internalPage = 1;
                 this.internalSize = value;
+                localStorage.setItem(storageKeys.PAGINATION_SIZE, value);
                 this.$emit("page-changed", {
                     page: 1,
                     size: this.internalSize,
@@ -79,6 +90,15 @@
                     page: page,
                     size: this.internalSize,
                 });
+            },
+        },
+        computed: {
+            isPaginationDisplayed() {
+                if (this.internalPage === 1 && this.total < this.internalSize) {
+                    return false;
+                }
+
+                return true;
             },
         },
         watch: {
@@ -96,8 +116,13 @@
     .pagination {
         margin-top: var(--spacer);
 
+        &.top {
+            margin-bottom: var(--spacer);
+            margin-top: 0;
+        }
+
         .el-select {
-            width: 100px;
+            width: 105px;
         }
 
         .page-size {
