@@ -1,6 +1,7 @@
 <template>
     <div :class="'executions-charts' + (global ? (big ? ' big' : '') : ' mini')" v-if="dataReady">
         <el-tooltip
+            effect="light"
             :placement="(global ? 'bottom' : 'left')"
             :persistent="false"
             :hide-after="0"
@@ -10,7 +11,7 @@
             <template #content>
                 <span v-html="tooltipContent" />
             </template>
-            <BarChart ref="chartRef" :chart-data="chartData" :options="options" />
+            <Bar ref="chartRef" :data="chartData" :options="options" />
         </el-tooltip>
     </div>
 </template>
@@ -18,13 +19,13 @@
 <script>
     import {computed, defineComponent, ref, getCurrentInstance} from "vue";
     import {useRoute, useRouter} from "vue-router"
-    import {BarChart} from "vue-chart-3";
+    import {Bar} from "vue-chartjs";
     import Utils from "../../utils/utils.js";
     import {defaultConfig, tooltip, chartClick, backgroundFromState, getFormat} from "../../utils/charts.js";
     import {useI18n} from "vue-i18n";
 
     export default defineComponent({
-        components: {BarChart},
+        components: {Bar},
         props: {
             data: {
                 type: Array,
@@ -52,7 +53,6 @@
                 required: false,
                 default: undefined
             },
-
         },
         setup(props) {
             const moment = getCurrentInstance().appContext.config.globalProperties.$moment;
@@ -76,7 +76,7 @@
                             route,
                             {
                                 date: e.chart.data.labels[elements[0].index],
-                                status: e.chart.data.datasets[elements[0].datasetIndex].label,
+                                state: e.chart.data.datasets[elements[0].datasetIndex].label,
                                 namespace: props.namespace,
                                 flowId: props.flowId
                             }

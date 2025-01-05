@@ -8,7 +8,7 @@ import io.kestra.core.models.executions.TaskRun;
 
 import java.util.List;
 import java.util.stream.Collectors;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 @Builder
 @Value
@@ -41,6 +41,6 @@ public class ResolvedTask {
         return tasks
             .stream()
             .map(ResolvedTask::of)
-            .collect(Collectors.toList());
+            .toList();
     }
 }

@@ -3,7 +3,9 @@ package io.kestra.core.models.hierarchies;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.tasks.Task;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.util.HashMap;
 import java.util.List;
@@ -12,6 +14,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 
+@SuppressWarnings("this-escape")
 @Getter
 public class GraphCluster extends AbstractGraph {
     @JsonIgnore
@@ -25,7 +28,8 @@ public class GraphCluster extends AbstractGraph {
     @JsonIgnore
     private final GraphClusterEnd end;
 
-    private final AbstractGraphTask taskNode;
+    @Setter
+    private AbstractGraphTask taskNode;
 
     public GraphCluster() {
         this("root");
@@ -69,7 +73,7 @@ public class GraphCluster extends AbstractGraph {
 
     public void addNode(AbstractGraph node, boolean withClusterUidPrefix) {
         if (withClusterUidPrefix) {
-            node.updateUidWithChildren(prefixedUid(node.uid));
+            node.updateUidWithChildren(prefixedUid(Optional.ofNullable(node.uid).orElse(node.getUid())));
         }
         this.getGraph().addNode(node);
     }
@@ -110,7 +114,9 @@ public class GraphCluster extends AbstractGraph {
                 // this is because we need other clusters' root & end to have edges over them, but they are already managed by their own cluster
                 (!(node instanceof GraphClusterRoot) && !(node instanceof GraphClusterEnd))
                 || node.equals(this.root) || node.equals(this.end))
-            .forEach(node -> node.updateUidWithChildren(uid + node.uid.substring(this.uid.length())));
+            .forEach(node -> node.updateUidWithChildren(uid +
+                Optional.ofNullable(node.uid).orElse(node.getUid()).substring(this.uid.length())
+            ));
 
         super.updateUidWithChildren(uid);
     }
@@ -122,5 +128,11 @@ public class GraphCluster extends AbstractGraph {
         this.taskNode.error = error;
         this.root.error = error;
         this.end.error = error;
+    }
+
+    @Override
+    public AbstractGraph forExecution() {
+        this.setTaskNode(null);
+        return this;
     }
 }

@@ -2,42 +2,32 @@ package io.kestra.core.models.tasks;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.tasks.retrys.AbstractRetry;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.tasks.flows.WorkingDirectory;
-import io.micronaut.core.annotation.Introspected;
+import io.kestra.plugin.core.flow.WorkingDirectory;
+import jakarta.validation.Valid;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
+import org.slf4j.event.Level;
 
 import java.time.Duration;
 import java.util.Optional;
-import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
 
 import static io.kestra.core.utils.Rethrow.throwFunction;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "type", visible = true, include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @SuperBuilder(toBuilder = true)
 @Getter
 @NoArgsConstructor
-@Introspected
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
-abstract public class Task {
-    @NotNull
-    @NotBlank
-    @Pattern(regexp="[a-zA-Z0-9_-]+")
+@Plugin
+abstract public class Task implements TaskInterface {
     protected String id;
 
-    @NotNull
-    @NotBlank
-    @Pattern(regexp="\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*(\\.\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)*")
     protected String type;
 
     private String description;
@@ -52,6 +42,11 @@ abstract public class Task {
 
     @Valid
     private WorkerGroup workerGroup;
+
+    private Level logLevel;
+
+    @Builder.Default
+    private boolean allowFailure = false;
 
     public Optional<Task> findById(String id) {
         if (this.getId().equals(id)) {

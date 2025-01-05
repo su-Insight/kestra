@@ -1,12 +1,12 @@
 <template>
-    <div v-if="name" id="environment">
+    <div data-component="FILENAME_PLACEHOLDER" v-if="name" id="environment">
         <strong>{{ name }}</strong>
     </div>
 </template>
 
 <script>
     import {mapGetters} from "vuex";
-    import {cssVariable} from "../../utils/global";
+    import {cssVariable} from "@kestra-io/ui-libs/src/utils/global";
 
     export default {
         computed: {
@@ -32,12 +32,21 @@
 
 <style lang="scss" scoped>
 #environment {
-    margin-bottom: 0.5em;
-    background-color: v-bind('color');
+    margin-bottom: 1.5rem;
     text-align: center;
+    margin-top: -1.25rem;
 
     strong {
-        color: var(--bs-body-bg);
+        border: 1px solid v-bind('color');
+        border-radius: var(--bs-border-radius);
+        color: var(--bs-body-color);
+        padding: 0.125rem 0.25rem;
+        font-size: var(--font-size-sm);
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        max-width: 90%;
+        display: inline-block;
     }
 }
 </style>

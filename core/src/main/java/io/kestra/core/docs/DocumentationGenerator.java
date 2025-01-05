@@ -1,22 +1,23 @@
 package io.kestra.core.docs;
 
-import com.github.jknack.handlebars.EscapingStrategy;
-import com.github.jknack.handlebars.Handlebars;
-import com.github.jknack.handlebars.Template;
-import com.github.jknack.handlebars.helper.*;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.models.annotations.PluginSubGroup;
 import io.kestra.core.models.conditions.Condition;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.plugins.RegisteredPlugin;
-import io.kestra.core.runners.handlebars.helpers.DateHelper;
-import io.kestra.core.runners.handlebars.helpers.JsonHelper;
-import io.kestra.core.runners.handlebars.helpers.OtherBooleansHelper;
-import io.kestra.core.runners.handlebars.helpers.OtherStringsHelper;
+import io.kestra.core.runners.pebble.Extension;
+import io.kestra.core.runners.pebble.JsonWriter;
+import io.kestra.core.runners.pebble.filters.*;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.utils.Slugify;
+import io.pebbletemplates.pebble.PebbleEngine;
+import io.pebbletemplates.pebble.extension.AbstractExtension;
+import io.pebbletemplates.pebble.extension.Filter;
+import io.pebbletemplates.pebble.loader.ClasspathLoader;
+import io.pebbletemplates.pebble.template.PebbleTemplate;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import lombok.AllArgsConstructor;
@@ -24,9 +25,9 @@ import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
+import java.io.Writer;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -35,34 +36,30 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 
 @Singleton
 public class DocumentationGenerator {
-    private static final Handlebars handlebars = new Handlebars()
-        .with(EscapingStrategy.NOOP)
-        .registerHelpers(ConditionalHelpers.class)
-        .registerHelpers(EachHelper.class)
-        .registerHelpers(LogHelper.class)
-        .registerHelpers(StringHelpers.class)
-        .registerHelpers(OtherStringsHelper.class)
-        .registerHelpers(OtherBooleansHelper.class)
-        .registerHelper("definitionName", (context, options) -> {
-            String s = StringUtils.substringAfterLast(context.toString(), ".");
-            if (s.contains("-")) {
-                String s1 = StringUtils.substringAfter(s, "-");
-
-                try {
-                    Integer.parseInt(s1);
-                } catch (NumberFormatException e) {
-                    s = s1;
-                }
-            }
-            return s;
-        })
-        .registerHelpers(UnlessHelper.class)
-        .registerHelpers(WithHelper.class)
-        .registerHelpers(DateHelper.class)
-        .registerHelpers(JsonHelper.class);
+    private static PebbleEngine pebbleEngine;
 
     @Inject
     JsonSchemaGenerator jsonSchemaGenerator;
+
+    static {
+        ClasspathLoader classpathLoader = new ClasspathLoader();
+        classpathLoader.setPrefix("docs/");
+
+        pebbleEngine = new PebbleEngine.Builder()
+            .newLineTrimming(false)
+            .loader(classpathLoader)
+            .extension(new AbstractExtension() {
+                @Override
+                public Map<String, Filter> getFilters() {
+                    Map<String, Filter> filters = new HashMap<>();
+                    filters.put("json", new JsonEncodeFilter());
+                    return filters;
+                }
+            })
+            .autoEscaping(false)
+            .extension(new Extension())
+            .build();
+    }
 
     public List<Document> generate(RegisteredPlugin registeredPlugin) throws Exception {
         ArrayList<Document> result = new ArrayList<>();
@@ -72,6 +69,7 @@ public class DocumentationGenerator {
         result.addAll(this.generate(registeredPlugin, registeredPlugin.getTasks(), Task.class, "tasks"));
         result.addAll(this.generate(registeredPlugin, registeredPlugin.getTriggers(), AbstractTrigger.class, "triggers"));
         result.addAll(this.generate(registeredPlugin, registeredPlugin.getConditions(), Condition.class, "conditions"));
+        result.addAll(this.generate(registeredPlugin, registeredPlugin.getTaskRunners(), TaskRunner.class, "task-runners"));
 
         result.addAll(guides(registeredPlugin));
 
@@ -154,7 +152,7 @@ public class DocumentationGenerator {
             )
             .collect(Collectors.groupingBy(
                 ClassPlugin::getSubgroup,
-                Collectors.groupingBy(ClassPlugin::getType)
+                Collectors.groupingBy(classPlugin -> Slugify.toStartCase(classPlugin.getType()))
             ));
     }
 
@@ -203,7 +201,7 @@ public class DocumentationGenerator {
                 e.getValue(),
                 null
             )))
-            .collect(Collectors.toList());
+            .toList();
     }
 
 
@@ -222,7 +220,7 @@ public class DocumentationGenerator {
                     throw new RuntimeException(e);
                 }
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static String docPath(RegisteredPlugin registeredPlugin) {
@@ -248,13 +246,16 @@ public class DocumentationGenerator {
     }
 
     public static <T> String render(String templateName, Map<String, Object> vars) throws IOException {
-        String hbsTemplate = IOUtils.toString(
-            Objects.requireNonNull(DocumentationGenerator.class.getClassLoader().getResourceAsStream("docs/" + templateName + ".hbs")),
+        String pebbleTemplate = IOUtils.toString(
+            Objects.requireNonNull(DocumentationGenerator.class.getClassLoader().getResourceAsStream("docs/" + templateName + ".peb")),
             Charsets.UTF_8
         );
 
-        Template template = handlebars.compileInline(hbsTemplate);
-        String renderer = template.apply(vars);
+        PebbleTemplate compiledTemplate = pebbleEngine.getLiteralTemplate(pebbleTemplate);
+
+        Writer writer = new JsonWriter();
+        compiledTemplate.evaluate(writer, vars);
+        String renderer = writer.toString();
 
         // vuepress {{ }} evaluation
         Pattern pattern = Pattern.compile("`\\{\\{(.*?)\\}\\}`", Pattern.MULTILINE);

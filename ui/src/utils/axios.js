@@ -1,6 +1,5 @@
 import axios from "axios";
 import NProgress from "nprogress"
-import {baseUrl} from "override/utils/route";
 
 // nprogress
 let requestsTotal = 0
@@ -72,7 +71,7 @@ export default (callback, store, router) => {
         response => {
             return response
         }, errorResponse => {
-            if (errorResponse.code && (errorResponse.code === "ECONNABORTED" || errorResponse.code === "ERR_BAD_RESPONSE")) {
+            if (errorResponse?.code === "ERR_BAD_RESPONSE" && !errorResponse?.response?.data) {
                 store.dispatch("core/showMessage", {
                     response: errorResponse,
                     content: errorResponse,
@@ -94,7 +93,7 @@ export default (callback, store, router) => {
 
             if (errorResponse.response.status === 401
                 && !store.getters["auth/isLogged"]) {
-                if(window.location.pathname === "/ui/login"){
+                if(window.location.pathname.startsWith("/ui/login")){
                     return Promise.reject(errorResponse);
                 }
 
@@ -136,7 +135,6 @@ export default (callback, store, router) => {
             return Promise.reject(errorResponse);
         })
 
-    instance.defaults.baseURL = baseUrl;
 
     instance.defaults.paramsSerializer = {
         indexes: null

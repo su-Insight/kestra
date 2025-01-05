@@ -120,7 +120,7 @@ export default class Utils {
     static humanDuration(value, options) {
         options = options || {maxDecimalPoints: 2};
         options.spacer = "";
-        options.language = localStorage.getItem("lang") || "en";
+        options.language = Utils.getLang();
         options.languages = humanizeDurationLanguages;
         options.largest = 2;
 
@@ -152,8 +152,10 @@ export default class Utils {
         const link = document.createElement("a");
         link.href = url;
         link.setAttribute("download", filename);
+        link.setAttribute("target", "_blank");
         document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
     }
 
     static switchTheme(theme) {
@@ -185,6 +187,10 @@ export default class Utils {
         return localStorage.getItem("theme") || "light";
     }
 
+    static getLang() {
+        return localStorage.getItem("lang") || "en";
+    }
+
     static splitFirst(str, separator){
         return str.split(separator).slice(1).join(separator);
     }
@@ -210,7 +216,7 @@ export default class Utils {
         document.body.appendChild(node).value = text;
         node.select()
 
-        document.execCommand('copy');
+        document.execCommand("copy");
 
         document.body.removeChild(node);
     }

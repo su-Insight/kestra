@@ -1,20 +1,18 @@
 <template>
-    <top-nav-bar :title="routeInfo.title" :breadcrumb="routeInfo.breadcrumb" />
-    <div class="mt-3">
+    <top-nav-bar :title="routeInfo.title" />
+    <template v-if="!pluginIsSelected">
+        <plugin-home v-if="plugins" :plugins="plugins" />
+    </template>
+    <section v-else class="container">
         <el-row :gutter="15">
-            <el-col :span="18" class="markdown" v-loading="isLoading">
-                <markdown v-if="plugin && $route.params.cls" :source="plugin.markdown" :permalink="true" />
-                <div v-else>
-                    <el-alert type="info" :closable="false" show-icon>
-                        {{ $t('plugins.please') }}
-                    </el-alert>
-                </div>
+            <el-col :span="4">
+                <Toc @router-change="onRouterChange" v-if="plugins" :plugins="plugins.filter(p => !p.subGroup)" />
             </el-col>
-            <el-col :span="6">
-                <Toc @router-change="onRouterChange" v-if="plugins" :plugins="plugins" />
+            <el-col :offset="1" :span="19" class="markdown" v-loading="isLoading">
+                <markdown :source="plugin.markdown" :permalink="true" />
             </el-col>
         </el-row>
-    </div>
+    </section>
 </template>
 
 <script>
@@ -23,10 +21,12 @@
     import Markdown from "../layout/Markdown.vue"
     import Toc from "./Toc.vue"
     import {mapState} from "vuex";
+    import PluginHome from "./PluginHome.vue";
 
     export default {
         mixins: [RouteContext],
         components: {
+            PluginHome,
             Markdown,
             Toc,
             TopNavBar
@@ -45,6 +45,9 @@
                         }
                     ]
                 }
+            },
+            pluginIsSelected() {
+                return this.plugin && this.$route.params.cls
             }
         },
         data() {
@@ -57,7 +60,7 @@
             this.loadPlugin()
         },
         watch: {
-            $route(newValue, oldValue) {
+            $route(newValue, _oldValue) {
                 if (newValue.name.startsWith("plugins/")) {
                     this.onRouterChange();
                 }
@@ -65,7 +68,7 @@
         },
         methods: {
             loadToc() {
-                this.$store.dispatch("plugin/list")
+                this.$store.dispatch("plugin/listWithSubgroup")
             },
 
             loadPlugin() {
@@ -92,65 +95,8 @@
     };
 </script>
 
-<style lang="scss">
-    .markdown {
-        h1 {
-            font-size: calc(var(--font-size-base) * 2);
-        }
-
-        blockquote {
-            margin-top: 0;
-        }
-
-        mark {
-            background: var(--bs-success);
-            color: var(--bs-white);
-            font-size: var(--font-size-sm);
-            padding: 2px 8px 2px 8px;
-            border-radius: var(--bs-border-radius-sm);
-
-            * {
-                color: var(--bs-white) !important;
-            }
-        }
-
-        h2 {
-            margin-top: calc(var(--spacer) * 2);
-            border-bottom: 1px solid var(--bs-gray-500);
-            font-weight: bold;
-            color: var(--bs-gray-700)
-        }
-
-        h3 {
-            code {
-                display: inline-block;
-                font-size: calc(var(--font-size-base) * 1.10);
-                font-weight: 400;
-            }
-        }
-
-        h2, h3 {
-            margin-left: -15px;
-
-            .header-anchor {
-                opacity: 0;
-                transition: all ease 0.2s;
-            }
-
-            &:hover {
-                .header-anchor {
-                    opacity: 1;
-                }
-            }
-        }
-
-        h4 {
-            code {
-                display: inline-block;
-                font-size: calc(var(--font-size-base) * 1.00);
-                font-weight: 400;
-            }
-        }
+<style lang="scss" scoped>
+    section {
+        overflow-x: hidden;
     }
-
 </style>

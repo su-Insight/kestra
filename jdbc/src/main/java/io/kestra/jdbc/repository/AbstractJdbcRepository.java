@@ -2,24 +2,32 @@ package io.kestra.jdbc.repository;
 
 import io.kestra.core.utils.DateUtils;
 import io.micronaut.core.annotation.Nullable;
-import jakarta.inject.Singleton;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.impl.DSL;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.Date;
 import java.util.List;
 
-@Singleton
 public abstract class AbstractJdbcRepository {
     protected Condition defaultFilter() {
         return field("deleted", Boolean.class).eq(false);
     }
 
+    protected Condition defaultFilter(Boolean allowDeleted) {
+        return allowDeleted ? DSL.trueCondition() : field("deleted", Boolean.class).eq(false);
+    }
+
     protected Condition defaultFilter(String tenantId) {
         var tenant = buildTenantCondition(tenantId) ;
         return tenant.and(field("deleted", Boolean.class).eq(false));
+    }
+
+    protected Condition defaultFilter(String tenantId, Boolean allowDeleted) {
+        var tenant = buildTenantCondition(tenantId);
+        return allowDeleted ? tenant : tenant.and(field("deleted", Boolean.class).eq(false));
     }
 
     protected Condition buildTenantCondition(String tenantId) {
@@ -38,12 +46,16 @@ public abstract class AbstractJdbcRepository {
         return groupByFields(duration, null, null);
     }
 
+    protected Field<Integer> weekFromTimestamp(Field<Timestamp> timestampField) {
+        return DSL.week(timestampField);
+    }
+
     protected List<Field<?>> groupByFields(Duration duration, @Nullable String dateField, @Nullable DateUtils.GroupType groupBy) {
         String field = dateField != null ? dateField : "timestamp";
         Field<Integer> month = DSL.month(DSL.timestamp(field(field, Date.class))).as("month");
         Field<Integer> year = DSL.year(DSL.timestamp(field(field, Date.class))).as("year");
         Field<Integer> day = DSL.day(DSL.timestamp(field(field, Date.class))).as("day");
-        Field<Integer> week = DSL.week(DSL.timestamp(field(field, Date.class))).as("week");
+        Field<Integer> week = weekFromTimestamp(DSL.timestamp(field(field, Date.class))).as("week");
         Field<Integer> hour = DSL.hour(DSL.timestamp(field(field, Date.class))).as("hour");
         Field<Integer> minute = DSL.minute(DSL.timestamp(field(field, Date.class))).as("minute");
 

@@ -1,33 +1,47 @@
 <template>
-    <div class="tabs-nav">
-        <el-tabs class="nav-tabs-flow-root router-link" v-model="activeName">
-            <el-tab-pane
-                v-for="tab in tabs"
-                :key="tab.name"
-                :label="tab.title"
-                :name="tab.name || 'default'"
-                :disabled="tab.disabled"
-            >
-                <template #label>
-                    <component :is="embedActiveTab ? 'a' : 'router-link'" @click.native="embeddedTabChange(tab)" :to="embedActiveTab ? undefined : to(tab)">
+    <el-tabs data-component="FILENAME_PLACEHOLDER" class="router-link" :class="{top: top}" v-model="activeName">
+        <el-tab-pane
+            v-for="tab in tabs.filter(t => !t.hidden)"
+            :key="tab.name"
+            :label="tab.title"
+            :name="tab.name || 'default'"
+            :disabled="tab.disabled || tab.locked"
+            :data-component="`FILENAME_PLACEHOLDER#${tab}`"
+        >
+            <template #label>
+                <component :is="embedActiveTab || tab.disabled || tab.locked ? 'a' : 'router-link'" @click="embeddedTabChange(tab)" :to="embedActiveTab ? undefined : to(tab)" :data-test-id="tab.name">
+                    <enterprise-tooltip :disabled="tab.locked" :term="tab.name" content="tabs">
                         {{ tab.title }}
                         <el-badge :type="tab.count > 0 ? 'danger' : 'primary'" :value="tab.count" v-if="tab.count !== undefined" />
-                    </component>
-                </template>
-            </el-tab-pane>
-        </el-tabs>
-        <component
-            v-bind="{...activeTab.props, ...attrsWithoutClass}"
-            v-on="activeTab['v-on'] ?? {}"
-            ref="tabContent"
-            :is="activeTab.component"
-            embed
-        />
-    </div>
+                    </enterprise-tooltip>
+                </component>
+            </template>
+        </el-tab-pane>
+    </el-tabs>
+
+    <section data-component="FILENAME_PLACEHOLDER#container" ref="container" v-bind="$attrs" :class="{...containerClass, 'd-flex flex-row': isEditorActiveTab, 'namespace-editor': isNamespaceEditor}">
+        <EditorSidebar v-if="isEditorActiveTab" ref="sidebar" :style="`flex: 0 0 calc(${explorerWidth}% - 11px);`" />
+        <div v-if="isEditorActiveTab && explorerVisible" @mousedown.prevent.stop="dragSidebar" class="slider" />
+        <div :style="`flex: 1 1 ${100 - (isEditorActiveTab && explorerVisible ? explorerWidth : 0)}%;`">
+            <component
+                v-bind="{...activeTab.props, ...attrsWithoutClass}"
+                v-on="activeTab['v-on'] ?? {}"
+                ref="tabContent"
+                :is="activeTab.component"
+                embed
+            />
+        </div>
+    </section>
 </template>
 
 <script>
+    import {mapState, mapMutations} from "vuex";
+
+    import EditorSidebar from "./inputs/EditorSidebar.vue";
+    import EnterpriseTooltip from "./EnterpriseTooltip.vue";
+
     export default {
+        components: {EditorSidebar, EnterpriseTooltip},
         props: {
             tabs: {
                 type: Array,
@@ -36,6 +50,10 @@
             routeName: {
                 type: String,
                 default: ""
+            },
+            top: {
+                type: Boolean,
+                default: true
             },
             /**
              * The active embedded tab. If this component is not embedded, keep it undefined.
@@ -72,8 +90,28 @@
             this.setActiveName();
         },
         methods: {
+            ...mapMutations("editor", ["changeExplorerWidth"]),
+            dragSidebar(e){
+                const SELF = this;
+
+                let dragX = e.clientX;
+
+                let blockWidth = this.$refs.sidebar.$el.offsetWidth;
+                let parentWidth = this.$refs.container.offsetWidth;
+
+                let blockWidthPercent = (blockWidth / parentWidth) * 100;
+
+                document.onmousemove = function onMouseMove(e) {
+                    let percent = blockWidthPercent + ((e.clientX - dragX) / parentWidth) * 100;
+                    SELF.changeExplorerWidth(percent)
+                };
+
+                document.onmouseup = () => {
+                    document.onmousemove = document.onmouseup = null;
+                };
+            },
             embeddedTabChange(tab) {
-                this.$emit('changed', tab);
+                this.$emit("changed", tab);
             },
             setActiveName() {
                 this.activeName = this.activeTab.name || "default";
@@ -94,9 +132,26 @@
             },
         },
         computed: {
+            ...mapState({
+                explorerVisible: (state) => state.editor.explorerVisible,
+                explorerWidth: (state) => state.editor.explorerWidth,
+            }),
+            containerClass() {
+                if (this.activeTab.containerClass) {
+                    return {[this.activeTab.containerClass] : true};
+                }
+
+                return {"container" : true, "mt-4": true};
+            },
             activeTab() {
                 return this.tabs
                     .filter(tab => (this.embedActiveTab ?? this.$route.params.tab) === tab.name)[0] || this.tabs[0];
+            },
+            isEditorActiveTab() {
+                return this.activeTab.name === "editor";
+            },
+            isNamespaceEditor(){
+                return this.activeTab?.props?.isNamespace === true;
             },
             // Those are passed to the rendered component
             // We need to exclude class as it's already applied to this component root div
@@ -127,6 +182,26 @@
                 color: var(--el-text-color-disabled);
             }
         }
+    }
+
+    .slider {
+        flex: 0 0 3px;
+        border-radius: 0.15rem;
+        margin: 0 4px;
+        background-color: var(--bs-border-color);
+        border: none;
+        cursor: col-resize;
+        user-select: none; /* disable selection */
+
+        &:hover {
+            background-color: var(--bs-secondary);
+        }
+    }
+
+    .namespace-editor {
+        margin: 0 !important;
+        padding: 0;
+        flex-grow: 1;
     }
 </style>
 

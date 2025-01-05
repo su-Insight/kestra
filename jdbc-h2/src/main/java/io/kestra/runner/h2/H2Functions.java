@@ -11,20 +11,16 @@ import net.thisptr.jackson.jq.Scope;
 import net.thisptr.jackson.jq.Versions;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 public class H2Functions {
-    private static final Scope rootScope;
-    private static final Scope scope;
+    private static final Scope scope = Scope.newEmptyScope();
 
     static {
-        rootScope = Scope.newEmptyScope();
-        BuiltinFunctionLoader.getInstance().loadFunctions(Versions.JQ_1_6, rootScope);
-        scope = Scope.newEmptyScope();
+        BuiltinFunctionLoader.getInstance().loadFunctions(Versions.JQ_1_6, scope);
     }
 
     public static Boolean jqBoolean(String value, String expression) {
@@ -70,7 +66,7 @@ public class H2Functions {
         if (jq.isEmpty()) {
             return null;
         }
-        JsonNode node = jq.get(0);
+        JsonNode node = jq.getFirst();
 
         if (node instanceof NullNode) {
             return null;
@@ -81,7 +77,7 @@ public class H2Functions {
 
     @SneakyThrows
     private static <T> List<T> jqArray(String value, String expression, Function<JsonNode, T> function) {
-        JsonNode node = H2Functions.jq(value, expression).get(0);
+        JsonNode node = H2Functions.jq(value, expression).getFirst();
 
         if (!(node instanceof ArrayNode)) {
             return List.of();
@@ -90,6 +86,6 @@ public class H2Functions {
         return StreamSupport
             .stream(node.spliterator(), false)
             .map(function::apply)
-            .collect(Collectors.toList());
+            .toList();
     }
 }

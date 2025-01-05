@@ -11,7 +11,7 @@ import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.tasks.flows.Dag;
+import io.kestra.plugin.core.flow.Dag;
 
 import java.util.*;
 import java.util.function.BiFunction;
@@ -60,7 +60,7 @@ public class FlowableUtils {
         // first one
         List<TaskRun> taskRuns = execution.findTaskRunByTasks(currentTasks, parentTaskRun);
         if (taskRuns.isEmpty()) {
-            return Collections.singletonList(currentTasks.get(0).toNextTaskRun(execution));
+            return Collections.singletonList(currentTasks.getFirst().toNextTaskRun(execution));
         }
 
         // first created, leave
@@ -88,12 +88,61 @@ public class FlowableUtils {
         return Collections.emptyList();
     }
 
+    public static List<NextTaskRun> resolveWaitForNext(
+        Execution execution,
+        List<ResolvedTask> tasks,
+        List<ResolvedTask> errors,
+        TaskRun parentTaskRun
+    ) {
+        List<ResolvedTask> currentTasks = execution.findTaskDependingFlowState(tasks, errors, parentTaskRun);
+
+        // nothing
+        if (currentTasks == null || currentTasks.isEmpty() || execution.getState().getCurrent() == State.Type.KILLING) {
+            return Collections.emptyList();
+        }
+
+        // first one
+        List<TaskRun> taskRuns = execution.findTaskRunByTasks(currentTasks, parentTaskRun);
+        if (taskRuns.isEmpty()) {
+            return Collections.singletonList(
+                currentTasks.getFirst().toNextTaskRun(execution)
+            );
+        }
+
+        // first created, leave
+        Optional<TaskRun> lastCreated = execution.findLastCreated(taskRuns);
+        if (lastCreated.isPresent()) {
+            return Collections.emptyList();
+        }
+
+        // have running, leave
+        Optional<TaskRun> lastRunning = execution.findLastRunning(taskRuns);
+        if (lastRunning.isPresent()) {
+            return Collections.emptyList();
+        }
+
+        // last success, find next
+        Optional<TaskRun> lastTerminated = execution.findLastTerminated(taskRuns);
+        if (lastTerminated.isPresent()) {
+            int lastIndex = taskRuns.indexOf(lastTerminated.get());
+
+            if (currentTasks.size() > lastIndex + 1) {
+                return Collections.singletonList(currentTasks.get(lastIndex + 1).toNextTaskRun(execution));
+            } else {
+                return Collections.singletonList(currentTasks.getFirst().toNextTaskRun(execution));
+            }
+        }
+
+        return Collections.emptyList();
+    }
+
     public static Optional<State.Type> resolveState(
         Execution execution,
         List<ResolvedTask> tasks,
         List<ResolvedTask> errors,
         TaskRun parentTaskRun,
-        RunContext runContext
+        RunContext runContext,
+        boolean allowFailure
     ) {
         List<ResolvedTask> currentTasks = execution.findTaskDependingFlowState(tasks, errors, parentTaskRun);
 
@@ -105,19 +154,19 @@ public class FlowableUtils {
                 execution.getId()
             );
 
-            return Optional.of(State.Type.FAILED);
+            return Optional.of(allowFailure ? State.Type.WARNING : State.Type.FAILED);
         } else if (currentTasks.stream().allMatch(t -> t.getTask().getDisabled()) && !currentTasks.isEmpty()) {
             // if all child tasks are disabled, we end in SUCCESS
             return Optional.of(State.Type.SUCCESS);
         } else if (!currentTasks.isEmpty()) {
             // handle nominal case, tasks or errors flow are ready to be analysed
             if (execution.isTerminated(currentTasks, parentTaskRun)) {
-                return Optional.of(execution.guessFinalState(tasks, parentTaskRun));
+                return Optional.of(execution.guessFinalState(tasks, parentTaskRun, allowFailure));
             }
         } else {
             // first call, the error flow is not ready, we need to notify the parent task that can be failed to init error flows
             if (execution.hasFailed(tasks, parentTaskRun)) {
-                return Optional.of(execution.guessFinalState(tasks, parentTaskRun));
+                return Optional.of(execution.guessFinalState(tasks, parentTaskRun, allowFailure));
             }
         }
 
@@ -136,7 +185,7 @@ public class FlowableUtils {
                 .parentId(parentTaskRun.getId())
                 .build()
             )
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static List<NextTaskRun> resolveParallelNexts(
@@ -250,7 +299,7 @@ public class FlowableUtils {
             }
 
 
-            return nextTaskRunStream.collect(Collectors.toList());
+            return nextTaskRunStream.toList();
         }
 
         return Collections.emptyList();
@@ -276,6 +325,9 @@ public class FlowableUtils {
             for (Object obj : (List<Object>) value) {
                 if (obj instanceof String) {
                     values.add(runContext.render((String) obj));
+                }
+                else if (obj instanceof Integer) {
+                    values.add(runContext.render(obj.toString()));
                 }
                 else if(obj instanceof Map<?, ?>) {
                     //JSON or YAML map

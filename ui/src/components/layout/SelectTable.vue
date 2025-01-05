@@ -1,3 +1,15 @@
+<template>
+    <div data-component="FILENAME_PLACEHOLDER" class="position-relative">
+        <div v-if="hasSelection" class="bulk-select-header">
+            <slot name="select-actions" />
+        </div>
+        <el-table ref="table" v-bind="$attrs" :data="data" @selection-change="selectionChanged">
+            <el-table-column type="selection" v-if="selectable" />
+            <slot name="default" />
+        </el-table>
+    </div>
+</template>
+
 <script>
     export default {
         data() {
@@ -13,7 +25,7 @@
             computeHeaderSize() {
                 const tableElement = this.$refs.table.$el;
                 this.$el.style.setProperty("--table-header-width", `${tableElement.clientWidth}px`);
-                this.$el.style.setProperty("--table-header-height", `${tableElement.querySelector('thead').clientHeight}px`);
+                this.$el.style.setProperty("--table-header-height", `${tableElement.querySelector("thead").clientHeight}px`);
             }
         },
         props: {
@@ -22,9 +34,13 @@
                 default: true
             },
             data: {
-                type: Array
+                type: Array,
+                default: () => []
             }
         },
+        emits: [
+            "selection-change"
+        ],
         mounted() {
             window.addEventListener("resize", this.computeHeaderSize);
         },
@@ -36,18 +52,6 @@
         }
     }
 </script>
-
-<template>
-    <div class="position-relative">
-        <div v-if="hasSelection" class="bulk-select-header">
-            <slot name="select-actions" />
-        </div>
-        <el-table ref="table" v-bind="$attrs" :data="data" @selection-change="selectionChanged">
-            <el-table-column type="selection" v-if="selectable" />
-            <slot name="default" />
-        </el-table>
-    </div>
-</template>
 
 <style scoped lang="scss">
     .bulk-select-header {

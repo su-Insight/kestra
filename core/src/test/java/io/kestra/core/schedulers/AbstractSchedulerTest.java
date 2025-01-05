@@ -5,20 +5,18 @@ import io.kestra.core.models.Label;
 import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.ExecutionTrigger;
-import io.kestra.core.models.flows.Flow;
-import io.kestra.core.models.flows.Input;
-import io.kestra.core.models.flows.State;
-import io.kestra.core.models.flows.TaskDefault;
+import io.kestra.core.models.flows.*;
 import io.kestra.core.models.flows.input.StringInput;
+import io.kestra.core.models.tasks.WorkerGroup;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.PollingTriggerInterface;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.context.ApplicationContext;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import lombok.*;
@@ -30,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-@MicronautTest
+@KestraTest
 abstract public class AbstractSchedulerTest {
     @Inject
     protected ApplicationContext applicationContext;
@@ -39,24 +37,43 @@ abstract public class AbstractSchedulerTest {
     @Named(QueueFactoryInterface.EXECUTION_NAMED)
     protected QueueInterface<Execution> executionQueue;
 
+    public static Flow createThreadFlow() {
+        return createThreadFlow(null);
+    }
+
+    public static Flow createThreadFlow(String workerGroup) {
+        UnitTest schedule = UnitTest.builder()
+            .id("sleep")
+            .type(UnitTest.class.getName())
+            .workerGroup(workerGroup == null ? null : new WorkerGroup(workerGroup))
+            .build();
+
+        return createFlow(Collections.singletonList(schedule), List.of(
+            PluginDefault.builder()
+                .type(UnitTest.class.getName())
+                .values(Map.of("defaultInjected", "done"))
+                .build()
+        ));
+    }
+
     protected static Flow createFlow(List<AbstractTrigger> triggers) {
         return createFlow(triggers, null);
     }
 
-    protected static Flow createFlow(List<AbstractTrigger> triggers, List<TaskDefault> list) {
+    protected static Flow createFlow(List<AbstractTrigger> triggers, List<PluginDefault> list) {
         Flow.FlowBuilder<?, ?> flow = Flow.builder()
             .id(IdUtils.create())
             .namespace("io.kestra.unittest")
             .inputs(List.of(
                 StringInput.builder()
-                    .type(Input.Type.STRING)
-                    .name("testInputs")
+                    .type(Type.STRING)
+                    .id("testInputs")
                     .required(false)
                     .defaults("test")
                     .build(),
                 StringInput.builder()
-                    .type(Input.Type.STRING)
-                    .name("def")
+                    .type(Type.STRING)
+                    .id("def")
                     .required(false)
                     .defaults("awesome")
                     .build()
@@ -76,7 +93,7 @@ abstract public class AbstractSchedulerTest {
                 .build()));
 
         if (list != null) {
-            flow.taskDefaults(list);
+            flow.pluginDefaults(list);
         }
 
         return flow
@@ -108,7 +125,7 @@ abstract public class AbstractSchedulerTest {
                     .id(IdUtils.create())
                     .namespace(context.getNamespace())
                     .flowId(context.getFlowId())
-                    .flowRevision(context.getFlowRevision())
+                    .flowRevision(conditionContext.getFlow().getRevision())
                     .state(new State())
                     .trigger(ExecutionTrigger.builder()
                         .id(this.getId())

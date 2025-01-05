@@ -7,6 +7,7 @@ target/
 out/
 .idea
 .vscode
+prettierrc.js
 *.iml
 *.ipr
 *.iws
@@ -20,7 +21,6 @@ out/
 ### Configurations
 docker-compose.override.yml
 cli/src/main/resources/application-*.yml
-*/src/test/resources/application-test.yml
 /local
 
 ### Javascript
@@ -29,7 +29,6 @@ node_modules
 yarn-error.log
 yarn.lock
 ui/node_modules
-ui/public/vscode-web
 ui/.env.local
 ui/.env.*.local
 webserver/src/main/resources/ui
@@ -48,3 +47,10 @@ docker/app/secrets/*.yml
 
 ### Build
 core/src/main/resources/gradle.properties
+.plugins.override
+
+# H2 Database
+/data
+
+# Allure Reports
+**/allure-results/*

@@ -8,7 +8,6 @@ import io.kestra.core.models.executions.statistics.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.utils.DateUtils;
 import io.micronaut.data.model.Pageable;
-import io.reactivex.Flowable;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
@@ -18,15 +17,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
-import javax.annotation.Nullable;
-import javax.validation.constraints.NotNull;
+import jakarta.annotation.Nullable;
+import jakarta.validation.constraints.NotNull;
+import reactor.core.publisher.Flux;
 
 public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Execution> {
     Boolean isTaskRunEnabled();
 
-    Optional<Execution> findById(String tenantId, String id);
+    default Optional<Execution> findById(String tenantId, String id) {
+        return findById(tenantId, id, false);
+    }
+
+    Optional<Execution> findById(String tenantId, String id, boolean allowDeleted);
 
     ArrayListTotal<Execution> findByFlowId(String tenantId, String namespace, String id, Pageable pageable);
+
+    /**
+     * Finds all the executions that was triggered by the given execution id.
+     *
+     * @param tenantId           the tenant id.
+     * @param triggerExecutionId the id of the execution trigger.
+     * @return a {@link Flux} of one or more executions.
+     */
+    Flux<Execution> findAllByTriggerExecutionId(String tenantId, String triggerExecutionId);
 
     ArrayListTotal<Execution> find(
         Pageable pageable,
@@ -37,10 +50,12 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> state,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId,
+        @Nullable ChildFilter childFilter
     );
 
-    Flowable<Execution> find(
+    default Flux<Execution> find(
         @Nullable String query,
         @Nullable String tenantId,
         @Nullable String namespace,
@@ -48,7 +63,25 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> state,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId,
+        @Nullable ChildFilter childFilter
+    ) {
+        return find(query, tenantId, namespace, flowId, startDate, endDate, state, labels, triggerExecutionId, childFilter, false);
+    }
+
+    Flux<Execution> find(
+        @Nullable String query,
+        @Nullable String tenantId,
+        @Nullable String namespace,
+        @Nullable String flowId,
+        @Nullable ZonedDateTime startDate,
+        @Nullable ZonedDateTime endDate,
+        @Nullable List<State.Type> state,
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId,
+        @Nullable ChildFilter childFilter,
+        boolean allowDeleted
     );
 
     ArrayListTotal<TaskRun> findTaskRun(
@@ -60,7 +93,9 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> states,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId,
+        @Nullable ChildFilter childFilter
     );
 
     Execution delete(Execution execution);
@@ -68,6 +103,16 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
     Integer purge(Execution execution);
 
     Integer maxTaskRunSetting();
+
+    List<DailyExecutionStatistics> dailyStatisticsForAllTenants(
+        @Nullable String query,
+        @Nullable String namespace,
+        @Nullable String flowId,
+        @Nullable ZonedDateTime startDate,
+        @Nullable ZonedDateTime endDate,
+        @Nullable DateUtils.GroupType groupBy,
+        boolean isTaskRun
+    );
 
     List<DailyExecutionStatistics> dailyStatistics(
         @Nullable String query,
@@ -78,6 +123,11 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime endDate,
         @Nullable DateUtils.GroupType groupBy,
         boolean isTaskRun
+    );
+
+    List<Execution> lastExecutions(
+        @Nullable String tenantId,
+        @Nullable List<FlowFilter> flows
     );
 
     Map<String, Map<String, List<DailyExecutionStatistics>>> dailyGroupByFlowStatistics(
@@ -109,9 +159,16 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime endDate
     );
 
-    Execution save(Execution flow);
+    Execution save(Execution execution);
+
+    Execution update(Execution execution);
 
     default Function<String, String> sortMapping() throws IllegalArgumentException {
         return s -> s;
+    }
+
+    enum ChildFilter {
+        CHILD,
+        MAIN
     }
 }

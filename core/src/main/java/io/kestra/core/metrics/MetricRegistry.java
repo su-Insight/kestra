@@ -1,13 +1,19 @@
 package io.kestra.core.metrics;
 
 import io.kestra.core.models.executions.Execution;
-import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.TriggerContext;
+import io.kestra.core.runners.SubflowExecutionResult;
 import io.kestra.core.runners.WorkerTask;
 import io.kestra.core.runners.WorkerTaskResult;
+import io.kestra.core.runners.WorkerTrigger;
 import io.kestra.core.schedulers.SchedulerExecutionWithTrigger;
-import io.micrometer.core.instrument.*;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.binder.MeterBinder;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -17,15 +23,21 @@ import org.apache.commons.lang3.ArrayUtils;
 @Singleton
 @Slf4j
 public class MetricRegistry {
+    public final static String METRIC_WORKER_JOB_PENDING_COUNT = "worker.job.pending";
+    public final static String METRIC_WORKER_JOB_RUNNING_COUNT = "worker.job.running";
+    public final static String METRIC_WORKER_JOB_THREAD_COUNT = "worker.job.thread";
     public final static String METRIC_WORKER_RUNNING_COUNT = "worker.running.count";
     public final static String METRIC_WORKER_QUEUED_DURATION = "worker.queued.duration";
     public final static String METRIC_WORKER_STARTED_COUNT = "worker.started.count";
-    public final static String METRIC_WORKER_RETRYED_COUNT = "worker.retryed.count";
     public final static String METRIC_WORKER_TIMEOUT_COUNT = "worker.timeout.count";
     public final static String METRIC_WORKER_ENDED_COUNT = "worker.ended.count";
     public final static String METRIC_WORKER_ENDED_DURATION = "worker.ended.duration";
-    public final static String METRIC_WORKER_EVALUATE_TRIGGER_DURATION = "worker.evaluate.trigger.duration";
-    public final static String METRIC_WORKER_EVALUATE_TRIGGER_RUNNING_COUNT = "worker.evaluate.trigger.running.count";
+    public final static String METRIC_WORKER_TRIGGER_DURATION = "worker.trigger.duration";
+    public final static String METRIC_WORKER_TRIGGER_RUNNING_COUNT = "worker.trigger.running.count";
+    public final static String METRIC_WORKER_TRIGGER_STARTED_COUNT = "worker.trigger.started.count";
+    public final static String METRIC_WORKER_TRIGGER_ENDED_COUNT = "worker.trigger.ended.count";
+    public final static String METRIC_WORKER_TRIGGER_ERROR_COUNT = "worker.trigger.error.count";
+    public final static String METRIC_WORKER_TRIGGER_EXECUTION_COUNT = "worker.trigger.execution.count";
 
     public final static String EXECUTOR_TASKRUN_NEXT_COUNT = "executor.taskrun.next.count";
     public final static String EXECUTOR_TASKRUN_ENDED_COUNT = "executor.taskrun.ended.count";
@@ -56,6 +68,7 @@ public class MetricRegistry {
     public final static String JDBC_QUERY_DURATION = "jdbc.query.duration";
 
     public final static String TAG_TASK_TYPE = "task_type";
+    public final static String TAG_TRIGGER_TYPE = "trigger_type";
     public final static String TAG_FLOW_ID = "flow_id";
     public final static String TAG_NAMESPACE_ID = "namespace_id";
     public final static String TAG_STATE = "state";
@@ -132,7 +145,7 @@ public class MetricRegistry {
      *
      * @param workerTask the current WorkerTask
      * @param workerGroup the worker group, optional
-     * @return tags to applied to metrics
+     * @return tags to apply to metrics
      */
     public String[] tags(WorkerTask workerTask, String workerGroup, String... tags) {
         var baseTags = ArrayUtils.addAll(
@@ -148,10 +161,32 @@ public class MetricRegistry {
     }
 
     /**
+     * Return tags for current {@link WorkerTask}.
+     * We don't include current state since it will break up the values per state which make no sense.
+     *
+     * @param workerTrigger the current WorkerTask
+     * @param workerGroup the worker group, optional
+     * @return tags to apply to metrics
+     */
+    public String[] tags(WorkerTrigger workerTrigger, String workerGroup, String... tags) {
+        var baseTags = ArrayUtils.addAll(
+            ArrayUtils.addAll(
+                this.tags(workerTrigger.getTrigger()),
+                tags
+            ),
+            TAG_NAMESPACE_ID, workerTrigger.getTriggerContext().getNamespace(),
+            TAG_FLOW_ID, workerTrigger.getTriggerContext().getFlowId()
+        );
+        baseTags = workerGroup == null ? baseTags : ArrayUtils.addAll(baseTags, TAG_WORKER_GROUP, workerGroup);
+        return workerTrigger.getTriggerContext().getTenantId() == null ? baseTags : ArrayUtils.addAll(baseTags, TAG_TENANT_ID, workerTrigger.getTriggerContext().getTenantId());
+    }
+
+
+    /**
      * Return tags for current {@link WorkerTaskResult}
      *
      * @param workerTaskResult the current WorkerTaskResult
-     * @return tags to applied to metrics
+     * @return tags to apply to metrics
      */
     public String[] tags(WorkerTaskResult workerTaskResult, String... tags) {
         var baseTags = ArrayUtils.addAll(
@@ -164,10 +199,26 @@ public class MetricRegistry {
     }
 
     /**
+     * Return tags for current {@link WorkerTaskResult}
+     *
+     * @param subflowExecutionResult the current WorkerTaskResult
+     * @return tags to apply to metrics
+     */
+    public String[] tags(SubflowExecutionResult subflowExecutionResult, String... tags) {
+        var baseTags = ArrayUtils.addAll(
+            tags,
+            TAG_NAMESPACE_ID, subflowExecutionResult.getParentTaskRun().getNamespace(),
+            TAG_FLOW_ID, subflowExecutionResult.getParentTaskRun().getFlowId(),
+            TAG_STATE, subflowExecutionResult.getParentTaskRun().getState().getCurrent().name()
+        );
+        return subflowExecutionResult.getParentTaskRun().getTenantId() == null ? baseTags : ArrayUtils.addAll(baseTags, TAG_TENANT_ID, subflowExecutionResult.getParentTaskRun().getTenantId());
+    }
+
+    /**
      * Return tags for current {@link Task}
      *
      * @param task the current Task
-     * @return tags to applied to metrics
+     * @return tags to apply to metrics
      */
     public String[] tags(Task task) {
         return new String[]{
@@ -176,10 +227,22 @@ public class MetricRegistry {
     }
 
     /**
+     * Return tags for current {@link AbstractTrigger}
+     *
+     * @param trigger the current Trigger
+     * @return tags to applied to metrics
+     */
+    public String[] tags(AbstractTrigger trigger) {
+        return new String[]{
+            TAG_TRIGGER_TYPE, trigger.getType(),
+        };
+    }
+
+    /**
      * Return tags for current {@link Execution}
      *
      * @param execution the current Execution
-     * @return tags to applied to metrics
+     * @return tags to apply to metrics
      */
     public String[] tags(Execution execution) {
         var baseTags = new String[]{
@@ -194,33 +257,21 @@ public class MetricRegistry {
      * Return tags for current {@link TriggerContext}
      *
      * @param triggerContext the current TriggerContext
-     * @param workerGroup the worker group, optional
-     * @return tags to applied to metrics
+     * @return tags to apply to metrics
      */
-    public String[] tags(TriggerContext triggerContext, String workerGroup) {
+    public String[] tags(TriggerContext triggerContext) {
         var baseTags = new String[]{
             TAG_FLOW_ID, triggerContext.getFlowId(),
             TAG_NAMESPACE_ID, triggerContext.getNamespace()
         };
-        baseTags =  workerGroup == null ? baseTags : ArrayUtils.addAll(baseTags, TAG_WORKER_GROUP, workerGroup);
         return triggerContext.getTenantId() == null ? baseTags : ArrayUtils.addAll(baseTags, TAG_TENANT_ID, triggerContext.getTenantId());
-    }
-
-    /**
-     * Return tags for current {@link TriggerContext}
-     *
-     * @param triggerContext the current TriggerContext
-     * @return tags to applied to metrics
-     */
-    public String[] tags(TriggerContext triggerContext) {
-        return tags(triggerContext, null);
     }
 
     /**
      * Return tags for current {@link SchedulerExecutionWithTrigger}.
      *
      * @param schedulerExecutionWithTrigger the current SchedulerExecutionWithTrigger
-     * @return tags to applied to metrics
+     * @return tags to apply to metrics
      */
     public String[] tags(SchedulerExecutionWithTrigger schedulerExecutionWithTrigger, String... tags) {
         return ArrayUtils.addAll(
@@ -233,7 +284,7 @@ public class MetricRegistry {
     /**
      * Return globals tags
      *
-     * @return tags to applied to metrics
+     * @return tags to apply to metrics
      */
     public Tags tags(String... tags) {
         return Tags.of(tags);

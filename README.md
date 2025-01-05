@@ -24,13 +24,12 @@
 <a href="https://www.youtube.com/@kestra-io"><img height="25" src="https://kestra.io/youtube.svg" alt="youtube" /></a> &nbsp;
 </p>
 
-<br />
 <p align="center">
-    <a href="https://www.youtube.com/watch?v=h-P0eK2xN58&ab_channel=Kestra" target="_blank">
+    <a href="https://go.kestra.io/video/product-overview" target="_blank">
         <img src="https://kestra.io/startvideo.png" alt="Get started in 4 minutes with Kestra" width="640px" />
     </a>
 </p>
-<p align="center" style="color:grey;"><i>"Click on the image to get started in 4 minutes with Kestra."</i></p>
+<p align="center" style="color:grey;"><i>Click on the image to get started with Kestra in 4 minutes.</i></p>
 
 ## Live Demo
 
@@ -101,7 +100,7 @@ labels:
 
 tasks:
   - id: hello
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     message: Hello world!
     description: a *very* important task
     disabled: false
@@ -113,8 +112,8 @@ tasks:
       maxAttempt: 5 # type: int
       warningOnRetry: true # type: boolean, default is false
 
-- id: parallel
-    type: io.kestra.core.tasks.flows.Parallel
+  - id: parallel
+    type: io.kestra.plugin.core.flow.Parallel
     concurrent: 3
     tasks:
       - id: task1
@@ -135,10 +134,8 @@ tasks:
 
 triggers:
   - id: schedule
-    type: io.kestra.core.models.triggers.types.Schedule
+    type: io.kestra.plugin.core.trigger.Schedule
     cron: "*/15 * * * *"
-    backfill:
-      start: 2023-10-05T14:00:00Z
 ```
 
 
@@ -184,7 +181,7 @@ Alternatively, you can use `wget https://raw.githubusercontent.com/kestra-io/kes
 Start Kestra:
 
 ```sh
-docker compose up
+docker compose up -d
 ```
 
 
@@ -198,9 +195,10 @@ Here is a simple example logging hello world message to the terminal:
 ```yaml
 id: getting_started
 namespace: dev
+
 tasks:
   - id: hello_world
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     message: Hello World!
 ```
 
@@ -343,7 +341,7 @@ Here are some examples of the available plugins:
     <tr>
         <td><a href="https://kestra.io/plugins/plugin-script-python">Python</a></td>
         <td><a href="https://kestra.io/plugins/plugin-jdbc-rockset">Rockset</a></td>
-        <td><a href="https://kestra.io/plugins/plugin-script-powershell">RScript</a></td>
+        <td><a href="https://kestra.io/plugins/plugin-script-r">RScript</a></td>
     </tr>
     <tr>
         <td><a href="https://kestra.io/plugins/plugin-fs#sftp">SFTP</a></td>
@@ -376,13 +374,7 @@ This list is growing quickly and we welcome contributions.
 If you need help or have any questions, reach out using one of the following channels:
 
 - [Slack](https://kestra.io/slack) - join the community and get the latest updates.
-- [GitHub discussions](https://github.com/kestra-io/kestra/discussions) - useful to start a conversation that is not a bug or feature request.
 - [Twitter](https://twitter.com/kestra_io) - to follow up with the latest updates.
-
-
-## Roadmap
-
-See the [open issues](https://github.com/kestra-io/kestra/issues) for a list of proposed features (and known issues) or look at the [project board](https://github.com/orgs/kestra-io/projects/2).
 
 
 ## Contributing

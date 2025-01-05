@@ -2,11 +2,11 @@ id: test-flow-invalid
 # Comment changed
 namespace: io.kestra2.unittest
 inputs:
-  - name: b
+  - id: b
     type: STRING
 tasks:
   - id: test
-    type: io.kestra.core.tasks.debugs.Return
+    type: io.kestra.plugin.core.debug.Return
     format: test # Comment here too
 disabled: false
 deleted: false

@@ -1,27 +1,30 @@
 <template>
     <top-nav-bar :title="routeInfo.title" />
-    <div class="mt-3">
+    <section class="full-container">
         <editor-view
-            :flow-id="defaultFlowTemplate.id"
-            :namespace="defaultFlowTemplate.namespace"
+            v-if="this.source"
+            :flow-id="flowParsed?.id"
+            :namespace="flowParsed?.namespace"
             :is-creating="true"
             :flow-graph="flowGraph"
             :is-read-only="false"
+            :is-dirty="true"
             :total="total"
             :guided-properties="guidedProperties"
-            :flow-error="flowError"
-            :flow-deprecations="flowDeprecations"
+            :flow-validation="flowValidation"
             :flow="sourceWrapper"
+            :next-revision="1"
         />
-    </div>
-    <div id="guided-right" />
+    </section>
 </template>
 
 <script>
     import EditorView from "../inputs/EditorView.vue";
-    import {mapGetters, mapState} from "vuex";
+    import {mapGetters, mapState, mapMutations} from "vuex";
     import RouteContext from "../../mixins/routeContext";
     import TopNavBar from "../../components/layout/TopNavBar.vue";
+    import {apiUrl} from "override/utils/route";
+    import {YamlUtils} from "@kestra-io/ui-libs";
 
     export default {
         mixins: [RouteContext],
@@ -29,36 +32,65 @@
             EditorView,
             TopNavBar
         },
-        beforeUnmount() {
-            this.$store.commit("flow/setFlowError", undefined);
-            this.$store.commit("flow/setFlowDeprecations", undefined);
+        data() {
+            return {
+                source: null
+            }
         },
-        computed: {
-            sourceWrapper() {
-                return {source: this.defaultFlowTemplate};
-            },
-            defaultFlowTemplate() {
-                if(this.$route.query.copy && this.flow){
-                    return this.flow.source;
-                }
+        created() {
+            if (this.$route.query.reset) {
+                localStorage.setItem("tourDoneOrSkip", undefined);
+                this.$store.commit("core/setGuidedProperties", {tourStarted: false});
+                this.$tours["guidedTour"]?.start();
+            }
+            this.setupFlow()
 
-                return `id: hello-world
+            this.closeAllTabs()
+        },
+        beforeUnmount() {
+            this.$store.commit("flow/setFlowValidation", undefined);
+        },
+        methods: {
+            ...mapMutations("editor", ["closeAllTabs"]),
+
+            async queryBlueprint(blueprintId) {
+                return (await this.$http.get(`${this.blueprintUri}/${blueprintId}/flow`)).data;
+            },
+            async setupFlow() {
+                if (this.$route.query.copy && this.flow){
+                    this.source = this.flow.source;
+                } else if (this.$route.query.blueprintId) {
+                    this.source = await this.queryBlueprint(this.$route.query.blueprintId)
+                } else {
+                    this.source = `id: myflow
 namespace: company.team
 tasks:
   - id: hello
-    type: io.kestra.core.tasks.log.Log
-    message: Kestra team wishes you a great day! 👋`;
+    type: io.kestra.plugin.core.log.Log
+    message: Hello World! 🚀`;
+                }
+            }
+        },
+        computed: {
+            sourceWrapper() {
+                return {source: this.source};
             },
             ...mapState("flow", ["flowGraph", "total"]),
             ...mapState("auth", ["user"]),
             ...mapState("plugin", ["pluginSingleList", "pluginsDocumentation"]),
             ...mapGetters("core", ["guidedProperties"]),
-            ...mapGetters("flow", ["flow", "flowError", "flowDeprecations"]),
+            ...mapGetters("flow", ["flow", "flowValidation"]),
             routeInfo() {
                 return {
                     title: this.$t("flows")
                 };
             },
+            blueprintUri() {
+                return `${apiUrl(this.$store)}/blueprints/community`
+            },
+            flowParsed() {
+                return YamlUtils.parse(this.source);
+            }
         },
         beforeRouteLeave(to, from, next) {
             this.$store.commit("flow/setFlow", null);

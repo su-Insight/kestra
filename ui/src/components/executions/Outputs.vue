@@ -7,21 +7,18 @@
         {{ $t('outputs') }}
     </el-dropdown-item>
 
-    <el-drawer
+    <drawer
+        data-component="FILENAME_PLACEHOLDER"
         v-if="isOpen"
         v-model="isOpen"
         :title="$t('outputs')"
-        destroy-on-close
-        :append-to-body="true"
-        size=""
-        direction="ltr"
     >
         <vars
             :execution="execution"
             class="table-unrounded mt-1"
             :data="outputs"
         />
-    </el-drawer>
+    </drawer>
 </template>
 
 <script setup>
@@ -30,10 +27,12 @@
 
 <script>
     import Vars from "../executions/Vars.vue";
+    import Drawer from "../Drawer.vue";
 
     export default {
         components: {
             Vars,
+            Drawer,
         },
         props: {
             outputs: {

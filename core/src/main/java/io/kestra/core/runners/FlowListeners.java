@@ -1,18 +1,20 @@
 package io.kestra.core.runners;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.kestra.core.models.flows.FlowWithException;
+import io.kestra.core.serializers.JacksonMapper;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
-import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.services.FlowListenersInterface;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -24,6 +26,8 @@ import jakarta.inject.Singleton;
 @Singleton
 @Slf4j
 public class FlowListeners implements FlowListenersInterface {
+    private static final ObjectMapper MAPPER = JacksonMapper.ofJson();
+
     private Boolean isStarted = false;
     private final QueueInterface<Flow> flowQueue;
     private final List<Flow> flows;
@@ -47,12 +51,21 @@ public class FlowListeners implements FlowListenersInterface {
                 this.isStarted = true;
 
                 this.flowQueue.receive(either -> {
+                    Flow flow;
                     if (either.isRight()) {
                         log.error("Unable to deserialize a flow: {}", either.getRight().getMessage());
-                        return;
+                        try {
+                            var jsonNode = MAPPER.readTree(either.getRight().getRecord());
+                            flow = FlowWithException.from(jsonNode, either.getRight()).orElseThrow(IOException::new);
+                        } catch (IOException e) {
+                            // if we cannot create a FlowWithException, ignore the message
+                            log.error("Unexpected exception when trying to handle a deserialization error", e);
+                            return;
+                        }
                     }
-
-                    Flow flow = either.getLeft();
+                    else {
+                        flow = either.getLeft();
+                    }
                     Optional<Flow> previous = this.previous(flow);
 
                     if (flow.isDeleted()) {
@@ -86,13 +99,13 @@ public class FlowListeners implements FlowListenersInterface {
     private Optional<Flow> previous(Flow flow) {
         return flows
             .stream()
-            .filter(r -> r.getNamespace().equals(flow.getNamespace()) && r.getId().equals(flow.getId()))
+            .filter(r -> Objects.equals(r.getTenantId(), flow.getTenantId()) && r.getNamespace().equals(flow.getNamespace()) && r.getId().equals(flow.getId()))
             .findFirst();
     }
 
     private boolean remove(Flow flow) {
         synchronized (this) {
-            boolean remove = flows.removeIf(r -> r.getNamespace().equals(flow.getNamespace()) && r.getId().equals(flow.getId()));
+            boolean remove = flows.removeIf(r -> Objects.equals(r.getTenantId(), flow.getTenantId()) && r.getNamespace().equals(flow.getNamespace()) && r.getId().equals(flow.getId()));
             if (!remove && flow.isDeleted()) {
                 log.warn("Can't remove flow {}.{}", flow.getNamespace(), flow.getId());
             }

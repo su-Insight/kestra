@@ -2,13 +2,17 @@ package io.kestra.core.services;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.FlowWithSource;
 import io.kestra.core.models.triggers.AbstractTrigger;
-import io.kestra.core.runners.RunContextFactory;
+import io.kestra.core.plugins.PluginRegistry;
+import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.serializers.JacksonMapper;
+import io.kestra.core.serializers.YamlFlowParser;
 import io.kestra.core.utils.ListUtils;
-import io.micronaut.context.ApplicationContext;
+import io.micronaut.context.annotation.Value;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -32,14 +36,99 @@ import java.util.stream.StreamSupport;
 @Singleton
 @Slf4j
 public class FlowService {
-    @Inject
-    RunContextFactory runContextFactory;
+    private final IllegalStateException NO_REPOSITORY_EXCEPTION = new IllegalStateException("No flow repository found. Make sure the `kestra.repository.type` property is set.");
+
+    private static final ObjectMapper NON_DEFAULT_OBJECT_MAPPER = JacksonMapper.ofJson()
+        .copy()
+        .setSerializationInclusion(JsonInclude.Include.NON_DEFAULT);
 
     @Inject
-    ConditionService conditionService;
+    Optional<FlowRepositoryInterface> flowRepository;
 
     @Inject
-    ApplicationContext applicationContext;
+    YamlFlowParser yamlFlowParser;
+
+    @Inject
+    PluginDefaultService pluginDefaultService;
+
+    @Inject
+    PluginRegistry pluginRegistry;
+
+    @Value("${kestra.system-flows.namespace:system}")
+    private String systemFlowNamespace;
+
+    public FlowWithSource importFlow(String tenantId, String source) {
+        return this.importFlow(tenantId, source, false);
+    }
+
+    public FlowWithSource importFlow(String tenantId, String source, boolean dryRun) {
+        Flow withTenant = yamlFlowParser.parse(source, Flow.class).toBuilder()
+            .tenantId(tenantId)
+            .build();
+
+        if (flowRepository.isEmpty()) {
+            throw NO_REPOSITORY_EXCEPTION;
+        }
+
+        FlowRepositoryInterface flowRepository = this.flowRepository.get();
+        Optional<FlowWithSource> flowWithSource = flowRepository
+            .findByIdWithSource(withTenant.getTenantId(), withTenant.getNamespace(), withTenant.getId(), Optional.empty(), true);
+        if (dryRun) {
+            return flowWithSource
+                .map(previous -> {
+                    if (previous.equals(withTenant, source) && !previous.isDeleted()) {
+                        return previous;
+                    } else {
+                        return FlowWithSource.of(withTenant.toBuilder().revision(previous.getRevision() + 1).build(), source);
+                    }
+                })
+                .orElseGet(() -> FlowWithSource.of(withTenant, source).toBuilder().revision(1).build());
+        }
+
+        return flowWithSource
+            .map(previous -> flowRepository.update(withTenant, previous, source, pluginDefaultService.injectDefaults(withTenant)))
+            .orElseGet(() -> flowRepository.create(withTenant, source, pluginDefaultService.injectDefaults(withTenant)));
+    }
+
+    public List<FlowWithSource> findByNamespaceWithSource(String tenantId, String namespace) {
+        if (flowRepository.isEmpty()) {
+            throw NO_REPOSITORY_EXCEPTION;
+        }
+
+        return flowRepository.get().findByNamespaceWithSource(tenantId, namespace);
+    }
+
+    public List<Flow> findAll(String tenantId) {
+        if (flowRepository.isEmpty()) {
+            throw NO_REPOSITORY_EXCEPTION;
+        }
+
+        return flowRepository.get().findAll(tenantId);
+    }
+
+    public List<Flow> findByNamespace(String tenantId, String namespace) {
+        if (flowRepository.isEmpty()) {
+            throw NO_REPOSITORY_EXCEPTION;
+        }
+
+        return flowRepository.get().findByNamespace(tenantId, namespace);
+    }
+
+    public List<Flow> findByNamespacePrefix(String tenantId, String namespacePrefix) {
+        if (flowRepository.isEmpty()) {
+            throw NO_REPOSITORY_EXCEPTION;
+        }
+
+        return flowRepository.get().findByNamespacePrefix(tenantId, namespacePrefix);
+    }
+
+    public Flow delete(Flow flow) {
+        if (flowRepository.isEmpty()) {
+            throw NO_REPOSITORY_EXCEPTION;
+        }
+
+        return flowRepository.get().delete(flow);
+    }
 
     public Stream<Flow> keepLastVersion(Stream<Flow> stream) {
         return keepLastVersionCollector(stream);
@@ -48,6 +137,74 @@ public class FlowService {
     public List<String> deprecationPaths(Flow flow) {
         return deprecationTraversal("", flow).toList();
     }
+
+    public List<String> warnings(Flow flow) {
+        if (flow == null) {
+            return Collections.emptyList();
+        }
+
+        List<String> warnings = new ArrayList<>();
+        if (flow.getNamespace() != null && flow.getNamespace().equals(systemFlowNamespace)) {
+            warnings.add("The system namespace is reserved for background workflows intended to perform routine tasks such as sending alerts and purging logs. Please use another namespace name.");
+        }
+
+        List<AbstractTrigger> triggers = flow.getTriggers();
+        if (
+            triggers != null &&
+                triggers.stream().anyMatch(trigger -> {
+                    if (trigger instanceof io.kestra.plugin.core.trigger.Flow flowTrigger) {
+                        return Optional.ofNullable(flowTrigger.getConditions()).map(List::isEmpty).orElse(true);
+                    }
+
+                    return false;
+                    })
+        ) {
+            warnings.add("This flow will be triggered for EVERY execution of EVERY flow on your instance. We recommend adding the conditions property to the Flow trigger.");
+        }
+
+        return warnings;
+    }
+
+    public List<Relocation> relocations(String flowSource) {
+        try {
+            Map<String, Class<?>> aliases = pluginRegistry.plugins().stream()
+                .flatMap(plugin -> plugin.getAliases().values().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            Map<String, Object> stringObjectMap = JacksonMapper.ofYaml().readValue(flowSource, JacksonMapper.MAP_TYPE_REFERENCE);
+            return relocations(aliases, stringObjectMap);
+        } catch (JsonProcessingException e) {
+            // silent failure (we don't compromise the app / response for warnings)
+            return Collections.emptyList();
+        }
+    }
+    public record Relocation(String from, String to) {}
+
+    @SuppressWarnings("unchecked")
+    private List<Relocation> relocations(Map<String, Class<?>> aliases, Map<String, Object> stringObjectMap) {
+        List<Relocation> relocations = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : stringObjectMap.entrySet()) {
+            if (entry.getValue() instanceof String value && aliases.containsKey(value)) {
+                relocations.add(new Relocation(value, aliases.get(value).getName()));
+            }
+
+            if (entry.getValue() instanceof Map<?, ?> value) {
+                relocations.addAll(relocations(aliases, (Map<String, Object>) value));
+            }
+
+            if (entry.getValue() instanceof List<?> value) {
+                List<Relocation> listAliases = value.stream().flatMap(item -> {
+                    if (item instanceof Map<?, ?> map) {
+                        return relocations(aliases, (Map<String, Object>) map).stream();
+                    }
+                    return Stream.empty();
+                }).toList();
+                relocations.addAll(listAliases);
+            }
+        }
+
+        return relocations;
+    }
+
 
     private Stream<String> deprecationTraversal(String prefix, Object object) {
         if (object == null || ClassUtils.isPrimitiveOrWrapper(object.getClass()) || String.class.equals(object.getClass())) {
@@ -103,7 +260,7 @@ public class FlowService {
 
     public Collection<Flow> keepLastVersion(List<Flow> flows) {
         return keepLastVersionCollector(flows.stream())
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private Stream<Flow> keepLastVersionCollector(Stream<Flow> stream) {
@@ -142,7 +299,17 @@ public class FlowService {
                 .stream()
                 .noneMatch(c -> c.getId().equals(p.getId()))
             )
-            .collect(Collectors.toList());
+            .toList();
+    }
+
+    public static List<AbstractTrigger> findUpdatedTrigger(Flow flow, Flow previous) {
+        return ListUtils.emptyOnNull(flow.getTriggers())
+            .stream()
+            .filter(oldTrigger -> ListUtils.emptyOnNull(previous.getTriggers())
+                .stream()
+                .anyMatch(trigger -> trigger.getId().equals(oldTrigger.getId()) && !trigger.equals(oldTrigger))
+            )
+            .toList();
     }
 
     public static String cleanupSource(String source) {
@@ -178,11 +345,7 @@ public class FlowService {
 
     @SneakyThrows
     private static String toYamlWithoutDefault(Object object) throws JsonProcessingException {
-        String json = JacksonMapper
-            .ofJson()
-            .copy()
-            .setSerializationInclusion(JsonInclude.Include.NON_DEFAULT)
-            .writeValueAsString(object);
+        String json = NON_DEFAULT_OBJECT_MAPPER.writeValueAsString(object);
 
         Object map = fixSnakeYaml(JacksonMapper.toMap(json));
 
@@ -222,7 +385,7 @@ public class FlowService {
             return ((Collection<?>) object)
                 .stream()
                 .map(FlowService::fixSnakeYaml)
-                .collect(Collectors.toList());
+                .toList();
         } else if (object instanceof String) {
             String item = (String) object;
 
@@ -232,5 +395,41 @@ public class FlowService {
         }
 
         return object;
+    }
+
+    /**
+     * Return true if the namespace is allowed from the namespace denoted by 'fromTenant' and 'fromNamespace'.
+     * As namespace restriction is an EE feature, this will always return true in OSS.
+     */
+    public boolean isAllowedNamespace(String tenant, String namespace, String fromTenant, String fromNamespace) {
+        return true;
+    }
+
+    /**
+     * Check that the namespace is allowed from the namespace denoted by 'fromTenant' and 'fromNamespace'.
+     * If not, throw an IllegalArgumentException.
+     */
+    public void checkAllowedNamespace(String tenant, String namespace, String fromTenant, String fromNamespace) {
+        if (!isAllowedNamespace(tenant, namespace, fromTenant, fromNamespace)) {
+            throw new IllegalArgumentException("Namespace " + namespace + " is not allowed.");
+        }
+    }
+
+    /**
+     * Return true if the namespace is allowed from all the namespace in the 'fromTenant' tenant.
+     * As namespace restriction is an EE feature, this will always return true in OSS.
+     */
+    public boolean areAllowedAllNamespaces(String tenant, String fromTenant, String fromNamespace) {
+        return true;
+    }
+
+    /**
+     * Check that the namespace is allowed from all the namespace in the 'fromTenant' tenant.
+     * If not, throw an IllegalArgumentException.
+     */
+    public void checkAllowedAllNamespaces(String tenant, String fromTenant, String fromNamespace) {
+        if (!areAllowedAllNamespaces(tenant, fromTenant, fromNamespace)) {
+            throw new IllegalArgumentException("All namespaces are not allowed, you should either filter on a namespace or configure all namespaces to allow your namespace.");
+        }
     }
 }

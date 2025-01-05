@@ -3,7 +3,7 @@
         <div class="vueflow">
             <low-code-editor
                 :key="execution.id"
-                v-if="execution && flowGraph && flow?.source"
+                v-if="execution && flowGraph"
                 :flow-id="execution.flowId"
                 :namespace="execution.namespace"
                 :flow-graph="flowGraph"
@@ -13,10 +13,10 @@
                 is-read-only
                 @follow="forwardEvent('follow', $event)"
                 view-type="topology"
-                @expand-subflow="onExpandSubflow($event)"
+                @expand-subflow="onExpandSubflow"
             />
             <el-alert v-else type="warning" :closable="false">
-                {{ $t("unable to generate graph")}}
+                {{ $t("unable to generate graph") }}
             </el-alert>
         </div>
     </el-card>
@@ -26,20 +26,31 @@
     import {mapGetters, mapState} from "vuex";
     import {CLUSTER_PREFIX} from "@kestra-io/ui-libs/src/utils/constants";
     import Utils from "@kestra-io/ui-libs/src/utils/Utils";
+    import STATE from "../../utils/state";
+    import throttle from "lodash/throttle";
     export default {
         components: {
             LowCodeEditor
         },
         computed: {
-            ...mapState("flow", ["flow","flowGraph"]),
-            ...mapState("execution", ["execution"]),
+            ...mapState("flow", ["flow"]),
+            ...mapState("execution", ["execution", "flowGraph"]),
             ...mapGetters("execution", ["subflowsExecutions"])
         },
         data() {
             return {
                 previousExecutionId: undefined,
                 expandedSubflows: [],
-                sseBySubflow: {}
+                sseBySubflow: {},
+                throttledExecutionUpdate: throttle(function (subflow, executionEvent) {
+                    const previousExecution = this.subflowsExecutions[subflow];
+                    this.$store.commit("execution/addSubflowExecution", {subflow, execution: JSON.parse(executionEvent.data)});
+
+                    // add subflow execution id to graph
+                    if(previousExecution === undefined) {
+                        this.loadGraph(true);
+                    }
+                }, 500)
             };
         },
         watch: {
@@ -97,12 +108,8 @@
             loadGraph(force) {
                 if (this.execution && (force || (this.flowGraph === undefined || this.previousExecutionId !== this.execution.id))) {
                     this.previousExecutionId = this.execution.id;
-                    this.$store.dispatch("flow/loadGraph", {
-                        flow: {
-                            namespace: this.execution.namespace,
-                            id: this.execution.flowId,
-                            revision: this.execution.flowRevision
-                        },
+                    this.$store.dispatch("execution/loadGraph", {
+                        id: this.execution.id,
                         params: {
                             subflows: this.expandedSubflows
                         }
@@ -146,7 +153,7 @@
                             }).forEach(edge => edge.unused = true);
 
                         // force refresh
-                        this.$store.commit("flow/setFlowGraph", Object.assign({}, this.flowGraph));
+                        this.$store.commit("execution/setFlowGraph", Object.assign({}, this.flowGraph));
                     })
                 }
             },
@@ -189,10 +196,17 @@
                     return;
                 }
 
-                const executionId = parentExecution.taskRunList
-                    .filter(taskRun => taskRun.taskId === Utils.afterLastDot(subflow) && taskRun.outputs?.executionId)?.[0]?.outputs?.executionId;
+                const taskIdMatchingTaskrun = parentExecution.taskRunList
+                    .filter(taskRun => taskRun.taskId === Utils.afterLastDot(subflow))?.[0];
+                const executionId = taskIdMatchingTaskrun?.outputs?.executionId;
 
                 if(!executionId) {
+                    if(taskIdMatchingTaskrun?.state?.current === STATE.SUCCESS) {
+                        // Generating more than 1 subflow execution, we're not showing anything
+                        this.loadGraph(true);
+                        return;
+                    }
+
                     this.delaySSE(generateGraphOnWaiting, subflow);
                     return;
                 }
@@ -200,17 +214,14 @@
                 this.$store.dispatch("execution/followExecution", {id: executionId})
                     .then(sse => {
                         this.sseBySubflow[subflow] = sse;
-                        sse.onmessage = (event) => {
-                            if (event && event.lastEventId === "end") {
-                                sse.close();
+                        sse.onmessage = (executionEvent) => {
+                            const isEnd = executionEvent && executionEvent.lastEventId === "end";
+                            if (isEnd) {
+                                this.closeExecutionSSE();
                             }
-
-                            const previousExecution = this.subflowsExecutions[subflow];
-                            this.$store.commit("execution/addSubflowExecution", {subflow, execution: JSON.parse(event.data)});
-
-                            // add subflow execution id to graph
-                            if(previousExecution === undefined) {
-                                this.loadGraph(true);
+                            this.throttledExecutionUpdate(subflow, executionEvent);
+                            if (isEnd) {
+                                this.throttledExecutionUpdate.flush();
                             }
                         };
                     });

@@ -4,10 +4,15 @@ import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.triggers.Trigger;
+import io.kestra.plugin.core.trigger.Schedule;
+import io.kestra.core.repositories.FlowRepositoryInterface;
+import io.kestra.core.repositories.TriggerRepositoryInterface;
 import io.kestra.core.runners.AbstractMemoryRunnerTest;
 import io.kestra.core.serializers.YamlFlowParser;
 import io.kestra.core.services.GraphService;
-import io.kestra.core.tasks.flows.Switch;
+import io.kestra.plugin.core.flow.Subflow;
+import io.kestra.plugin.core.flow.Switch;
 import io.kestra.core.utils.GraphUtils;
 import io.kestra.core.utils.TestsUtils;
 import jakarta.inject.Inject;
@@ -29,6 +34,12 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
 
     @Inject
     private GraphService graphService;
+
+    @Inject
+    private TriggerRepositoryInterface triggerRepositoryInterface;
+
+    @Inject
+    private FlowRepositoryInterface flowRepositoryInterface;
 
     @Test
     void simple() throws IllegalVariableEvaluationException {
@@ -113,9 +124,9 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
         Flow flow = this.parse("flows/valids/switch.yaml");
         FlowGraph flowGraph = GraphUtils.flowGraph(flow, null);
 
-        assertThat(flowGraph.getNodes().size(), is(14));
-        assertThat(flowGraph.getEdges().size(), is(17));
-        assertThat(flowGraph.getClusters().size(), is(2));
+        assertThat(flowGraph.getNodes().size(), is(17));
+        assertThat(flowGraph.getEdges().size(), is(20));
+        assertThat(flowGraph.getClusters().size(), is(3));
 
         assertThat(edge(flowGraph, ".*parent-seq", ".*parent-seq\\.[^.]*").getRelation().getRelationType(), is(RelationType.CHOICE));
         assertThat(edge(flowGraph, ".*parent-seq", ".*parent-seq\\.t3\\.[^.]*").getRelation().getValue(), is("THIRD"));
@@ -176,8 +187,8 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
         assertThat(edge(flowGraph, ".*parent", ".*t2").getRelation().getRelationType(), is(RelationType.PARALLEL));
         assertThat(edge(flowGraph, ".*parent", ".*t6").getRelation().getRelationType(), is(RelationType.PARALLEL));
 
-        assertThat(edge(flowGraph, ".*t1", ((GraphCluster) flowGraph.getClusters().get(0).getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t1"));
-        assertThat(edge(flowGraph, ".*t4", ((GraphCluster) flowGraph.getClusters().get(0).getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t4"));
+        assertThat(edge(flowGraph, ".*t1", ((GraphCluster) flowGraph.getClusters().getFirst().getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t1"));
+        assertThat(edge(flowGraph, ".*t4", ((GraphCluster) flowGraph.getClusters().getFirst().getCluster()).getEnd().getUid()).getSource(), matchesPattern(".*t4"));
 
         assertThat(((AbstractGraphTask) node(flowGraph, "t1")).getTaskRun(), is(notNullValue()));
         assertThat(((AbstractGraphTask) node(flowGraph, "t4")).getTaskRun(), is(notNullValue()));
@@ -204,11 +215,17 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
     @Test
     void trigger() throws IllegalVariableEvaluationException {
         Flow flow = this.parse("flows/valids/trigger-flow-listener.yaml");
-        FlowGraph flowGraph = GraphUtils.flowGraph(flow, null);
+        triggerRepositoryInterface.save(
+            Trigger.of(flow, flow.getTriggers().getFirst()).toBuilder().disabled(true).build()
+        );
+
+        FlowGraph flowGraph = graphService.flowGraph(flow, null);
 
         assertThat(flowGraph.getNodes().size(), is(6));
         assertThat(flowGraph.getEdges().size(), is(5));
         assertThat(flowGraph.getClusters().size(), is(1));
+        AbstractGraph triggerGraph = flowGraph.getNodes().stream().filter(e -> e instanceof GraphTrigger).findFirst().orElseThrow();
+        assertThat(((GraphTrigger) triggerGraph).getTrigger().getDisabled(), is(true));
     }
 
     @Test
@@ -226,24 +243,29 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
         Flow flow = this.parse("flows/valids/task-flow.yaml");
         FlowGraph flowGraph = GraphUtils.flowGraph(flow, null);
 
-        assertThat(flowGraph.getNodes().size(), is(3));
-        assertThat(flowGraph.getEdges().size(), is(2));
-        assertThat(flowGraph.getClusters().size(), is(0));
+        assertThat(flowGraph.getNodes().size(), is(6));
+        assertThat(flowGraph.getEdges().size(), is(5));
+        assertThat(flowGraph.getClusters().size(), is(1));
 
         flowGraph = graphService.flowGraph(flow, Collections.singletonList("root.launch"));
 
-        assertThat(flowGraph.getNodes().size(), is(17));
-        assertThat(flowGraph.getEdges().size(), is(20));
-        assertThat(flowGraph.getClusters().size(), is(3));
+        assertThat(flowGraph.getNodes().size(), is(23));
+        assertThat(flowGraph.getEdges().size(), is(26));
+        assertThat(flowGraph.getClusters().size(), is(5));
 
-        assertThat(((SubflowGraphTask) ((SubflowGraphCluster) cluster(flowGraph, "root\\.launch").getCluster()).getTaskNode()).getTask().getFlowId(), is("switch"));
+        assertThat(((SubflowGraphTask) ((SubflowGraphCluster) cluster(flowGraph, "root\\.launch").getCluster()).getTaskNode()).getExecutableTask().subflowId().flowId(), is("switch"));
         SubflowGraphTask subflowGraphTask = (SubflowGraphTask) nodeByUid(flowGraph, "root.launch");
-        assertThat(subflowGraphTask.getTask(), instanceOf(io.kestra.core.tasks.flows.Flow.class));
+        assertThat(subflowGraphTask.getTask(), instanceOf(Subflow.class));
         assertThat(subflowGraphTask.getRelationType(), is(RelationType.SEQUENTIAL));
 
         GraphTask switchNode = (GraphTask) nodeByUid(flowGraph, "root.launch.parent-seq");
         assertThat(switchNode.getTask(), instanceOf(Switch.class));
         assertThat(switchNode.getRelationType(), is(RelationType.CHOICE));
+
+        GraphTrigger flowTrigger = (GraphTrigger) nodeByUid(flowGraph, "root.Triggers.schedule");
+        assertThat(flowTrigger.getTriggerDeclaration(), instanceOf(Schedule.class));
+        GraphTrigger subflowTrigger = (GraphTrigger) nodeByUid(flowGraph, "root.launch.Triggers.schedule");
+        assertThat(subflowTrigger.getTriggerDeclaration(), instanceOf(Schedule.class));
     }
 
     private Flow parse(String path) {
@@ -298,7 +320,7 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
             .stream()
             .filter(e -> e.getSource().matches(source))
             .map(FlowGraph.Edge::getTarget)
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private FlowGraph.Cluster cluster(FlowGraph flowGraph, String clusterIdRegex) {

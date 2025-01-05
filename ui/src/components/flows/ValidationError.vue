@@ -1,21 +1,31 @@
 <template>
     <span>
         <!-- Valid -->
-        <el-button v-if="!error && !warnings" v-bind="$attrs" :link="link" :size="size" type="default" class="success">
+        <el-button v-if="!errors && !warnings" v-bind="$attrs" :link="link" :size="size" type="default" class="success">
             <check-circle class="text-success" />
         </el-button>
 
         <!-- Errors -->
-        <el-tooltip v-if="error" popper-class="p-0 bg-transparent" :placement="tooltipPlacement" :show-arrow="false" raw-content transition="" :persistent="false" :hide-after="0">
+        <el-tooltip
+            effect="light"
+            v-if="errors"
+            popper-class="p-0 bg-transparent"
+            :placement="tooltipPlacement"
+            :show-arrow="false"
+            raw-content
+            transition=""
+            :persistent="true"
+            :hide-after="0"
+        >
             <template #content>
                 <el-container class="validation-tooltip">
                     <el-header>
-                        <alert-circle class="align-middle text-danger"/>
+                        <alert-circle class="align-middle text-danger" />
                         <span class="align-middle">
                             {{ $t("error detected") }}
                         </span>
                     </el-header>
-                    <el-main>{{ error.split(/, ?/).join("\n") }}</el-main>
+                    <el-main>{{ errors.join("\n") }}</el-main>
                 </el-container>
             </template>
             <el-button v-bind="$attrs" :link="link" :size="size" type="default" class="error">
@@ -25,13 +35,23 @@
         </el-tooltip>
 
         <!-- Warnings -->
-        <el-tooltip v-if="warnings" popper-class="p-0 bg-transparent" :placement="tooltipPlacement" :show-arrow="false" raw-content transition="" :persistent="false" :hide-after="0">
+        <el-tooltip
+            effect="light"
+            v-if="warnings"
+            popper-class="p-0 bg-transparent"
+            :placement="tooltipPlacement"
+            :show-arrow="false"
+            raw-content
+            transition=""
+            :persistent="true"
+            :hide-after="0"
+        >
             <template #content>
                 <el-container class="validation-tooltip">
                     <el-header>
-                        <alert class="align-middle text-warning"/>
+                        <alert class="align-middle text-warning" />
                         <span class="align-middle">
-                            {{$t("warning detected") }}
+                            {{ $t("warning detected") }}
                         </span>
                     </el-header>
                     <el-main>{{ warnings.join("\n") }}</el-main>
@@ -58,8 +78,8 @@
             Alert
         },
         props: {
-            error: {
-                type: String,
+            errors: {
+                type: Array,
                 default: undefined
             },
             warnings: {
@@ -165,8 +185,9 @@
             padding: calc(2 * var(--spacer)) $spacer !important;
             font-family: $font-family-monospace;
             background-color: white;
-            white-space: pre;
+            white-space: normal;
             border-top: 1px solid var(--bs-gray-300);
+            text-wrap: wrap;
 
             html.dark & {
                 color: white;

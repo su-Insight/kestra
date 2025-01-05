@@ -1,18 +1,12 @@
 <template>
-    <errors code="404" v-if="error && embed"/>
+    <errors code="404" v-if="error && embed" />
     <div v-else>
         <data-table class="blueprints" @page-changed="onPageChanged" ref="dataTable" :total="total" divider>
             <template #navbar>
-                <div class="d-flex sub-nav">
-                    <slot name="nav" />
-                    <el-form-item>
-                        <search-field :router="!embed" placeholder="search blueprint" @search="s => q = s" />
-                    </el-form-item>
-                </div>
                 <el-radio-group v-if="ready" v-model="selectedTag" class="tags-selection">
                     <el-radio-button
                         :key="0"
-                        :label="0"
+                        :value="0"
                         class="hoverable"
                     >
                         {{ $t("all tags") }}
@@ -20,12 +14,15 @@
                     <el-radio-button
                         v-for="tag in Object.values(tags || {})"
                         :key="tag.id"
-                        :label="tag.id"
+                        :value="tag.id"
                         class="hoverable"
                     >
                         {{ tag.name }}
                     </el-radio-button>
                 </el-radio-group>
+            </template>
+            <template #search>
+                <search-field :router="!embed" placeholder="search blueprint" @search="s => q = s" class="blueprints-search" />
             </template>
             <template #table>
                 <el-alert type="info" v-if="!blueprints || blueprints.length === 0" :closable="false">
@@ -35,6 +32,7 @@
                     class="blueprint-card"
                     :class="{'embed': embed}"
                     v-for="blueprint in blueprints"
+                    :key="blueprint.id"
                     @click="goToDetail(blueprint.id)"
                 >
                     <component
@@ -62,7 +60,7 @@
                         </div>
                         <div class="side buttons ms-auto">
                             <slot name="buttons" :blueprint="blueprint" />
-                            <el-tooltip v-if="embed" trigger="click" content="Copied" placement="left" :auto-close="2000">
+                            <el-tooltip v-if="embed" trigger="click" content="Copied" placement="left" :auto-close="2000" effect="light">
                                 <el-button
                                     @click.prevent.stop="copy(blueprint.id)"
                                     :icon="icon.ContentCopy"
@@ -142,8 +140,13 @@
             },
             async blueprintToEditor(blueprintId) {
                 localStorage.setItem(editorViewTypes.STORAGE_KEY, editorViewTypes.SOURCE_TOPOLOGY);
-                localStorage.setItem("autoRestore-creation_draft", (await this.$http.get(`${this.blueprintBaseUri}/${blueprintId}/flow`)).data);
-                this.$router.push({name: "flows/create"});
+                this.$router.push({
+                    name: "flows/create",
+                    params: {
+                        tenant: this.$route.params.tenant
+                    },
+                    query: {blueprintId: blueprintId}
+                });
             },
             tagsToString(blueprintTags) {
                 return blueprintTags?.map(id => this.tags?.[id]?.name).join(" ")
@@ -273,7 +276,7 @@
                 this.hardReload();
             },
             tags() {
-                if(!this.tags.hasOwnProperty(this.selectedTag)) {
+                if(!Object.prototype.hasOwnProperty.call(this.tags, this.selectedTag)) {
                     this.selectedTag = 0;
                 }
             }
@@ -313,7 +316,14 @@
         }
     }
 
+    .blueprints-search {
+        width: 300px;
+        height: 24px;
+        font-size: 12px;
+    }
+
     .blueprints {
+        display: grid;
         width: 100%;
 
         .blueprint-card {
@@ -409,8 +419,8 @@
     .tags-selection {
         display: flex;
         width: 100%;
-        margin-bottom: calc(2 * var(--spacer));
-        gap: $spacer;
+        margin-bottom: var(--spacer);
+        gap: calc($spacer / 3);
         flex-wrap: wrap;
 
         & > * {
@@ -421,6 +431,7 @@
                 border: 1px solid var(--bs-border-color);
                 background: var(--bs-white);
                 width: 100%;
+                font-size: var(--el-font-size-extra-small);
                 font-weight: bold;
                 box-shadow: none;
                 text-overflow: ellipsis;

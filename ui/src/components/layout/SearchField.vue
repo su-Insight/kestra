@@ -1,5 +1,6 @@
 <template>
     <el-input
+        data-component="FILENAME_PLACEHOLDER"
         v-model="search"
         @input="onInput"
         :placeholder="$t(placeholder)"
@@ -36,7 +37,7 @@
             placeholder: {
                 type: String,
                 required: false,
-                default: 'search'
+                default: "search"
             },
             readonly: {
                 type: Boolean

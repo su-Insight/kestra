@@ -13,14 +13,14 @@ public class RequestUtils {
         return queryString == null ? null : queryString
             .stream()
             .map(s -> {
-                String[] split = s.split(":");
-                if (split.length != 2) {
+                String[] split = s.split("[: ]+");
+                if (split.length < 2 || split[0] == null || split[0].isEmpty()) {
                     throw new HttpStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Invalid queryString parameter");
                 }
 
                 return new AbstractMap.SimpleEntry<>(
                     split[0],
-                    split[1]
+                    s.substring(s.indexOf(":") + 1).trim()
                 );
             })
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));

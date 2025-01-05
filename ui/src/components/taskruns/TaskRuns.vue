@@ -1,6 +1,6 @@
 <template>
     <top-nav-bar :title="routeInfo.title" />
-    <div class="mt-3" v-if="ready">
+    <section class="container" v-if="ready">
         <data-table @page-changed="onPageChanged" ref="dataTable" :total="total" :max="maxTaskRunSetting">
             <template #navbar>
                 <el-form-item>
@@ -21,10 +21,9 @@
                     />
                 </el-form-item>
                 <el-form-item>
-                    <date-range
-                        :start-date="$route.query.startDate"
-                        :end-date="$route.query.endDate"
-                        @update:model-value="onDataTableValue($event)"
+                    <date-filter
+                        @update:is-relative="onDateFilterTypeChange"
+                        @update:filter-value="onDataTableValue"
                     />
                 </el-form-item>
                 <el-form-item>
@@ -34,7 +33,30 @@
                     />
                 </el-form-item>
                 <el-form-item>
-                    <refresh-button class="float-right" @refresh="load" />
+                    <el-input
+                        :placeholder="$t('trigger execution id')"
+                        clearable
+                        :model-value="$route.query.triggerExecutionId"
+                        @update:model-value="onDataTableValue('triggerExecutionId', $event)"
+                    />
+                </el-form-item>
+                <el-form-item>
+                    <el-select
+                        :placeholder="$t('trigger filter.title')"
+                        :model-value="$route.query.childFilter"
+                        :persistent="false"
+                        @update:model-value="onDataTableValue('childFilter', $event === 'ALL' ? undefined : $event)"
+                    >
+                        <el-option
+                            v-for="(col, val) in $tm('trigger filter.options')"
+                            :key="val"
+                            :label="col"
+                            :value="val"
+                        />
+                    </el-select>
+                </el-form-item>
+                <el-form-item>
+                    <refresh-button class="float-right" @refresh="load" :can-auto-refresh="canAutoRefresh" />
                 </el-form-item>
             </template>
 
@@ -132,10 +154,11 @@
                 </el-table>
             </template>
         </data-table>
-    </div>
+    </section>
 </template>
 <script setup>
     import Utils from "../../utils/utils";
+    import DateFilter from "../executions/date-select/DateFilter.vue";
 </script>
 <script>
     import {mapState} from "vuex";
@@ -147,7 +170,6 @@
     import DataTableActions from "../../mixins/dataTableActions";
     import SearchField from "../layout/SearchField.vue";
     import NamespaceSelect from "../namespace/NamespaceSelect.vue";
-    import DateRange from "../layout/DateRange.vue";
     import RefreshButton from "../layout/RefreshButton.vue";
     import StatusFilterButtons from "../layout/StatusFilterButtons.vue";
     import StateGlobalChart from "../../components/stats/StateGlobalChart.vue";
@@ -168,7 +190,6 @@
             DataTable,
             SearchField,
             NamespaceSelect,
-            DateRange,
             RefreshButton,
             StatusFilterButtons,
             StateGlobalChart,
@@ -182,6 +203,8 @@
             return {
                 dailyReady: false,
                 isDefaultNamespaceAllow: true,
+                canAutoRefresh: false,
+                refreshDates: false
             };
         },
         computed: {
@@ -196,24 +219,44 @@
                 return stateGlobalChartTypes;
             },
             endDate() {
-                return this.$route.query.endDate ? this.$route.query.endDate : this.$moment(this.endDate).toISOString(true);
+                if (this.$route.query.endDate) {
+                    return this.$route.query.endDate;
+                }
+                return undefined;
             },
             startDate() {
-                return  this.$route.query.startDate ?  this.$route.query.startDate : this.$moment(this.endDate)
-                    .add(-30, "days").toISOString(true);
+                this.refreshDates;
+                if (this.$route.query.startDate) {
+                    return this.$route.query.startDate;
+                }
+                if (this.$route.query.timeRange) {
+                    return this.$moment().subtract(this.$moment.duration(this.$route.query.timeRange).as("milliseconds")).toISOString(true);
+                }
+
+                // the default is PT30D
+                return this.$moment().subtract(30, "days").toISOString(true);
             }
         },
         created() {
             this.$store.dispatch("taskrun/maxTaskRunSetting");
         },
         methods: {
+            onDateFilterTypeChange(event) {
+                this.canAutoRefresh = event;
+            },
             isRunning(item){
                 return State.isRunning(item.state.current);
             },
             onRowDoubleClick(item) {
                 this.$router.push({
                     name: "executions/update",
-                    params: {namespace: item.namespace, flowId: item.flowId, id: item.executionId, tab: "gantt"},
+                    params: {
+                        namespace: item.namespace,
+                        flowId: item.flowId,
+                        id: item.executionId,
+                        tab: "gantt",
+                        tenant: this.$route.params.tenant
+                    },
                 });
             },
             loadQuery(base, stats) {
@@ -227,6 +270,7 @@
                 return _merge(base, queryFilter)
             },
             loadData(callback) {
+                this.refreshDates = !this.refreshDates;
                 this.$store
                     .dispatch("stat/taskRunDaily", this.loadQuery({
                         startDate: this.startDate,

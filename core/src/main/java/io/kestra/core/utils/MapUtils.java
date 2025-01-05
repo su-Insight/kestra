@@ -22,12 +22,11 @@ public class MapUtils {
 
         Map copy = copyMap(a);
 
-
         Map<String, Object> copyMap = b
             .entrySet()
             .stream()
             .collect(
-                HashMap::new,
+                () -> newHashMap(copy.size()),
                 (m, v) -> {
                     Object original = copy.get(v.getKey());
                     Object value = v.getValue();
@@ -44,19 +43,14 @@ public class MapUtils {
                     } else if (value instanceof Collection
                         && original instanceof Collection) {
                         try {
-                            Collection merge =
-                                copyCollection(
+                            found = Lists
+                                .newArrayList(
                                     (Collection) original,
-                                    (List) Lists
-                                        .newArrayList(
-                                            (Collection) original,
-                                            (Collection) value
-                                        )
-                                        .stream()
-                                        .flatMap(Collection::stream)
-                                        .collect(Collectors.toList())
-                                );
-                            found = merge;
+                                    (Collection) value
+                                )
+                                .stream()
+                                .flatMap(Collection::stream)
+                                .toList();
                         } catch (Exception e) {
                             throw new RuntimeException(e);
                         }
@@ -80,15 +74,15 @@ public class MapUtils {
             .entrySet()
             .stream()
             .collect(
-                HashMap::new,
+                () -> newHashMap(original.size()),
                 (map, entry) -> {
                     Object value = entry.getValue();
                     Object found;
 
                     if (value instanceof Map) {
-                        found = copyMap((Map) value);
+                        found = cloneMap((Map) value);
                     } else if (value instanceof Collection) {
-                        found = copyCollection((Collection) value, (Collection) value);
+                        found = cloneCollection((Collection) value);
                     } else {
                         found = value;
                     }
@@ -100,13 +94,58 @@ public class MapUtils {
             );
     }
 
-    private static Collection copyCollection(Collection collection, Collection elements) {
+    private static Map cloneMap(Map elements) {
         try {
-            Collection newInstance = collection.getClass().getDeclaredConstructor().newInstance();
+            Map newInstance = elements.getClass().getDeclaredConstructor().newInstance();
+            newInstance.putAll(elements);
+            return newInstance;
+        } catch (Exception e) {
+            return new HashMap(elements);
+        }
+    }
+
+    private static Collection cloneCollection(Collection elements) {
+        try {
+            Collection newInstance = elements.getClass().getDeclaredConstructor().newInstance();
             newInstance.addAll(elements);
             return newInstance;
         } catch (Exception e) {
             return new ArrayList<>(elements);
         }
+    }
+
+    /**
+     * Utility method for merging multiple {@link Map}s that can contains nullable values.
+     * Note that the maps provided are assumed to be flat, so this method does not perform a recursive merge.
+     *
+     * @param maps  The Map to be merged.
+     * @return     the merged Map.
+     */
+    public static Map<String, Object> mergeWithNullableValues(final Map<String, Object>...maps) {
+        return Arrays.stream(maps)
+            .flatMap(map -> map.entrySet().stream())
+            // https://bugs.openjdk.org/browse/JDK-8148463
+            .collect(HashMap::new, (m, v) -> m.put(v.getKey(), v.getValue()), HashMap::putAll);
+    }
+
+    /**
+     * Utility method that returns an empty HasMap if the <code>map</code> parameter is null,
+     * the <code>map</code> parameter otherwise.
+     */
+    public static <K, V> Map<K, V> emptyOnNull(Map<K, V> map) {
+        return map == null ? new HashMap<>() : map;
+    }
+
+    /**
+     * Creates a hash map that can hold <code>numMappings</code> entry.
+     * This is a copy of the same methods available starting with Java 19.
+     */
+    public static <K, V> HashMap<K, V> newHashMap(int numMappings) {
+        if (numMappings < 0) {
+            throw new IllegalArgumentException("Negative number of mappings: " + numMappings);
+        }
+
+        int hashMapCapacity = (int) Math.ceil(numMappings / 0.75d);
+        return new HashMap<>(hashMapCapacity);
     }
 }

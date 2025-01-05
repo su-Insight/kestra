@@ -2,7 +2,7 @@ package io.kestra.core.validations;
 
 import io.kestra.core.models.validations.ModelValidator;
 import io.micronaut.core.annotation.Introspected;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -13,12 +13,12 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.util.Optional;
 import java.util.stream.Stream;
 import jakarta.inject.Inject;
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@MicronautTest
+@KestraTest
 class DateFormatTest {
     @Inject
     private ModelValidator modelValidator;

@@ -1,48 +1,115 @@
 package io.kestra.storage.local;
 
+import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.storages.FileAttributes;
 import io.kestra.core.storages.StorageInterface;
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
+import io.kestra.core.storages.StorageObject;
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.apache.commons.io.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.URI;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static io.kestra.core.utils.Rethrow.throwFunction;
 
-@Singleton
-@LocalStorageEnabled
+@Plugin
+@Plugin.Id("local")
+@Getter
+@Setter
+@NoArgsConstructor
 public class LocalStorage implements StorageInterface {
-    LocalConfig config;
+    private static final Logger log = LoggerFactory.getLogger(LocalStorage.class);
 
-    @Inject
-    public LocalStorage(LocalConfig config) throws IOException {
-        this.config = config;
+    @PluginProperty
+    @NotNull
+    private Path basePath;
 
-        if (!Files.exists(config.getBasePath())) {
-            Files.createDirectories(config.getBasePath());
+    /** {@inheritDoc} **/
+    @Override
+    public void init() throws IOException {
+        if (!Files.exists(this.basePath)) {
+            Files.createDirectories(this.basePath);
         }
     }
 
     private Path getPath(String tenantId, URI uri) {
+        Path basePath = tenantId == null ? this.basePath.toAbsolutePath()
+            : Paths.get(this.basePath.toAbsolutePath().toString(), tenantId);
+        if(uri == null) {
+            return basePath;
+        }
+
         parentTraversalGuard(uri);
-        return tenantId == null ? Paths.get(config.getBasePath().toAbsolutePath().toString(), uri.getPath())
-            : Paths.get(config.getBasePath().toAbsolutePath().toString(), tenantId, uri.getPath());
+        return Paths.get(basePath.toString(), uri.getPath());
     }
 
     @Override
     public InputStream get(String tenantId, URI uri) throws IOException {
-        return new BufferedInputStream(new FileInputStream(getPath(tenantId, URI.create(uri.getPath()))
+        return new BufferedInputStream(new FileInputStream(getPath(tenantId, uri)
             .toAbsolutePath()
             .toString())
         );
+    }
+
+    @Override
+    public StorageObject getWithMetadata(String tenantId, URI uri) throws IOException {
+        return new StorageObject(LocalFileAttributes.getMetadata(this.getPath(tenantId, uri)), this.get(tenantId, uri));
+    }
+
+    @Override
+    public List<URI> allByPrefix(String tenantId, URI prefix, boolean includeDirectories) throws IOException {
+        Path fsPath = getPath(tenantId, prefix);
+        List<URI> uris = new ArrayList<>();
+        Files.walkFileTree(fsPath, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                if (includeDirectories) {
+                    uris.add(URI.create(dir + "/"));
+                }
+                return super.preVisitDirectory(dir, attrs);
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (!file.getFileName().toString().endsWith(".metadata")) {
+                    uris.add(URI.create(file.toString().replace("\\", "/")));
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            // This can happen for concurrent deletion while traversing folders so we skip in such case
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                log.warn("Failed to visit file " + file + " while searching all by prefix for path " + prefix.getPath(), exc);
+                return FileVisitResult.SKIP_SUBTREE;
+            }
+        });
+
+        URI fsPathUri = URI.create(fsPath.toString().replace("\\", "/"));
+        return uris.stream().sorted(Comparator.reverseOrder())
+            .map(fsPathUri::relativize)
+            .map(URI::getPath)
+            .filter(Predicate.not(String::isEmpty))
+            .map(path -> {
+                String prefixPath = prefix.getPath();
+                return URI.create("kestra://" + prefixPath + (prefixPath.endsWith("/") ? "" : "/") + path);
+            })
+            .toList();
     }
 
     @Override
@@ -52,13 +119,14 @@ public class LocalStorage implements StorageInterface {
 
     @Override
     public List<FileAttributes> list(String tenantId, URI uri) throws IOException {
-        try (Stream<Path> stream = Files.list(getPath(tenantId, URI.create(uri.getPath())))) {
+        try (Stream<Path> stream = Files.list(getPath(tenantId, uri))) {
             return stream
+                .filter(path -> !path.getFileName().toString().endsWith(".metadata"))
                 .map(throwFunction(file -> {
                     URI relative = URI.create(
-                        getPath(tenantId, URI.create("")).relativize(
+                        getPath(tenantId, null).relativize(
                             Path.of(file.toUri())
-                        ).toString()
+                        ).toString().replace("\\", "/")
                     );
                     return getAttributes(tenantId, relative);
                 }))
@@ -69,42 +137,28 @@ public class LocalStorage implements StorageInterface {
     }
 
     @Override
-    public Long size(String tenantId, URI uri) throws IOException {
-        try {
-            return Files.size(getPath(tenantId, URI.create(uri.getPath())));
-        } catch (NoSuchFileException e) {
-            throw new FileNotFoundException("Unable to find file at '" + uri + "'");
-        } catch (IOException e) {
-            throw new IOException("Unable to find file at '" + uri + "' with message '" + e.getMessage() + "'");
-        }
-    }
-
-    @Override
-    public Long lastModifiedTime(String tenantId, URI uri) throws IOException {
-        FileTime lastModifiedTime;
-        try {
-            lastModifiedTime = Files.getLastModifiedTime(getPath(tenantId, uri));
-        } catch (NoSuchFileException e) {
-            throw new FileNotFoundException(e.getMessage());
-        }
-        return lastModifiedTime.toMillis();
-    }
-
-    @Override
-    public URI put(String tenantId, URI uri, InputStream data) throws IOException {
+    public URI put(String tenantId, URI uri, StorageObject storageObject) throws IOException {
         File file = getPath(tenantId, uri).toFile();
         File parent = file.getParentFile();
-        if (!parent.exists() && !parent.mkdirs()) {
-            throw new RuntimeException("Cannot create directory: " + parent.getAbsolutePath());
+        if (!parent.exists()) {
+            parent.mkdirs();
         }
 
-        try (data; OutputStream outStream = new FileOutputStream(file)) {
+        try (InputStream data = storageObject.inputStream(); OutputStream outStream = new FileOutputStream(file)) {
             byte[] buffer = new byte[8 * 1024];
             int bytesRead;
             while ((bytesRead = data.read(buffer)) != -1) {
                 outStream.write(buffer, 0, bytesRead);
             }
         }
+
+        Map<String, String> metadata = storageObject.metadata();
+        if (metadata != null) {
+            try (OutputStream outStream = new FileOutputStream(file.toPath() + ".metadata")) {
+                outStream.write(JacksonMapper.ofIon().writeValueAsBytes(metadata));
+            }
+        }
+
         return URI.create("kestra://" + uri.getPath());
     }
 
@@ -113,7 +167,7 @@ public class LocalStorage implements StorageInterface {
         Path path = getPath(tenantId, uri);
         try {
             return LocalFileAttributes.builder()
-                .fileName(path.getFileName().toString())
+                .filePath(path)
                 .basicFileAttributes(Files.readAttributes(path, BasicFileAttributes.class))
                 .build();
         } catch (NoSuchFileException e) {
@@ -148,7 +202,7 @@ public class LocalStorage implements StorageInterface {
 
     @Override
     public boolean delete(String tenantId, URI uri) throws IOException {
-        Path path = getPath(tenantId, URI.create(uri.getPath()));
+        Path path = getPath(tenantId, uri);
         File file = path.toFile();
 
         if (file.isDirectory()) {
@@ -179,8 +233,8 @@ public class LocalStorage implements StorageInterface {
 
     private URI getKestraUri(String tenantId, Path path) {
         Path prefix = (tenantId == null) ?
-            config.getBasePath().toAbsolutePath() :
-            Path.of(config.getBasePath().toAbsolutePath().toString(), tenantId);
+            basePath.toAbsolutePath() :
+            Path.of(basePath.toAbsolutePath().toString(), tenantId);
         return URI.create("kestra:///" + prefix.relativize(path));
     }
 

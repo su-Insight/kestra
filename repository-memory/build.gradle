@@ -1,7 +1,12 @@
-dependencies {
-    implementation project(":core")
+configurations {
+    implementation.extendsFrom(micronaut)
+}
 
-    testImplementation project(':core').sourceSets.test.output
-    testImplementation project(':runner-memory')
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.4.0'
+dependencies {
+    testImplementation project(":core")
+    implementation("io.micronaut.flyway:micronaut-flyway")
+    implementation("io.micronaut.sql:micronaut-jdbc-hikari")
+    api project(":jdbc")
+    implementation project(":jdbc-h2")
+    testImplementation project(":tests")
 }

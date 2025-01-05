@@ -1,6 +1,7 @@
 package io.kestra.core.models.flows;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
@@ -8,12 +9,13 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
 import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
 import io.kestra.core.exceptions.InternalException;
-import io.kestra.core.models.DeletedInterface;
 import io.kestra.core.models.Label;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.listeners.Listener;
 import io.kestra.core.models.tasks.FlowableTask;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.models.tasks.retrys.AbstractRetry;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.validations.ManualConstraintViolation;
 import io.kestra.core.serializers.JacksonMapper;
@@ -23,9 +25,15 @@ import io.kestra.core.services.FlowService;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.validations.FlowValidation;
 import io.micronaut.core.annotation.Introspected;
-import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,10 +41,6 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.validation.ConstraintViolation;
-import javax.validation.ConstraintViolationException;
-import javax.validation.Valid;
-import javax.validation.constraints.*;
 
 @SuperBuilder(toBuilder = true)
 @Getter
@@ -45,8 +49,12 @@ import javax.validation.constraints.*;
 @ToString
 @EqualsAndHashCode
 @FlowValidation
-public class Flow implements DeletedInterface {
-    private static final ObjectMapper jsonMapper = JacksonMapper.ofJson().copy()
+public class Flow extends AbstractFlow {
+    private static final ObjectMapper NON_DEFAULT_OBJECT_MAPPER = JacksonMapper.ofYaml()
+        .copy()
+        .setSerializationInclusion(JsonInclude.Include.NON_DEFAULT);
+
+    private static final ObjectMapper WITHOUT_REVISION_OBJECT_MAPPER = NON_DEFAULT_OBJECT_MAPPER.copy()
         .setAnnotationIntrospector(new JacksonAnnotationIntrospector() {
             @Override
             public boolean hasIgnoreMarker(final AnnotatedMember m) {
@@ -55,31 +63,12 @@ public class Flow implements DeletedInterface {
             }
         });
 
-    @Pattern(regexp = "[a-z0-9_-]+")
-    @Hidden
-    String tenantId;
-
-    @NotNull
-    @NotBlank
-    @Pattern(regexp = "[a-zA-Z0-9._-]+")
-    String id;
-
-    @NotNull
-    @Pattern(regexp = "[a-z0-9._-]+")
-    String namespace;
-
-    @Min(value = 1)
-    Integer revision;
-
     String description;
 
     @JsonSerialize(using = ListOrMapOfLabelSerializer.class)
     @JsonDeserialize(using = ListOrMapOfLabelDeserializer.class)
-    @Schema(implementation = Object.class, anyOf = {List.class, Map.class})
+    @Schema(implementation = Object.class, oneOf = {List.class, Map.class})
     List<Label> labels;
-
-    @Valid
-    List<Input<?>> inputs;
 
     Map<String, Object> variables;
 
@@ -97,15 +86,36 @@ public class Flow implements DeletedInterface {
     @Valid
     List<AbstractTrigger> triggers;
 
-    List<TaskDefault> taskDefaults;
+    @Valid
+    List<PluginDefault> pluginDefaults;
 
-    @NotNull
-    @Builder.Default
-    boolean disabled = false;
+    @Valid
+    List<PluginDefault> taskDefaults;
 
-    @NotNull
-    @Builder.Default
-    boolean deleted = false;
+    @Deprecated
+    public void setTaskDefaults(List<PluginDefault> taskDefaults) {
+        this.pluginDefaults = taskDefaults;
+        this.taskDefaults = taskDefaults;
+    }
+
+    @Deprecated
+    public List<PluginDefault> getTaskDefaults() {
+        return this.taskDefaults;
+    }
+
+    @Valid
+    Concurrency concurrency;
+
+    @Schema(
+        title = "Output values available and exposes to other flows.",
+        description = "Output values make information about the execution of your Flow available and expose for other Kestra flows to use. Output values are similar to return values in programming languages."
+    )
+    @PluginProperty(dynamic = true)
+    @Valid
+    List<Output> outputs;
+
+    @Valid
+    protected AbstractRetry retry;
 
     public Logger logger() {
         return LoggerFactory.getLogger("flow." + this.id);
@@ -159,7 +169,7 @@ public class Flow implements DeletedInterface {
         return Stream.of(
                 Optional.ofNullable(triggers).orElse(Collections.emptyList()).stream().map(AbstractTrigger::getType),
                 allTasks().map(Task::getType),
-                Optional.ofNullable(taskDefaults).orElse(Collections.emptyList()).stream().map(TaskDefault::getType)
+                Optional.ofNullable(pluginDefaults).orElse(Collections.emptyList()).stream().map(PluginDefault::getType)
             ).reduce(Stream::concat).orElse(Stream.empty())
             .distinct();
     }
@@ -176,7 +186,7 @@ public class Flow implements DeletedInterface {
     public List<Task> allTasksWithChilds() {
         return allTasks()
             .flatMap(this::allTasksWithChilds)
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private Stream<Task> allTasksWithChilds(Task task) {
@@ -199,7 +209,7 @@ public class Flow implements DeletedInterface {
     public List<String> allTriggerIds() {
         return this.triggers != null ? this.triggers.stream()
             .map(AbstractTrigger::getId)
-            .collect(Collectors.toList()) : new ArrayList<>();
+            .collect(Collectors.toList()) : Collections.emptyList();
     }
 
     public List<String> allTasksWithChildsAndTriggerIds() {
@@ -208,7 +218,7 @@ public class Flow implements DeletedInterface {
                 .map(Task::getId),
             this.allTriggerIds().stream()
         )
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public List<Task> allErrorsWithChilds() {
@@ -224,18 +234,35 @@ public class Flow implements DeletedInterface {
         return allErrors;
     }
 
+    public Task findParentTasksByTaskId(String taskId) {
+        return allTasksWithChilds()
+            .stream()
+            .filter(Task::isFlowable)
+            .filter(task -> ((FlowableTask<?>) task).allChildTasks().stream().anyMatch(t -> t.getId().equals(taskId)))
+            .findFirst()
+            .orElse(null);
+    }
+
     public Task findTaskByTaskId(String taskId) throws InternalException {
         return allTasks()
             .flatMap(t -> t.findById(taskId).stream())
             .findFirst()
-            .orElseThrow(() -> new InternalException("Can't find task with id '" + id + "' on flow '" + this.id + "'"));
+            .orElseThrow(() -> new InternalException("Can't find task with id '" + taskId + "' on flow '" + this.id + "'"));
+    }
+
+    public Task findTaskByTaskIdOrNull(String taskId) {
+        return allTasks()
+            .flatMap(t -> t.findById(taskId).stream())
+            .findFirst()
+            .orElse(null);
     }
 
     public Flow updateTask(String taskId, Task newValue) throws InternalException {
         Task task = this.findTaskByTaskId(taskId);
-        Map<String, Object> map = JacksonMapper.toMap(this);
 
-        return JacksonMapper.toMap(
+        Map<String, Object> map = NON_DEFAULT_OBJECT_MAPPER.convertValue(this, JacksonMapper.MAP_TYPE_REFERENCE);
+
+        return NON_DEFAULT_OBJECT_MAPPER.convertValue(
             recursiveUpdate(map, task, newValue),
             Flow.class
         );
@@ -247,7 +274,7 @@ public class Flow implements DeletedInterface {
             if (value.containsKey("id") && value.get("id").equals(previous.getId()) &&
                 value.containsKey("type") && value.get("type").equals(previous.getType())
             ) {
-                return JacksonMapper.toMap(newValue);
+                return NON_DEFAULT_OBJECT_MAPPER.convertValue(newValue, JacksonMapper.MAP_TYPE_REFERENCE);
             } else {
                 return value
                     .entrySet()
@@ -263,7 +290,7 @@ public class Flow implements DeletedInterface {
             return value
                 .stream()
                 .map(r -> recursiveUpdate(r, previous, newValue))
-                .collect(Collectors.toList());
+                .toList();
         } else {
             return object;
         }
@@ -277,12 +304,12 @@ public class Flow implements DeletedInterface {
         return this.getListeners()
             .stream()
             .flatMap(listener -> listener.getTasks().stream())
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public boolean equalsWithoutRevision(Flow o) {
         try {
-            return jsonMapper.writeValueAsString(this).equals(jsonMapper.writeValueAsString(o));
+            return WITHOUT_REVISION_OBJECT_MAPPER.writeValueAsString(this).equals(WITHOUT_REVISION_OBJECT_MAPPER.writeValueAsString(o));
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }

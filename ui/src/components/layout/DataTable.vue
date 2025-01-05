@@ -1,17 +1,23 @@
 <template>
     <div>
-        <nav v-if="hasNavBar">
+        <nav data-component="FILENAME_PLACEHOLDER#nav" v-if="hasNavBar">
             <collapse>
                 <slot name="navbar" />
             </collapse>
         </nav>
 
-        <el-container direction="vertical" v-loading="isLoading">
-            <slot name="top" />
+        <el-container data-component="FILENAME_PLACEHOLDER#container" direction="vertical" v-loading="isLoading">
+            <slot name="top" data-component="FILENAME_PLACEHOLDER#top" />
 
-            <slot name="table" />
+            <pagination v-if="!embed" :size="size" :top="true" :page="page" :total="total" :max="max" @page-changed="onPageChanged">
+                <template #search>
+                    <slot name="search" />
+                </template>
+            </pagination>
 
-            <pagination :size="size" :page="page" :total="total" :max="max" @page-changed="onPageChanged" />
+            <slot name="table" data-component="FILENAME_PLACEHOLDER#table" />
+
+            <pagination v-if="total > 0" :size="size" :page="page" :total="total" :max="max" @page-changed="onPageChanged" />
         </el-container>
     </div>
 </template>
@@ -38,6 +44,7 @@
             max: {type: Number, required: false, default: undefined},
             size: {type: Number, default: 25},
             page: {type: Number, default: 1},
+            embed: {type: Boolean, default: false},
         },
 
         methods: {

@@ -2,7 +2,7 @@ id: task-flow
 namespace: io.kestra.tests
 
 inputs:
-  - name: string
+  - id: string
     type: STRING
 
 labels:
@@ -10,7 +10,7 @@ labels:
 
 tasks:
   - id: launch
-    type: io.kestra.core.tasks.flows.Flow
+    type: io.kestra.plugin.core.flow.Subflow
     namespace: io.kestra.tests
     flowId: switch
     inputs:
@@ -22,3 +22,8 @@ tasks:
       launchTaskLabel: launchFoo
     outputs:
       extracted: "{{ outputs.default.value ?? outputs['error-t1'].value }}"
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 * * * *"

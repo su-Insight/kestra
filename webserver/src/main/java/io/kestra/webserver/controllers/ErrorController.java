@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.InvalidTypeIdException;
 import io.kestra.core.exceptions.DeserializationException;
+import io.kestra.core.exceptions.ResourceExpiredException;
 import io.micronaut.core.convert.exceptions.ConversionErrorException;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
@@ -14,6 +15,7 @@ import io.micronaut.http.annotation.Error;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
 import io.micronaut.http.hateoas.JsonError;
 import io.micronaut.http.hateoas.Link;
+import io.micronaut.web.router.exceptions.UnsatisfiedBodyRouteException;
 import io.micronaut.web.router.exceptions.UnsatisfiedQueryValueRouteException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -24,7 +26,7 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 
 @Slf4j
 @Controller
@@ -130,6 +132,12 @@ public class ErrorController {
         return jsonError(request, e, HttpStatus.UNPROCESSABLE_ENTITY, "Invalid format");
     }
 
+
+    @Error(global = true)
+    public HttpResponse<JsonError> error(HttpRequest<?> request, UnsatisfiedBodyRouteException e) {
+        return jsonError(request, e, HttpStatus.UNPROCESSABLE_ENTITY, "Invalid route params");
+    }
+
     @Error(global = true)
     public HttpResponse<JsonError> error(HttpRequest<?> request, Throwable e) {
         return jsonError(request, e, HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error");
@@ -158,6 +166,11 @@ public class ErrorController {
     @Error(global = true)
     public HttpResponse<JsonError> serialization(HttpRequest<?> request, DeserializationException e) {
         return jsonError(request, e, HttpStatus.LOCKED, "Locked");
+    }
+
+    @Error(global = true)
+    public HttpResponse<JsonError> serialization(HttpRequest<?> request, ResourceExpiredException e) {
+        return jsonError(request, e, HttpStatus.GONE, "Resource has expired");
     }
 
     @Error(global = true)

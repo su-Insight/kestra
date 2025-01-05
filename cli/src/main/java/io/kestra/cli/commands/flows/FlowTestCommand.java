@@ -2,14 +2,15 @@ package io.kestra.cli.commands.flows;
 
 import com.google.common.collect.ImmutableMap;
 import io.kestra.cli.AbstractCommand;
-import io.kestra.core.exceptions.MissingRequiredInput;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.repositories.LocalFlowRepositoryLoader;
+import io.kestra.core.runners.FlowInputOutput;
 import io.kestra.core.runners.RunnerUtils;
-import io.kestra.runner.memory.MemoryRunner;
+import io.kestra.core.runners.StandAloneRunner;
 import io.micronaut.context.ApplicationContext;
 import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import picocli.CommandLine;
@@ -23,7 +24,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
-import javax.validation.ConstraintViolationException;
 
 @CommandLine.Command(
     name = "test",
@@ -71,9 +71,10 @@ public class FlowTestCommand extends AbstractCommand {
     public Integer call() throws Exception {
         super.call();
 
-        MemoryRunner runner = applicationContext.getBean(MemoryRunner.class);
+        StandAloneRunner runner = applicationContext.getBean(StandAloneRunner.class);
         LocalFlowRepositoryLoader repositoryLoader = applicationContext.getBean(LocalFlowRepositoryLoader.class);
         FlowRepositoryInterface flowRepository = applicationContext.getBean(FlowRepositoryInterface.class);
+        FlowInputOutput flowInputOutput = applicationContext.getBean(FlowInputOutput.class);
         RunnerUtils runnerUtils = applicationContext.getBean(RunnerUtils.class);
 
         Map<String, Object> inputs = new HashMap<>();
@@ -96,18 +97,16 @@ public class FlowTestCommand extends AbstractCommand {
             }
 
             runnerUtils.runOne(
-                all.get(0),
-                (flow, execution) -> runnerUtils.typedInputs(flow, execution, inputs),
+                all.getFirst(),
+                (flow, execution) -> flowInputOutput.typedInputs(flow, execution, inputs),
                 Duration.ofHours(1)
             );
 
             runner.close();
-        } catch (MissingRequiredInput e) {
+        } catch (ConstraintViolationException e) {
             throw new CommandLine.ParameterException(this.spec.commandLine(), e.getMessage());
         } catch (IOException | TimeoutException e) {
             throw new IllegalStateException(e);
-        } catch (ConstraintViolationException e) {
-            throw new CommandLine.ParameterException(this.spec.commandLine(), "Invalid flow", e);
         } finally {
             applicationContext.getProperty("kestra.storage.local.base-path", Path.class)
                 .ifPresent(path -> {

@@ -11,16 +11,14 @@ import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.inject.qualifiers.Qualifiers;
-import jakarta.inject.Singleton;
 import org.jooq.*;
 import org.jooq.impl.DSL;
 
 import java.util.List;
 import java.util.Optional;
-import javax.annotation.Nullable;
-import javax.validation.ConstraintViolationException;
+import jakarta.annotation.Nullable;
+import jakarta.validation.ConstraintViolationException;
 
-@Singleton
 public abstract class AbstractJdbcTemplateRepository extends AbstractJdbcRepository implements TemplateRepositoryInterface {
     private final QueueInterface<Template> templateQueue;
     private final ApplicationEventPublisher<CrudEvent<Template>> eventPublisher;

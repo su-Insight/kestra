@@ -1,8 +1,8 @@
 <script>
-    import {ElNotification, ElTable, ElTableColumn} from "element-plus";
-    import Slack from "vue-material-design-icons/Slack.vue";
+    import {ElNotification} from "element-plus";
     import {pageFromRoute} from "../utils/eventsRouter";
     import {h} from "vue"
+    import ErrorToastContainer from "./ErrorToastContainer.vue";
 
     export default {
         name: "ErrorToast",
@@ -23,11 +23,16 @@
             },
         },
         computed: {
-            text () {
-                return this.message.message || this.message.content.message
-            },
             title () {
-                return this.message.title || "Error"
+                if (this.message.title) {
+                    return this.message.title;
+                }
+
+                if (this.message.content && this.message.content.message && this.message.content.message.indexOf(":") > 0) {
+                    return this.message.content.message.substring(0, this.message.content.message.indexOf(":"));
+                }
+
+                return "Error"
             },
             items() {
                 const messages = this.message.content && this.message.content._embedded && this.message.content._embedded.errors ? this.message.content._embedded.errors : []
@@ -39,10 +44,10 @@
                 if (this.notifications) {
                     this.notifications.close();
                 }
-            }
+            },
         },
         render() {
-            this.$nextTick(() => {
+            this.$nextTick(async () => {
                 this.close();
 
                 const error =  {
@@ -68,42 +73,14 @@
 
                 this.$store.dispatch("api/events", error);
 
-                const children = [
-                    h("a", {
-                        href: "https://kestra.io/slack",
-                        class: "position-absolute slack-on-error el-button el-button--small is-text is-has-bg",
-                        target: "_blank"
-                    }, [h(Slack), h("span", {innerText: this.$t("slack support")})]),
-                    h("span", {innerHTML: this.text})
-                ];
-
-                if (this.items.length > 0) {
-                    children.push(h(
-                        ElTable,
-                        {
-                            stripe: true,
-                            tableLayout: "auto",
-                            fixed: true,
-                            data: this.items,
-                            class: ["mt-2"],
-                            size: "small",
-                        },
-                        [
-                            h(ElTableColumn, {prop: "message", label: "Message"}),
-                            h(ElTableColumn, {prop: "path", label: "Path"}),
-                        ]
-                    ))
-                }
-
                 this.notifications = ElNotification({
                     title: this.title || "Error",
-                    message: h("div",  children),
-                    position: 'top-right',
-                    offset: 65,
-                    type: "error",
+                    message: h(ErrorToastContainer, {message: this.message, items: this.items}),
+                    position: "bottom-right",
+                    type: this.message.variant,
                     duration: 0,
                     dangerouslyUseHTMLString: true,
-                    customClass: "error-notification" + (children.length > 1 ? " large" : "")
+                    customClass: "error-notification large"
                 });
             });
 

@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div data-component="FILENAME_PLACEHOLDER">
         <collapse>
             <el-form-item>
                 <el-input
@@ -34,7 +34,7 @@
             </el-form-item>
         </collapse>
 
-        <log-list
+        <task-run-details
             ref="logs"
             :level="level"
             :exclude-metas="['namespace', 'flowId', 'taskId', 'executionId']"
@@ -43,12 +43,13 @@
             @opened-taskruns-count="openedTaskrunsCount = $event"
             :target-execution="execution"
             :target-flow="flow"
+            :show-progress-bar="false"
         />
     </div>
 </template>
 
 <script>
-    import LogList from "../logs/LogList.vue";
+    import TaskRunDetails from "../logs/TaskRunDetails.vue";
     import {mapState} from "vuex";
     import Download from "vue-material-design-icons/Download.vue";
     import Magnify from "vue-material-design-icons/Magnify.vue";
@@ -56,10 +57,11 @@
     import LogLevelSelector from "../logs/LogLevelSelector.vue";
     import Collapse from "../layout/Collapse.vue";
     import State from "../../utils/state";
+    import Utils from "../../utils/utils";
 
     export default {
         components: {
-            LogList,
+            TaskRunDetails,
             LogLevelSelector,
             Kicon,
             Download,
@@ -82,8 +84,7 @@
             State() {
                 return State
             },
-            ...mapState("execution", ["execution", "logs"]),
-            ...mapState("flow", ["flow"]),
+            ...mapState("execution", ["execution", "logs", "flow"]),
             downloadName() {
                 return `kestra-execution-${this.$moment().format("YYYYMMDDHHmmss")}-${this.execution.id}.log`
             },
@@ -99,12 +100,7 @@
                         minLevel: this.level
                     }
                 }).then((response) => {
-                    const url = window.URL.createObjectURL(new Blob([response]));
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.setAttribute("download", this.downloadName);
-                    document.body.appendChild(link);
-                    link.click();
+                    Utils.downloadUrl(window.URL.createObjectURL(new Blob([response])), this.downloadName);
                 });
             },
             forwardEvent(type, event) {

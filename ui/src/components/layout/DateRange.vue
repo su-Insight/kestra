@@ -1,5 +1,6 @@
 <template>
     <el-date-picker
+        data-component="FILENAME_PLACEHOLDER"
         :model-value="date"
         @update:model-value="onDate"
         type="datetimerange"
@@ -22,34 +23,6 @@
                     monthBeforeYear: false,
                 },
                 shortcuts: [
-                    {
-                        text: this.$t("datepicker.last5minutes"),
-                        value: () => ([
-                            this.$moment().add(-5, "minutes").toDate(),
-                            this.$moment().toDate()
-                        ]),
-                    },
-                    {
-                        text: this.$t("datepicker.last1hour"),
-                        value: () => ([
-                            this.$moment().add(-1, "hour").toDate(),
-                            this.$moment().toDate()
-                        ]),
-                    },
-                    {
-                        text: this.$t("datepicker.last12hours"),
-                        value: () => ([
-                            this.$moment().add(-12, "hour").toDate(),
-                            this.$moment().toDate()
-                        ]),
-                    },
-                    {
-                        text: this.$t("datepicker.last24hours"),
-                        value: () => ([
-                            this.$moment().add(-1, "day").toDate(),
-                            this.$moment().toDate()
-                        ]),
-                    },
                     {
                         text: this.$t("datepicker.today"),
                         value: () => ([
@@ -79,13 +52,6 @@
                         ]),
                     },
                     {
-                        text: this.$t("datepicker.thisWeekSoFar"),
-                        value: () => ([
-                            this.$moment().add(-1, "isoWeek").toDate(),
-                            this.$moment().toDate()
-                        ]),
-                    },
-                    {
                         text: this.$t("datepicker.previousWeek"),
                         value: () => ([
                             this.$moment().add(-1, "week").startOf("isoWeek").toDate(),
@@ -100,13 +66,6 @@
                         ]),
                     },
                     {
-                        text: this.$t("datepicker.thisMonthSoFar"),
-                        value: () => ([
-                            this.$moment().add(-1, "month").toDate(),
-                            this.$moment().toDate()
-                        ]),
-                    },
-                    {
                         text: this.$t("datepicker.previousMonth"),
                         value: () => ([
                             this.$moment().add(-1, "month").startOf("month").toDate(),
@@ -118,13 +77,6 @@
                         value: () => ([
                             this.$moment().startOf("year").toDate(),
                             this.$moment().endOf("year").toDate(),
-                        ]),
-                    },
-                    {
-                        text: this.$t("datepicker.thisYearSoFar"),
-                        value: () => ([
-                            this.$moment().add(-1, "year").toDate(),
-                            this.$moment().toDate()
                         ]),
                     },
                     {

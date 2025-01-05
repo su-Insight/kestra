@@ -4,20 +4,23 @@
             <slot name="nav">
                 <div class="text-nowrap">
                     <el-button-group>
-                        <el-tooltip :content="$t('Fold content lines')" :persistent="false" transition="" :hide-after="0">
-                            <el-button :icon="icon.UnfoldLessHorizontal" @click="autoFold(true)" size="small" />
-                        </el-tooltip>
-                        <el-tooltip :content="$t('Unfold content lines')" :persistent="false" transition="" :hide-after="0">
-                            <el-button :icon="icon.UnfoldMoreHorizontal" @click="unfoldAll" size="small" />
-                        </el-tooltip>
                         <el-tooltip
-                            v-if="schemaType === 'flow' && creating"
-                            :content="$t('Reset guided tour')"
+                            effect="light"
+                            :content="$t('Fold content lines')"
                             :persistent="false"
                             transition=""
                             :hide-after="0"
                         >
-                            <el-button :icon="icon.Help" @click="restartGuidedTour" size="small" />
+                            <el-button :icon="icon.UnfoldLessHorizontal" @click="autoFold(true)" size="small" />
+                        </el-tooltip>
+                        <el-tooltip
+                            effect="light"
+                            :content="$t('Unfold content lines')"
+                            :persistent="false"
+                            transition=""
+                            :hide-after="0"
+                        >
+                            <el-button :icon="icon.UnfoldMoreHorizontal" @click="unfoldAll" size="small" />
                         </el-tooltip>
                     </el-button-group>
                     <slot name="extends-navbar" />
@@ -36,9 +39,10 @@
                     :original="original"
                     @change="onInput"
                     @editor-did-mount="editorDidMount"
-                    :language="lang ?? 'undefined'"
+                    :language="lang"
+                    :extension="extension"
                     :schema-type="schemaType"
-                    class="position-relative"
+                    :input="input"
                 />
                 <div
                     v-show="showPlaceholder"
@@ -63,6 +67,7 @@
     import {mapGetters} from "vuex";
     import BookMultipleOutline from "vue-material-design-icons/BookMultipleOutline.vue";
     import Close from "vue-material-design-icons/Close.vue";
+    import {TabFocus} from "monaco-editor/esm/vs/editor/browser/config/tabFocus.js";
 
     const MonacoEditor = defineAsyncComponent(() =>
         import("./MonacoEditor.vue")
@@ -73,10 +78,12 @@
             modelValue: {type: String, default: ""},
             original: {type: String, default: undefined},
             lang: {type: String, default: undefined},
+            extension: {type: String, default: undefined},
             schemaType: {type: String, default: undefined},
             navbar: {type: Boolean, default: true},
             input: {type: Boolean, default: false},
             fullHeight: {type: Boolean, default: true},
+            customHeight: {type: Number, default: 7},
             theme: {type: String, default: undefined},
             placeholder: {type: [String, Number], default: ""},
             diffSideBySide: {type: Boolean, default: true},
@@ -88,7 +95,7 @@
         components: {
             MonacoEditor,
         },
-        emits: ["save", "execute", "focusout", "tab", "update:modelValue", "cursor", "restartGuidedTour"],
+        emits: ["save", "execute", "focusout", "tab", "update:modelValue", "cursor"],
         editor: undefined,
         data() {
             return {
@@ -100,7 +107,6 @@
                     BookMultipleOutline: shallowRef(BookMultipleOutline),
                     Close: shallowRef(Close)
                 },
-                oldDecorations: [],
                 editorDocumentation: undefined,
                 plugin: undefined,
                 taskType: undefined,
@@ -108,7 +114,7 @@
         },
         computed: {
             ...mapGetters("core", ["guidedProperties"]),
-            ...mapGetters("flow", ["flowError"]),
+            ...mapGetters("flow", ["flowValidation"]),
             themeComputed() {
                 const darkTheme = document.getElementsByTagName("html")[0].className.indexOf("dark") >= 0;
 
@@ -117,8 +123,6 @@
             containerClass() {
                 return [
                     !this.input ? "" : "single-line",
-                    !this.fullHeight ? "" : "full-height",
-                    !this.original ? "" : "diff",
                     "theme-" + this.themeComputed,
                     this.themeComputed === "dark" ? "custom-dark-vs-theme" : ""
                 ]
@@ -188,7 +192,7 @@
                 return {
                     ...{
                         tabSize: 2,
-                        fontFamily:  localStorage.getItem("editorFontFamily") ? localStorage.getItem("editorFontFamily") : "'Source Code Pro', monospace",
+                        fontFamily: localStorage.getItem("editorFontFamily") ? localStorage.getItem("editorFontFamily") : "'Source Code Pro', monospace",
                         fontSize: localStorage.getItem("editorFontSize") ? parseInt(localStorage.getItem("editorFontSize")) : 12,
                         showFoldingControls: "always",
                         scrollBeyondLastLine: false,
@@ -209,31 +213,40 @@
 
                 this.editor = editor;
 
+                this.decorations = this.editor.createDecorationsCollection();
+
                 if (!this.original) {
-                    this.editor.onDidBlurEditorWidget(() => {
+                    this.editor.onDidBlurEditorWidget?.(() => {
                         this.$emit("focusout", editor.getValue());
                         this.focus = false;
                     })
 
-                    this.editor.onDidFocusEditorText(() => {
+                    this.editor.onDidFocusEditorText?.(() => {
                         this.focus = true;
                     })
 
                     this.$refs.monacoEditor.focus();
                 }
 
-                this.editor.addAction({
-                    id: "kestra-save",
-                    label: "Save",
-                    keybindings: [
-                        KeyMod.CtrlCmd | KeyCode.KeyS,
-                    ],
-                    contextMenuGroupId: "navigation",
-                    contextMenuOrder: 1.5,
-                    run: (ed) => {
-                        this.$emit("save", ed.getValue())
+                if (!this.readOnly) {
+                    this.editor.addAction({
+                        id: "kestra-save",
+                        label: "Save",
+                        keybindings: [
+                            KeyMod.CtrlCmd | KeyCode.KeyS,
+                        ],
+                        contextMenuGroupId: "navigation",
+                        contextMenuOrder: 1.5,
+                        run: (ed) => {
+                            this.$emit("save", ed.getValue())
+                        }
+                    });
+                }
+                else {
+                    if (this.lang === "json") {
+                        editor.getAction("editor.action.formatDocument").run()
                     }
-                });
+                }
 
                 this.editor.addAction({
                     id: "kestra-execute",
@@ -248,13 +261,15 @@
                     }
                 });
 
+                // TabFocus is global to all editor so revert the behavior on non inputs
+                this.editor.onDidFocusEditorText?.(() => {
+                    TabFocus.setTabFocusMode(this.input);
+                })
+
                 if (this.input) {
-                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyF, () => {
-                    })
-                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyH, () => {
-                    })
-                    this.editor.addCommand(KeyCode.F1, () => {
-                    })
+                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyF, () => {});
+                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyH, () => {});
+                    this.editor.addCommand(KeyCode.F1, () => {});
                 }
 
                 if (this.original === undefined && this.navbar && this.fullHeight) {
@@ -300,47 +315,50 @@
 
                 if (!this.fullHeight) {
                     editor.onDidContentSizeChange(e => {
-                        this.$refs.container.style.height = (e.contentHeight + 7) + "px";
+                        this.$refs.container.style.height = (e.contentHeight + this.customHeight) + "px";
                     });
                 }
 
-                this.editor.onDidContentSizeChange(_ => {
-                    if (this.guidedProperties.monacoRange) {
-                        editor.revealLine(this.guidedProperties.monacoRange.endLineNumber);
-                        let decorations = [
-                            {
+                if (!this.original) {
+                    this.editor.onDidContentSizeChange(_ => {
+                        if (this.guidedProperties.monacoRange) {
+                            editor.revealLine(this.guidedProperties.monacoRange.endLineNumber);
+                            const decorationsToAdd = [];
+                            decorationsToAdd.push({
                                 range: this.guidedProperties.monacoRange,
                                 options: {
                                     isWholeLine: true,
                                     inlineClassName: "highlight-text"
                                 },
                                 className: "highlight-text",
+                            });
+                            if (this.guidedProperties.monacoDisableRange) {
+                                decorationsToAdd.push({
+                                    range: this.guidedProperties.monacoDisableRange,
+                                    options: {
+                                        isWholeLine: true,
+                                        inlineClassName: "disable-text"
+                                    },
+                                    className: "disable-text",
+                                });
                             }
-                        ];
-                        decorations = this.guidedProperties.monacoDisableRange ? decorations.concat([
-                            {
-                                range: this.guidedProperties.monacoDisableRange,
-                                options: {
-                                    isWholeLine: true,
-                                    inlineClassName: "disable-text"
-                                },
-                                className: "disable-text",
-                            },
-                        ]) : decorations;
-                        this.oldDecorations = this.editor.deltaDecorations(this.oldDecorations, decorations)
-                    } else {
-                        this.oldDecorations = this.editor.deltaDecorations(this.oldDecorations, []);
-                    }
-                });
 
-                this.editor.onDidChangeCursorPosition(() => {
-                    let position = this.editor.getPosition();
-                    let model = this.editor.getModel();
-                    clearTimeout(this.lastTimeout);
-                    this.lastTimeout = setTimeout(() => {
-                        this.$emit("cursor", {position: position, model: model})
-                    }, 100);
-                });
+                            this.decorations.set(decorationsToAdd);
+                        } else {
+                            this.highlightPebble();
+                        }
+                    });
+
+                    this.editor.onDidChangeCursorPosition?.(() => {
+                        let position = this.editor.getPosition();
+                        let model = this.editor.getModel();
+                        clearTimeout(this.lastTimeout);
+                        this.lastTimeout = setTimeout(() => {
+                            this.$emit("cursor", {position: position, model: model})
+                        }, 100);
+                        this.highlightPebble();
+                    });
+                }
             },
             autoFold(autoFold) {
                 if (autoFold) {
@@ -357,20 +375,29 @@
                 this.editor.layout()
                 this.editor.focus()
             },
-            restartGuidedTour() {
-                localStorage.setItem("tourDoneOrSkip", undefined);
-                this.$store.commit("core/setGuidedProperties", {
-                    tourStarted: false,
-                    flowSource: undefined,
-                    saveFlow: false,
-                    executeFlow: false,
-                    validateInputs: false,
-                    monacoRange: undefined,
-                    monacoDisableRange: undefined
+            highlightPebble() {
+                // Highlight code that match pebble content
+                let model = this.editor?.getModel?.();
+                let text = model?.getValue?.();
+                let regex = new RegExp("\\{\\{(.+?)}}", "g");
+                let match;
+                const decorationsToAdd = [];
+                while ((match = regex.exec(text)) !== null) {
+                    let startPos = model.getPositionAt(match.index);
+                    let endPos = model.getPositionAt(match.index + match[0].length);
+                    decorationsToAdd.push({
+                        range: {
+                            startLineNumber: startPos.lineNumber,
+                            startColumn: startPos.column,
+                            endLineNumber: endPos.lineNumber,
+                            endColumn: endPos.column
+                        },
+                        options: {
+                            inlineClassName: "highlight-pebble"
+                        }
+                    });
                 }
-                );
-                this.$tours["guidedTour"].start();
-                this.$emit("restartGuidedTour", true);
+                this.decorations.set(decorationsToAdd);
             }
         },
     };
@@ -379,8 +406,26 @@
 <style lang="scss">
     @import "../../styles/layout/root-dark.scss";
 
-    .ks-editor {
+    :not(.el-drawer__body) > .ks-editor {
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .el-drawer__body .ks-editor {
+        flex: 1;
+    }
+
+    .el-dialog__body .ks-editor {
+        display: flex;
         width: 100%;
+    }
+
+    .el-dialog__body .el-form {
+        width: 100%;
+    }
+
+    .ks-editor {
+        display: flex;
 
         .top-nav {
             background-color: var(--bs-white);
@@ -396,14 +441,7 @@
 
         .editor-container {
             display: flex;
-
-            &.full-height {
-                height: calc(100vh - 249px);
-            }
-
-            &.diff {
-                height: calc(100vh - 305px);
-            }
+            flex-grow: 1;
 
             &.single-line {
                 min-height: var(--el-component-size);
@@ -456,15 +494,15 @@
             }
 
             .bottom-right {
-                bottom: var(--spacer);
-                right: var(--spacer);
+                bottom: 0px;
+                right: 0px;
 
                 ul {
                     display: flex;
                     list-style: none;
                     padding: 0;
                     margin: 0;
-                    gap: calc(var(--spacer) / 2);
+                    //gap: calc(var(--spacer) / 2);
                 }
             }
         }
@@ -493,6 +531,14 @@
         }
     }
 
+    .highlight-pebble {
+        color: #977100 !important;
+
+        html.dark & {
+            color: #ffca16 !important;
+        }
+    }
+
     .disable-text {
         color: grey !important;
     }
@@ -502,10 +548,10 @@
         height: 100%;
 
         &.get-started {
-            background: url("../../assets/onboarding/onboarding-started-light.svg") no-repeat center;
+            background: url("../../assets/onboarding/onboarding-doc-light.svg") no-repeat center;
 
             html.dark & {
-                background: url("../../assets/onboarding/onboarding-started-dark.svg") no-repeat center;
+                background: url("../../assets/onboarding/onboarding-doc-dark.svg") no-repeat center;
             }
         }
     }

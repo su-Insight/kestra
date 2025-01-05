@@ -1,5 +1,6 @@
 <template>
     <el-select
+        class="fit-text"
         :model-value="value"
         @update:model-value="onInput"
         clearable
@@ -20,6 +21,8 @@
 <script>
     import {mapState} from "vuex";
     import _uniqBy from "lodash/uniqBy";
+    import permission from "../../models/permission";
+    import action from "../../models/action";
 
     export default {
         props: {
@@ -34,18 +37,25 @@
             allowCreate: {
                 type: Boolean,
                 default: false
+            },
+            isFilter: {
+                type: Boolean,
+                default: true
             }
         },
         emits: ["update:modelValue"],
         created() {
-            this.$store
-                .dispatch("namespace/loadNamespaces", {dataType: this.dataType})
-                .then(() => {
-                    this.groupedNamespaces = this.groupNamespaces(this.namespaces);
-                });
+            if (this.user && this.user.hasAnyActionOnAnyNamespace(permission.NAMESPACE, action.READ)) {
+                this.$store
+                    .dispatch("namespace/loadNamespacesForDatatype", {dataType: this.dataType})
+                    .then(() => {
+                        this.groupedNamespaces = this.groupNamespaces(this.datatypeNamespaces);
+                    });
+            }
         },
         computed: {
-            ...mapState("namespace", ["namespaces"])
+            ...mapState("namespace", ["datatypeNamespaces"]),
+            ...mapState("auth", ["user"]),
         },
         data() {
             return {
@@ -78,7 +88,7 @@
                 });
 
                 // Remove duplicate namespaces ...
-                return _uniqBy(res,"code");
+                return _uniqBy(res,"code").filter(ns => namespaces.includes(ns.code) || this.isFilter);
             },
         }
     };

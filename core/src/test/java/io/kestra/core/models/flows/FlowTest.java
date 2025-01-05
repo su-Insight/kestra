@@ -4,13 +4,13 @@ import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.validations.ModelValidator;
 import io.kestra.core.serializers.YamlFlowParser;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.TestsUtils;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 import java.io.File;
 import java.net.URL;
 import java.util.List;
@@ -19,7 +19,7 @@ import java.util.Optional;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class FlowTest {
     @Inject
     YamlFlowParser yamlFlowParser = new YamlFlowParser();
@@ -102,9 +102,9 @@ class FlowTest {
         Optional<ConstraintViolationException> validate = modelValidator.isValid(flow);
 
         assertThat(validate.isPresent(), is(true));
-        assertThat(validate.get().getConstraintViolations().size(), is(2));
+        assertThat(validate.get().getConstraintViolations().size(), is(1));
 
-        assertThat(validate.get().getMessage(), containsString("tasks[0]: The tasks property cannot be empty"));
+        assertThat(validate.get().getMessage(), containsString("tasks[0]: The 'tasks' property cannot be empty"));
     }
 
     @Test
@@ -140,6 +140,18 @@ class FlowTest {
         List<String> all = flow.allTasksWithChildsAndTriggerIds();
 
         assertThat(all.size(), is(3));
+    }
+
+    @Test
+    void inputValidation() {
+        Flow flow = this.parse("flows/invalids/inputs-validation.yaml");
+        Optional<ConstraintViolationException> validate = modelValidator.isValid(flow);
+
+        assertThat(validate.isPresent(), is(true));
+        assertThat(validate.get().getConstraintViolations().size(), is(2));
+
+        assertThat(validate.get().getMessage(), containsString("inputs[0]: no `defaults` can be set for inputs of type 'FILE'"));
+        assertThat(validate.get().getMessage(), containsString("inputs[1]: `itemType` cannot be `ARRAY"));
     }
 
     private Flow parse(String path) {

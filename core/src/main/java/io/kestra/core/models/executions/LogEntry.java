@@ -2,23 +2,28 @@ package io.kestra.core.models.executions;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.kestra.core.models.DeletedInterface;
+import io.kestra.core.models.TenantInterface;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.micronaut.core.annotation.Nullable;
+import io.swagger.v3.oas.annotations.Hidden;
 import lombok.Builder;
 import lombok.Value;
 import org.slf4j.event.Level;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import java.time.Instant;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Value
 @Builder(toBuilder = true)
-public class LogEntry implements DeletedInterface {
+public class LogEntry implements DeletedInterface, TenantInterface {
+    @Hidden
+    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
     String tenantId;
 
     @NotNull
@@ -49,6 +54,7 @@ public class LogEntry implements DeletedInterface {
 
     String thread;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     String message;
 
     @NotNull
@@ -57,13 +63,13 @@ public class LogEntry implements DeletedInterface {
 
     public static List<String> findLevelsByMin(Level minLevel) {
         if (minLevel == null) {
-            return Arrays.stream(Level.values()).map(Enum::name).collect(Collectors.toList());
+            return Arrays.stream(Level.values()).map(Enum::name).toList();
         }
 
         return Arrays.stream(Level.values())
             .filter(level -> level.toInt() >= minLevel.toInt())
             .map(Enum::name)
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static LogEntry of(Execution execution) {
@@ -107,5 +113,20 @@ public class LogEntry implements DeletedInterface {
 
     public static String toPrettyString(LogEntry logEntry) {
         return logEntry.getTimestamp().toString() + " " + logEntry.getLevel() + " " + logEntry.getMessage();
+    }
+
+    public Map<String, String> toMap() {
+        return Stream
+            .of(
+                new AbstractMap.SimpleEntry<>("tenantId", this.tenantId),
+                new AbstractMap.SimpleEntry<>("namespace", this.namespace),
+                new AbstractMap.SimpleEntry<>("flowId", this.flowId),
+                new AbstractMap.SimpleEntry<>("taskId", this.taskId),
+                new AbstractMap.SimpleEntry<>("executionId", this.executionId),
+                new AbstractMap.SimpleEntry<>("taskRunId", this.taskRunId),
+                new AbstractMap.SimpleEntry<>("triggerId", this.triggerId)
+            )
+            .filter(e -> e.getValue() != null)
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 }

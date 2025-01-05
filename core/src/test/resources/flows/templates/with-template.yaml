@@ -2,9 +2,9 @@ id: with-template
 namespace: io.kestra.tests
 
 inputs:
-  - name: with-string
+  - id: with-string
     type: STRING
-  - name: with-optional
+  - id: with-optional
     type: STRING
     required: false
 
@@ -13,20 +13,20 @@ variables:
   var-2: '{{ var-1 }}'
 
 taskDefaults:
-  - type: io.kestra.core.tasks.log.Log
+  - type: io.kestra.plugin.core.log.Log
     values:
       level: "ERROR"
 
 tasks:
   - id: 1-return
-    type: io.kestra.core.tasks.debugs.Return
+    type: io.kestra.plugin.core.debug.Return
     format: "{{task.id}} > {{taskrun.startDate}}"
   - id: 2-template
-    type: io.kestra.core.tasks.flows.Template
+    type: io.kestra.plugin.core.flow.Template
     namespace: io.kestra.tests
     templateId: template
     args:
       my-forward: "{{ inputs['with-string'] }}"
   - id: 3-end
-    type: io.kestra.core.tasks.debugs.Return
+    type: io.kestra.plugin.core.debug.Return
     format: "{{task.id}} > {{taskrun.startDate}}"

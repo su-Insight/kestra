@@ -3,27 +3,30 @@ package io.kestra.jdbc;
 import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
-import io.kestra.core.repositories.WorkerInstanceRepositoryInterface;
 import io.kestra.core.runners.*;
+import io.kestra.core.server.Service;
+import io.kestra.core.server.ServiceRegistry;
 import io.kestra.core.utils.Either;
 import io.kestra.jdbc.repository.AbstractJdbcWorkerJobRunningRepository;
-import io.kestra.jdbc.runner.JdbcHeartbeat;
 import io.kestra.jdbc.runner.JdbcQueue;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.inject.qualifiers.Qualifiers;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.Closeable;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 @Singleton
 @Slf4j
-public class JdbcWorkerJobQueueService {
+public class JdbcWorkerJobQueueService implements Closeable {
     private final JdbcQueue<WorkerJob> workerTaskQueue;
-    private final JdbcHeartbeat jdbcHeartbeat;
     private final AbstractJdbcWorkerJobRunningRepository jdbcWorkerJobRunningRepository;
-    private final WorkerInstanceRepositoryInterface workerInstanceRepository;
-    private Runnable queueStop;
+    private final ServiceRegistry serviceRegistry;
+    private final AtomicReference<Runnable> disposable = new AtomicReference<>();
+    private final AtomicBoolean isStopped = new AtomicBoolean(false);
 
     @SuppressWarnings("unchecked")
     public JdbcWorkerJobQueueService(ApplicationContext applicationContext) {
@@ -31,15 +34,21 @@ public class JdbcWorkerJobQueueService {
             QueueInterface.class,
             Qualifiers.byName(QueueFactoryInterface.WORKERJOB_NAMED)
         );
-        this.jdbcHeartbeat = applicationContext.getBean(JdbcHeartbeat.class);
+        this.serviceRegistry = applicationContext.getBean(ServiceRegistry.class);
         this.jdbcWorkerJobRunningRepository = applicationContext.getBean(AbstractJdbcWorkerJobRunningRepository.class);
-        this.workerInstanceRepository = applicationContext.getBean(WorkerInstanceRepositoryInterface.class);
     }
 
     public Runnable receive(String consumerGroup, Class<?> queueType, Consumer<Either<WorkerJob, DeserializationException>> consumer) {
 
-        this.queueStop = workerTaskQueue.receiveTransaction(consumerGroup, queueType, (dslContext, eithers) -> {
-            WorkerInstance workerInstance = jdbcHeartbeat.get();
+        this.disposable.set(workerTaskQueue.receiveTransaction(consumerGroup, queueType, (dslContext, eithers) -> {
+
+            Worker worker = serviceRegistry.waitForServiceAndGet(Service.ServiceType.WORKER).unwrap();
+
+            final WorkerInstance workerInstance = WorkerInstance
+                .builder()
+                .workerUuid(worker.getId())
+                .workerGroup(worker.getWorkerGroup())
+                .build();
 
             eithers.forEach(either -> {
                 if (either.isRight()) {
@@ -74,33 +83,22 @@ public class JdbcWorkerJobQueueService {
             });
 
             eithers.forEach(consumer);
-        });
+        }));
 
-        return this.queueStop;
+        return this.disposable.get();
     }
 
-    public void pause() {
-        this.stopQueue();
-    }
-
-    private void stopQueue() {
-        synchronized (this) {
-            if (this.queueStop != null) {
-                this.queueStop.run();
-                this.queueStop = null;
-            }
-        }
-    }
-
-    public void cleanup() {
-        if (jdbcHeartbeat.get() != null) {
-            synchronized (this) {
-                workerInstanceRepository.delete(jdbcHeartbeat.get());
-            }
-        }
-    }
-
+    /** {@inheritDoc} **/
+    @Override
     public void close() {
-        this.stopQueue();
+        if (!isStopped.compareAndSet(true, false)) {
+            return;
+        }
+
+        Runnable runnable = this.disposable.get();
+        if (runnable != null) {
+            runnable.run();
+            this.disposable.set(null);
+        }
     }
 }

@@ -1,6 +1,5 @@
 package io.kestra.jdbc.repository;
 
-import io.kestra.core.Helpers;
 import io.kestra.core.models.SearchResult;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithException;
@@ -14,7 +13,6 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,20 +34,8 @@ public abstract class AbstractJdbcFlowRepositoryTest extends io.kestra.core.repo
     protected JooqDSLContextWrapper dslContextWrapper;
 
     @Test
-    protected void find() {
-        List<Flow> save = flowRepository.find(Pageable.from(1, 100, Sort.of(Sort.Order.asc("id"))), null, null, null, null);
-        assertThat((long) save.size(), is(Helpers.FLOWS_COUNT));
-
-        save = flowRepository.find(Pageable.from(1, 10, Sort.UNSORTED), "trigger-multiplecondition", null, null, null);
-        assertThat((long) save.size(), is(6L));
-
-        save = flowRepository.find(Pageable.from(1, 100, Sort.UNSORTED), null, null, null, Map.of("country", "FR"));
-        assertThat(save.size(), is(1));
-    }
-
-    @Test
-    void findSourceCode() {
-        List<SearchResult<Flow>> search = flowRepository.findSourceCode(Pageable.from(1, 10, Sort.UNSORTED), "io.kestra.core.models.conditions.types.MultipleCondition", null, null);
+    public void findSourceCode() {
+        List<SearchResult<Flow>> search = flowRepository.findSourceCode(Pageable.from(1, 10, Sort.UNSORTED), "io.kestra.plugin.core.condition.MultipleCondition", null, null);
 
         assertThat((long) search.size(), is(2L));
 
@@ -60,7 +46,7 @@ public abstract class AbstractJdbcFlowRepositoryTest extends io.kestra.core.repo
                 .equals("trigger-multiplecondition-listener"))
             .findFirst()
             .orElseThrow();
-        assertThat(flow.getFragments().get(0), containsString("types.MultipleCondition[/mark]"));
+        assertThat(flow.getFragments().getFirst(), containsString("condition.MultipleCondition[/mark]"));
     }
 
     @Test
@@ -77,7 +63,7 @@ public abstract class AbstractJdbcFlowRepositoryTest extends io.kestra.core.repo
                     "revision", 1,
                     "tasks", List.of(Map.of(
                         "id", "invalid",
-                        "type", "io.kestra.core.tasks.log.Log",
+                        "type", "io.kestra.plugin.core.log.Log",
                         "level", "invalid"
                     )),
                     "deleted", false

@@ -1,5 +1,5 @@
 <template>
-    <div class="collapse mb-sm-4 mb-md-0">
+    <div data-component="FILENAME_PLACEHOLDER" class="collapse mb-sm-4 mb-md-0">
         <div class="button mb-2">
             <el-button @click="isNavbarVisible = !isNavbarVisible">
                 <menu-icon />
@@ -13,6 +13,7 @@
 
 <script>
     import MenuIcon from "vue-material-design-icons/Menu.vue";
+
     export default {
         components: {MenuIcon},
         data() {
@@ -35,6 +36,10 @@
         :deep(.el-form--inline) {
             .el-form-item {
                 margin-right: 5px;
+
+                .el-radio-group {
+                    margin-right: 5px;
+                }
 
                 .el-form-item__content {
                     > * {

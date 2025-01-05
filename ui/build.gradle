@@ -1,13 +1,14 @@
+import org.siouan.frontendgradleplugin.infrastructure.gradle.RunNpm
+
 plugins {
-    id 'org.siouan.frontend-jdk11'
+    id 'org.siouan.frontend-jdk17'
 }
 
 publishSonatypePublicationPublicationToSonatypeRepository.enabled = false
 
 frontend {
     nodeVersion = '18.18.0'
-    // due to vue-chart-3: https://github.com/victorgarciaesgi/vue-chart-3/pull/138
-    installScript = 'install --legacy-peer-deps'
+    installScript = 'install'
     assembleScript = 'run build'
     checkScript = 'run test:unit'
     maxDownloadAttempts = 5
@@ -26,3 +27,25 @@ tasks.named('assembleFrontend') {
     inputs.files('vite.config.js')
     outputs.dir('../webserver/src/main/resources/ui')
 }
+
+final linterTask = tasks.register('lintFrontend', RunNpm) {
+    dependsOn tasks.named('installFrontend')
+    group 'Frontend'
+    description 'Lints the frontend source code.'
+
+    script = 'run test:lint'
+}
+
+check.dependsOn linterTask
+
+task addCommitInfo(type: Exec) {
+    dependsOn assembleFrontend
+    group = 'Frontend'
+    description = 'Adds the comment with commit details at the beginning of index.html'
+
+    commandLine 'node', 'scripts/commits.js'
+    
+    workingDir = projectDir
+}
+
+assembleFrontend.finalizedBy addCommitInfo

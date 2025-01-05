@@ -13,33 +13,28 @@ import Errors from "../components/errors/Errors.vue";
 import Home from "../components/home/Home.vue";
 import Welcome from "../components/onboarding/Welcome.vue";
 import FlowCreate from "../components/flows/FlowCreate.vue";
-import FlowMetrics from "../components/flows/FlowMetrics.vue";
 import Blueprints from "override/components/flows/blueprints/Blueprints.vue";
 import BlueprintDetail from "../components/flows/blueprints/BlueprintDetail.vue";
 import Triggers from "../components/admin/Triggers.vue";
-import Workers from "../components/admin/Workers.vue";
-import Editor from "../components/namespace/Editor.vue";
-
+import Stats from "override/components/admin/stats/Stats.vue";
+import Namespaces from "../components/namespace/Namespaces.vue";
+import Namespace from "../components/namespace/Namespace.vue";
 
 export default [
     //Flows
-    {name: "root", path: '/', redirect: {name: 'home'}},
+    {name: "root", path: "/", redirect: {name: "home"}},
     {name: "home", path: "/:tenant?/dashboard", component: Home},
     {name: "welcome", path: "/:tenant?/welcome", component: Welcome},
-
-    //Namespace file editor
-    {name: "editor", path: "/:tenant?/editor/:namespace?", component: Editor},
 
     //Flows
     {name: "flows/list", path: "/:tenant?/flows", component: Flows},
     {name: "flows/search", path: "/:tenant?/flows/search", component: FlowsSearch},
     {name: "flows/create", path: "/:tenant?/flows/new", component: FlowCreate},
     {name: "flows/update", path: "/:tenant?/flows/edit/:namespace/:id/:tab?", component: FlowRoot},
-    {name: "flows/metrics", path: "/:tenant?/flows/metrics", component: FlowMetrics},
 
     //Executions
     {name: "executions/list", path: "/:tenant?/executions", component: Executions},
-    {name: "executions/update", path: "/:tenant?/executions/:namespace/:flowId/:id/:tab?", component: ExecutionRoot, props: true},
+    {name: "executions/update", path: "/:tenant?/executions/:namespace/:flowId/:id/:tab?", component: ExecutionRoot},
 
     //TaskRuns
     {name: "taskruns/list", path: "/:tenant?/taskruns", component: TaskRuns},
@@ -50,7 +45,7 @@ export default [
 
     //Documentation
     {name: "plugins/list", path: "/:tenant?/plugins", component: Plugin},
-    {name: "plugins/view", path: "/:tenant?/plugins/:cls", component: Plugin},
+    {name: "plugins/view", path: "/:tenant?/plugins/:cls",   component: Plugin},
 
     //Templates
     {name: "templates/list", path: "/:tenant?/templates", component: Templates},
@@ -60,12 +55,16 @@ export default [
     //Logs
     {name: "logs/list", path: "/:tenant?/logs", component: LogsWrapper},
 
+    //Namespaces
+    {name: "namespaces", path: "/:tenant?/namespaces", component: Namespaces},
+    {name: "namespaces/update", path: "/:tenant?/namespaces/edit/:id/:tab?", component: Namespace},
+
     //Settings
     {name: "settings", path: "/:tenant?/settings", component: Settings},
 
     //Admin
     {name: "admin/triggers", path: "/:tenant?/admin/triggers", component: Triggers},
-    {name: "admin/workers", path: "/:tenant?/admin/workers", component: Workers},
+    {name: "admin/stats", path: "/:tenant?/admin/stats", component: Stats},
 
     //Errors
     {name: "errors/404-wildcard", path: "/:pathMatch(.*)", component: Errors, props: {code: 404}},
