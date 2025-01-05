@@ -2,7 +2,7 @@
     <top-nav-bar v-if="!embed && blueprint" :title="blueprint.title" :breadcrumb="breadcrumb" v-loading="!blueprint">
         <template #additional-right>
             <ul v-if="userCanCreateFlow">
-                <router-link :to="{name: 'flows/create'}" @click="asAutoRestoreDraft">
+                <router-link :to="{name: 'flows/create', query: {blueprintId: blueprint.id}}">
                     <el-button type="primary" v-if="!embed">
                         {{ $t('use') }}
                     </el-button>
@@ -43,11 +43,7 @@
                 <el-card>
                     <editor class="position-relative" :read-only="true" :full-height="false" :minimap="false" :model-value="blueprint.flow" lang="yaml">
                         <template #nav>
-                            <div class="position-absolute copy-wrapper">
-                                <el-tooltip trigger="click" content="Copied" placement="left" :auto-close="2000">
-                                    <el-button text round :icon="icon.ContentCopy" @click="Utils.copy(blueprint.flow)" />
-                                </el-tooltip>
-                            </div>
+                            <copy-to-clipboard class="position-absolute" :text="blueprint.flow" />
                         </template>
                     </editor>
                 </el-card>
@@ -73,27 +69,22 @@
     import LowCodeEditor from "../../inputs/LowCodeEditor.vue";
     import TaskIcon from  "@kestra-io/ui-libs/src/components/misc/TaskIcon.vue";
     import TopNavBar from "../../layout/TopNavBar.vue";
-    import Utils from "../../../utils/utils";
 </script>
 <script>
     import YamlUtils from "../../../utils/yamlUtils";
-    import {shallowRef} from "vue";
-    import ContentCopy from "vue-material-design-icons/ContentCopy.vue";
     import Markdown from "../../layout/Markdown.vue";
+    import CopyToClipboard from "../../layout/CopyToClipboard.vue";
     import {mapState} from "vuex";
     import permission from "../../../models/permission";
     import action from "../../../models/action";
     import {apiUrl} from "override/utils/route";
 
     export default {
-        components: {Markdown},
+        components: {Markdown, CopyToClipboard},
         emits: ["back"],
         data() {
             return {
                 flowGraph: undefined,
-                icon: {
-                    ContentCopy: shallowRef(ContentCopy)
-                },
                 blueprint: undefined,
                 breadcrumb: [
                     {
@@ -132,9 +123,6 @@
                         }
                     })
                 }
-            },
-            asAutoRestoreDraft() {
-                localStorage.setItem("autoRestore-creation_draft", this.blueprint.flow);
             }
         },
         async created() {
@@ -214,12 +202,6 @@
                 overflow: hidden;
             }
         }
-    }
-
-    .copy-wrapper {
-        right: $spacer;
-        top: $spacer;
-        z-index: 1
     }
 
     .blueprint-container {

@@ -3,10 +3,7 @@ package io.kestra.cli.commands.plugins;
 import io.micronaut.configuration.picocli.PicocliRunner;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.env.Environment;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import io.kestra.core.contexts.KestraClassLoader;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,12 +15,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 class PluginInstallCommandTest {
-    @BeforeAll
-    static void init() {
-        if (!KestraClassLoader.isInit()) {
-            KestraClassLoader.create(PluginInstallCommandTest.class.getClassLoader());
-        }
-    }
 
     @Test
     void fixedVersion() throws IOException {
@@ -34,10 +25,10 @@ class PluginInstallCommandTest {
             String[] args = {"--plugins", pluginsPath.toAbsolutePath().toString(), "io.kestra.plugin:plugin-notifications:0.6.0"};
             PicocliRunner.call(PluginInstallCommand.class, ctx, args);
 
-            List<Path> files = Files.list(pluginsPath).collect(Collectors.toList());
+            List<Path> files = Files.list(pluginsPath).toList();
 
             assertThat(files.size(), is(1));
-            assertThat(files.get(0).getFileName().toString(), is("plugin-notifications-0.6.0.jar"));
+            assertThat(files.getFirst().getFileName().toString(), is("plugin-notifications-0.6.0.jar"));
         }
     }
 
@@ -50,11 +41,11 @@ class PluginInstallCommandTest {
             String[] args = {"--plugins", pluginsPath.toAbsolutePath().toString(), "io.kestra.plugin:plugin-notifications:LATEST"};
             PicocliRunner.call(PluginInstallCommand.class, ctx, args);
 
-            List<Path> files = Files.list(pluginsPath).collect(Collectors.toList());
+            List<Path> files = Files.list(pluginsPath).toList();
 
             assertThat(files.size(), is(1));
-            assertThat(files.get(0).getFileName().toString(), startsWith("plugin-notifications"));
-            assertThat(files.get(0).getFileName().toString(), not(containsString("LATEST")));
+            assertThat(files.getFirst().getFileName().toString(), startsWith("plugin-notifications"));
+            assertThat(files.getFirst().getFileName().toString(), not(containsString("LATEST")));
         }
     }
 
@@ -68,10 +59,10 @@ class PluginInstallCommandTest {
             String[] args = {"--plugins", pluginsPath.toAbsolutePath().toString(), "io.kestra.storage:storage-s3:[0.12,0.13.0-SNAPSHOT)"};
             PicocliRunner.call(PluginInstallCommand.class, ctx, args);
 
-            List<Path> files = Files.list(pluginsPath).collect(Collectors.toList());
+            List<Path> files = Files.list(pluginsPath).toList();
 
             assertThat(files.size(), is(1));
-            assertThat(files.get(0).getFileName().toString(), is("storage-s3-0.12.1.jar"));
+            assertThat(files.getFirst().getFileName().toString(), is("storage-s3-0.12.1.jar"));
         }
     }
 }

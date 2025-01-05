@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div data-component="FILENAME_PLACEHOLDER">
         <collapse>
             <el-form-item>
                 <el-input
@@ -84,8 +84,7 @@
             State() {
                 return State
             },
-            ...mapState("execution", ["execution", "logs"]),
-            ...mapState("flow", ["flow"]),
+            ...mapState("execution", ["execution", "logs", "flow"]),
             downloadName() {
                 return `kestra-execution-${this.$moment().format("YYYYMMDDHHmmss")}-${this.execution.id}.log`
             },

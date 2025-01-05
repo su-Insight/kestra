@@ -2,7 +2,7 @@ package io.kestra.core.storages;
 
 import io.kestra.core.annotations.Retryable;
 import io.kestra.core.models.executions.Execution;
-import io.micronaut.core.annotation.Introspected;
+import io.kestra.core.models.Plugin;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -12,11 +12,32 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 
-@Introspected
-public interface StorageInterface {
+public interface StorageInterface extends AutoCloseable, Plugin {
+
+    /**
+     * Opens any resources or perform any pre-checks for initializing this storage.
+     *
+     * @throws IOException if an error happens during initialization.
+     */
+    default void init() throws IOException {
+        // no-op
+    }
+
+    /**
+     * Closes any resources used by this class.
+     */
+    @Override
+    default void close() {
+        // no-op
+    }
+
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
     InputStream get(String tenantId, URI uri) throws IOException;
+
+    @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
+    StorageObject getWithMetadata(String tenantId, URI uri) throws IOException;
 
     /**
      * Returns all objects that start with the given prefix
@@ -50,7 +71,12 @@ public interface StorageInterface {
     FileAttributes getAttributes(String tenantId, URI uri) throws IOException;
 
     @Retryable(includes = {IOException.class})
-    URI put(String tenantId, URI uri, InputStream data) throws IOException;
+    default URI put(String tenantId, URI uri, InputStream data) throws IOException {
+        return this.put(tenantId, uri, new StorageObject(null, data));
+    }
+
+    @Retryable(includes = {IOException.class})
+    URI put(String tenantId, URI uri, StorageObject storageObject) throws IOException;
 
     @Retryable(includes = {IOException.class})
     boolean delete(String tenantId, URI uri) throws IOException;

@@ -1,5 +1,5 @@
 import JsYaml from "js-yaml";
-import yaml, {Document, YAMLMap, isSeq, isMap, Pair, Scalar, YAMLSeq, LineCounter} from "yaml";
+import yaml, {Document, YAMLMap, isSeq, isMap, Pair, Scalar, YAMLSeq, LineCounter, isPair} from "yaml";
 import _cloneDeep from "lodash/cloneDeep"
 import {SECTIONS} from "./constants.js";
 
@@ -22,7 +22,22 @@ export default class YamlUtils {
         });
     }
 
+    static pairsToMap(pairs) {
+        const map = new YAMLMap();
+        if (!isPair(pairs?.[0])) {
+            return map;
+        }
+
+        pairs.forEach(pair => {
+            map.add(pair);
+        });
+        return map;
+    }
+
     static parse(item) {
+        if (item === undefined) {
+            return undefined;
+        }
         return JsYaml.load(item);
     }
 
@@ -161,38 +176,94 @@ export default class YamlUtils {
         return index === -1 ? Number.MAX_SAFE_INTEGER : index;
     }
 
-    static extractAllTypes(source) {
+    static nextDelimiterIndex(content, currentIndex) {
+        if (currentIndex === content.length - 1) {
+            return currentIndex;
+        }
+
+        const remainingContent = content.substring(currentIndex + 1);
+
+        const nextDelimiterMatcher = remainingContent.match(/[ .}]/);
+        if (!nextDelimiterMatcher) {
+            return content.length - 1;
+        } else {
+            return currentIndex + nextDelimiterMatcher.index;
+        }
+    }
+
+    static extractFieldFromMaps(source, fieldName, yamlDocPredicate = (_) => true) {
         const yamlDoc = yaml.parseDocument(source);
-        const types = [];
-        if (yamlDoc.contents && yamlDoc.contents.items && yamlDoc.contents.items.find(e => ["tasks", "triggers", "errors"].includes(e.key.value))) {
+        const maps = [];
+        if (yamlDocPredicate(yamlDoc)) {
             yaml.visit(yamlDoc, {
                 Map(_, map) {
                     if (map.items) {
                         for (const item of map.items) {
-                            if (item.key.value === "type") {
-                                const type = item.value?.value;
-                                types.push({type, range: map.range});
+                            if (item.key.value === fieldName) {
+                                const fieldValue = item.value?.value ?? item.value?.items;
+                                maps.push({[fieldName]: fieldValue, range: map.range});
                             }
                         }
                     }
                 }
             })
         }
-        return types;
+        return maps;
+    }
+
+    static extractMaps(source, fieldConditions) {
+        if (source.match(/^\s*{{/)) {
+            return [];
+        }
+
+        const yamlDoc = yaml.parseDocument(source);
+        const maps = [];
+        yaml.visit(yamlDoc, {
+            Map(_, yamlMap) {
+                if (yamlMap.items) {
+                    const map = yamlMap.toJS(yamlDoc);
+                    for (let [fieldName, condition] of Object.entries(fieldConditions)) {
+                        if (condition.present) {
+                            if (map[fieldName] === undefined) {
+                                return;
+                            }
+
+                            if (map[fieldName] === null) {
+                                map[fieldName] = undefined;
+                            }
+                        }
+                        if (condition.populated) {
+                            if (map[fieldName] === undefined || map[fieldName] === null || map[fieldName] === "") {
+                                return;
+                            }
+                        }
+                    }
+
+                    maps.push({map, range: yamlMap.range});
+                }
+            }
+        });
+
+        return maps;
+    }
+
+    static extractAllTaskIds(source) {
+        return this.extractFieldFromMaps(source, "id", (yamlDoc) => yamlDoc.contents && yamlDoc.contents.items && yamlDoc.contents.items.find(e => ["tasks"].includes(e.key?.value)))
+    }
+
+    static extractAllTypes(source) {
+        return this.extractFieldFromMaps(source, "type", (yamlDoc) => yamlDoc.contents && yamlDoc.contents.items && yamlDoc.contents.items.find(e => ["tasks", "triggers", "errors"].includes(e.key?.value)))
     }
 
     static getTaskType(source, position) {
-        const types = this.extractAllTypes(source)
+        const types = this.extractAllTypes(source);
 
         const lineCounter = new LineCounter();
         yaml.parseDocument(source, {lineCounter});
         const cursorIndex = lineCounter.lineStarts[position.lineNumber - 1] + position.column;
 
         for(const type of types.reverse()) {
-            if (cursorIndex > type.range[1]) {
-                return type.type;
-            }
-            if (cursorIndex >= type.range[0] && cursorIndex <= type.range[1]) {
+            if (cursorIndex >= type.range[0]) {
                 return type.type;
             }
         }
@@ -518,7 +589,7 @@ export default class YamlUtils {
             return source;
         }
 
-        const order = ["id", "namespace", "description", "labels", "inputs", "variables", "tasks", "triggers", "errors", "taskDefaults", "concurrency"];
+        const order = ["id", "namespace", "description", "retry", "labels", "inputs", "variables", "tasks", "triggers", "errors", "pluginDefaults", "taskDefaults", "concurrency", "outputs"];
         const updatedItems = [];
         for (const prop of order) {
             const item = yamlDoc.contents.items.find(e => e.key.value === prop);
@@ -548,7 +619,7 @@ export default class YamlUtils {
             return false;
         }
 
-        const tasks = yamlDoc.contents.items.find(item => item.key.value === "tasks");
+        const tasks = yamlDoc.contents.items.find(item => item.key?.value === "tasks");
         return tasks?.value?.items?.length >= 1;
     }
 

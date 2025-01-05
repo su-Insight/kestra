@@ -1,6 +1,7 @@
 <template>
     <div :id="uuid" class="namespace-treemap" v-if="dataReady">
         <el-tooltip
+            effect="light"
             :persistent="false"
             :hide-after="0"
             transition=""
@@ -118,7 +119,7 @@
                         key: "count",
                         groups: ["namespace", "state"],
                         backgroundColor(ctx) {
-                            const state = ctx.raw._data.state;
+                            const state = ctx.raw?._data?.state;
 
                             return state ? backgroundFromState(state.toUpperCase()) : (darkTheme ? "#202435" : "#E7E7F3");
                         },

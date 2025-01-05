@@ -7,7 +7,6 @@ import io.kestra.core.models.executions.metrics.MetricAggregation;
 import io.kestra.core.queues.QueueService;
 import io.kestra.core.repositories.ArrayListTotal;
 import io.kestra.core.utils.IdUtils;
-import io.micronaut.context.ApplicationContext;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.data.model.Sort;
 import lombok.Getter;
@@ -46,17 +45,15 @@ public abstract class AbstractJdbcRepository<T> {
     @Getter
     protected Table<Record> table;
 
+    @SuppressWarnings("unchecked")
     public AbstractJdbcRepository(
-        Class<T> cls,
-        ApplicationContext applicationContext
-    ) {
-        this.cls = cls;
-        this.queueService = applicationContext.getBean(QueueService.class);
-        this.dslContextWrapper = applicationContext.getBean(JooqDSLContextWrapper.class);
-
-        JdbcConfiguration jdbcConfiguration = applicationContext.getBean(JdbcConfiguration.class);
-
-        this.table = DSL.table(jdbcConfiguration.tableConfig(cls).getTable());
+        JdbcTableConfig tableConfig,
+        QueueService queueService,
+        JooqDSLContextWrapper dslContextWrapper) {
+        this.cls = (Class<T>) tableConfig.cls();
+        this.queueService = queueService;
+        this.dslContextWrapper = dslContextWrapper;
+        this.table = DSL.table(tableConfig.table());
     }
 
     abstract public Condition fullTextCondition(List<String> fields, String query);
@@ -214,7 +211,7 @@ public abstract class AbstractJdbcRepository<T> {
                     return r.substring(0, i) + "[mark]" + r.substring(i, i + query.length()) + "[/mark]" + r.substring(i + query.length());
                 }
             })
-            .collect(Collectors.toList());
+            .toList();
 
         return Collections.singletonList(String.join("\n", fragments));
     }

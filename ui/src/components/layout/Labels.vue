@@ -1,5 +1,5 @@
 <template>
-    <span v-if="labels">
+    <span data-component="FILENAME_PLACEHOLDER" v-if="labels">
         <!-- 'el-check-tag' would be a better fit but it currently lacks customization -->
         <el-tag
             v-for="(value, key) in labelMap"
@@ -48,9 +48,13 @@
                     []
                 )
                     .forEach(label => {
-                        const split = label.split(":");
+                        const separatorIndex = label.indexOf(":");
 
-                        labels.set(split[0], split[1]);
+                        if (separatorIndex === -1) {
+                            return;
+                        }
+
+                        labels.set(label.slice(0, separatorIndex), label.slice(separatorIndex + 1));
                     })
 
                 return labels;

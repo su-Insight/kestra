@@ -16,19 +16,15 @@ import FlowCreate from "../components/flows/FlowCreate.vue";
 import Blueprints from "override/components/flows/blueprints/Blueprints.vue";
 import BlueprintDetail from "../components/flows/blueprints/BlueprintDetail.vue";
 import Triggers from "../components/admin/Triggers.vue";
-import Editor from "../components/namespace/Editor.vue";
 import Stats from "override/components/admin/stats/Stats.vue";
-
+import Namespaces from "../components/namespace/Namespaces.vue";
+import Namespace from "../components/namespace/Namespace.vue";
 
 export default [
     //Flows
     {name: "root", path: "/", redirect: {name: "home"}},
     {name: "home", path: "/:tenant?/dashboard", component: Home},
     {name: "welcome", path: "/:tenant?/welcome", component: Welcome},
-    {name: "home", path: "/:tenant?/dashboard", component: Home},
-
-    //Namespace file editor
-    {name: "editor", path: "/:tenant?/editor/:namespace?", component: Editor},
 
     //Flows
     {name: "flows/list", path: "/:tenant?/flows", component: Flows},
@@ -58,6 +54,10 @@ export default [
 
     //Logs
     {name: "logs/list", path: "/:tenant?/logs", component: LogsWrapper},
+
+    //Namespaces
+    {name: "namespaces", path: "/:tenant?/namespaces", component: Namespaces},
+    {name: "namespaces/update", path: "/:tenant?/namespaces/edit/:id/:tab?", component: Namespace},
 
     //Settings
     {name: "settings", path: "/:tenant?/settings", component: Settings},

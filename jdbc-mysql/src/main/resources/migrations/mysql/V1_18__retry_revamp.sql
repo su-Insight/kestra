@@ -11,4 +11,4 @@ ALTER TABLE executions MODIFY COLUMN `state_current` ENUM (
     'CANCELLED',
     'QUEUED',
     'RETRYING'
-) GENERATED ALWAYS AS (value ->> '$.state.current') STORED NOT NULL;
+    ) GENERATED ALWAYS AS (value ->> '$.state.current') STORED NOT NULL;
