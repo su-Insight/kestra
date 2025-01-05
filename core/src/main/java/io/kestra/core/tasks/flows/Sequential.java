@@ -23,8 +23,8 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -35,7 +35,7 @@ import java.util.stream.Stream;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Run tasks sequentially, one after the other, in the order they are defined",
+    title = "Run tasks sequentially, one after the other, in the order they are defined.",
     description = "Used to visually group tasks."
 )
 @Plugin(
@@ -52,13 +52,13 @@ import java.util.stream.Stream;
                 "    tasks:",
                 "      - id: 1st",
                 "        type: io.kestra.core.tasks.debugs.Return",
-                "        format: \"{{task.id}} > {{taskrun.startDate}}\"",
+                "        format: \"{{ task.id }} > {{ taskrun.startDate }}\"",
                 "      - id: 2nd",
                 "        type: io.kestra.core.tasks.debugs.Return",
-                "        format: \"{{task.id}} > {{taskrun.id}}\"",
+                "        format: \"{{ task.id }} > {{ taskrun.id }}\"",
                 "  - id: last",
                 "    type: io.kestra.core.tasks.debugs.Return",
-                "    format: \"{{task.id}} > {{taskrun.startDate}}\""
+                "    format: \"{{ task.id }} > {{ taskrun.startDate }}\""
             }
         )
     }
@@ -78,7 +78,7 @@ public class Sequential extends Task implements FlowableTask<VoidOutput> {
 
         GraphUtils.sequential(
             subGraph,
-            this.tasks,
+            this.getTasks(),
             this.errors,
             taskRun,
             execution
@@ -91,15 +91,15 @@ public class Sequential extends Task implements FlowableTask<VoidOutput> {
     public List<Task> allChildTasks() {
         return Stream
             .concat(
-                this.tasks != null ? this.tasks.stream() : Stream.empty(),
-                this.errors != null ? this.errors.stream() : Stream.empty()
+                this.getTasks() != null ? this.getTasks().stream() : Stream.empty(),
+                this.getErrors() != null ? this.getErrors().stream() : Stream.empty()
             )
             .collect(Collectors.toList());
     }
 
     @Override
     public List<ResolvedTask> childTasks(RunContext runContext, TaskRun parentTaskRun) throws IllegalVariableEvaluationException {
-        return FlowableUtils.resolveTasks(this.tasks, parentTaskRun);
+        return FlowableUtils.resolveTasks(this.getTasks(), parentTaskRun);
     }
 
     @Override
@@ -107,7 +107,7 @@ public class Sequential extends Task implements FlowableTask<VoidOutput> {
         return FlowableUtils.resolveSequentialNexts(
             execution,
             this.childTasks(runContext, parentTaskRun),
-            FlowableUtils.resolveTasks(this.errors, parentTaskRun),
+            FlowableUtils.resolveTasks(this.getErrors(), parentTaskRun),
             parentTaskRun
         );
     }

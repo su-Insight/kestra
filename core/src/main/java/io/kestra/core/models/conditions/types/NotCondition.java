@@ -15,9 +15,9 @@ import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
 import java.util.List;
-import java.util.Map;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
+
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 
 import static io.kestra.core.utils.Rethrow.throwPredicate;
 
@@ -27,7 +27,7 @@ import static io.kestra.core.utils.Rethrow.throwPredicate;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Condition to exclude others conditions"
+    title = "Condition to exclude others conditions."
 )
 @Plugin(
     examples = {
@@ -47,8 +47,8 @@ public class NotCondition extends Condition implements ScheduleCondition {
     @NotNull
     @NotEmpty
     @Schema(
-        title = "The list of conditions to exclude",
-        description = "If any conditions is true, it will prevent events execution."
+        title = "The list of conditions to exclude.",
+        description = "If any conditions is true, it will prevent the event's execution."
     )
     @PluginProperty
     private List<Condition> conditions;

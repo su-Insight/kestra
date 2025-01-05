@@ -46,6 +46,19 @@ export default {
                 {params: options}
             )
         },
+        bulkResumeExecution(_, options) {
+            return this.$http.post(
+                `${apiUrl(this)}/executions/resume/by-ids`,
+                options.executionsId
+            )
+        },
+        queryResumeExecution(_, options) {
+            return this.$http.post(
+                `${apiUrl(this)}/executions/resume/by-query`,
+                {},
+                {params: options}
+            )
+        },
         replayExecution(_, options) {
             return this.$http.post(
                 `${apiUrl(this)}/executions/${options.executionId}/replay`,
@@ -66,7 +79,7 @@ export default {
                 })
         },
         kill(_, options) {
-            return this.$http.delete(`${apiUrl(this)}/executions/${options.id}/kill`);
+            return this.$http.delete(`${apiUrl(this)}/executions/${options.id}/kill?isOnKillCascade=${options.isOnKillCascade}`);
         },
         bulkKill(_, options) {
             return this.$http.delete(`${apiUrl(this)}/executions/kill/by-ids`, {data: options.executionsId});
@@ -86,14 +99,16 @@ export default {
         },
         findExecutions({commit}, options) {
             return this.$http.get(`${apiUrl(this)}/executions/search`, {params: options}).then(response => {
-                commit("setExecutions", response.data.results)
-                commit("setTotal", response.data.total)
+                if (options.commit !== false) {
+                    commit("setExecutions", response.data.results)
+                    commit("setTotal", response.data.total)
+                }
 
                 return response.data
             })
         },
         triggerExecution(_, options) {
-            return this.$http.post(`${apiUrl(this)}/executions/trigger/${options.namespace}/${options.id}`, options.formData, {
+            return this.$http.post(`${apiUrl(this)}/executions/${options.namespace}/${options.id}`, options.formData, {
                 timeout: 60 * 60 * 1000,
                 headers: {
                     "content-type": "multipart/form-data"
@@ -108,10 +123,10 @@ export default {
                 commit("setExecution", null)
             })
         },
-        bulkDeleteExecution({commit}, options) {
+        bulkDeleteExecution({_commit}, options) {
             return this.$http.delete(`${apiUrl(this)}/executions/by-ids`, {data: options.executionsId})
         },
-        queryDeleteExecution({commit}, options) {
+        queryDeleteExecution({_commit}, options) {
             return this.$http.delete(`${apiUrl(this)}/executions/by-query`, {params: options})
         },
         followExecution(_, options) {
@@ -156,12 +171,36 @@ export default {
                 return response.data
             })
         },
+        deleteLogs(_, options) {
+            return this.$http.delete(`${apiUrl(this)}/logs/${options.executionId}`, {
+                params: options.params
+            }).then(response => {
+                return response.data
+            })
+        },
         filePreview({commit}, options) {
             return this.$http.get(`${apiUrl(this)}/executions/${options.executionId}/file/preview`, {
                 params: options
             }).then(response => {
                 commit("setFilePreview", response.data)
             })
+        },
+        setLabels(_, options) {
+            return this.$http.post(
+                `${apiUrl(this)}/executions/${options.executionId}/labels`,
+                options.labels,
+                {
+                    headers: {
+                        "Content-Type": "application/json"
+                    }
+                })
+        },
+        querySetLabels({_commit}, options) {
+            return this.$http.post(`${apiUrl(this)}/executions/labels/by-query`, options.data, {
+                params: options.params})
+        },
+        bulkSetLabels({_commit}, options) {
+            return this.$http.post(`${apiUrl(this)}/executions/labels/by-ids`,  options)
         }
     },
     mutations: {

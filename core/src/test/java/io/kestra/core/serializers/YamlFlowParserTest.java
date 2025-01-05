@@ -1,20 +1,20 @@
 package io.kestra.core.serializers;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Input;
+import io.kestra.core.models.flows.Type;
 import io.kestra.core.models.flows.input.StringInput;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.retrys.Constant;
-import io.kestra.core.models.triggers.types.Schedule;
 import io.kestra.core.models.validations.ModelValidator;
-import io.kestra.core.tasks.debugs.Return;
 import io.kestra.core.utils.TestsUtils;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -22,8 +22,8 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -123,11 +123,21 @@ class YamlFlowParserTest {
     void inputs() {
         Flow flow = this.parse("flows/valids/inputs.yaml");
 
-        assertThat(flow.getInputs().size(), is(24));
-        assertThat(flow.getInputs().stream().filter(Input::getRequired).count(), is(6L));
+        assertThat(flow.getInputs().size(), is(25));
+        assertThat(flow.getInputs().stream().filter(Input::getRequired).count(), is(7L));
         assertThat(flow.getInputs().stream().filter(r -> !r.getRequired()).count(), is(18L));
         assertThat(flow.getInputs().stream().filter(r -> r.getDefaults() != null).count(), is(1L));
         assertThat(flow.getInputs().stream().filter(r -> r instanceof StringInput && ((StringInput)r).getValidator() != null).count(), is(1L));
+    }
+
+
+    @Test
+    void inputsOld() {
+        Flow flow = this.parse("flows/tests/inputs-old.yaml");
+
+        assertThat(flow.getInputs().size(), is(1));
+        assertThat(flow.getInputs().get(0).getId(), is("myInput"));
+        assertThat(flow.getInputs().get(0).getType(), is(Type.STRING));
     }
 
     @Test
@@ -170,31 +180,6 @@ class YamlFlowParserTest {
     }
 
     @Test
-    void include() {
-        Flow flow = parse("flows/helpers/include.yaml");
-
-        assertThat(flow.getId(), is("include"));
-        assertThat(flow.getTasks().size(), is(2));
-
-        assertThat(((Return) flow.getTasks().get(0)).getFormat(), containsString("Lorem Ipsum"));
-        assertThat(((Return) flow.getTasks().get(0)).getFormat(), containsString("\n"));
-        assertThat(((Return) flow.getTasks().get(1)).getFormat(), containsString("Lorem Ipsum"));
-        assertThat(((Return) flow.getTasks().get(1)).getFormat(), containsString("\n"));
-    }
-
-    @Test
-    void trigger() {
-        Flow parse = this.parse("flows/tests/trigger.yaml");
-        assertThat(((Schedule) parse.getTriggers().get(0)).getBackfill().getStart(), is(ZonedDateTime.parse("2020-01-01T00:00:00+02:00")));
-    }
-
-    @Test
-    void triggerEmpty() {
-        Flow parse = this.parse("flows/tests/trigger-empty.yaml");
-        assertThat(((Schedule) parse.getTriggers().get(0)).getBackfill().getStart(), nullValue());
-    }
-
-    @Test
     void invalidTask() {
         ConstraintViolationException exception = assertThrows(
             ConstraintViolationException.class,
@@ -212,21 +197,24 @@ class YamlFlowParserTest {
             () -> this.parse("flows/invalids/invalid-property.yaml")
         );
 
-        assertThat(exception.getMessage(), is("Unrecognized field \"invalid\" (class io.kestra.core.tasks.debugs.Return), not marked as ignorable (8 known properties: \"timeout\", \"format\", \"retry\", \"type\", \"id\", \"description\", \"workerGroup\", \"disabled\"])"));
+        assertThat(exception.getMessage(), is("Unrecognized field \"invalid\" (class io.kestra.core.tasks.debugs.Return), not marked as ignorable (10 known properties: \"logLevel\", \"timeout\", \"format\", \"retry\", \"type\", \"id\", \"description\", \"workerGroup\", \"disabled\", \"allowFailure\"])"));
         assertThat(exception.getConstraintViolations().size(), is(1));
         assertThat(exception.getConstraintViolations().iterator().next().getPropertyPath().toString(), is("io.kestra.core.models.flows.Flow[\"tasks\"]->java.util.ArrayList[0]->io.kestra.core.tasks.debugs.Return[\"invalid\"]"));
     }
 
-
     @Test
-    void includeFailed() {
-        ConstraintViolationException exception = assertThrows(
-            ConstraintViolationException.class,
-            () -> this.parse("flows/helpers/include-failed.yaml")
-        );
+    void invalidPropertyOk() throws IOException {
+        URL resource = TestsUtils.class.getClassLoader().getResource("flows/invalids/invalid-property.yaml");
+        assert resource != null;
 
-        assertThat(exception.getConstraintViolations().size(), is(1));
-        assertThat(new ArrayList<>(exception.getConstraintViolations()).get(0).getMessage(), containsString("File not found at location"));
+        File file = new File(resource.getFile());
+        String flowSource = Files.readString(file.toPath(), Charset.defaultCharset());
+        TypeReference<Map<String, Object>> TYPE_REFERENCE = new TypeReference<>() {};
+        Map<String, Object> flow = JacksonMapper.ofYaml().readValue(flowSource, TYPE_REFERENCE);
+
+        Flow parse = yamlFlowParser.parse(flow, Flow.class, false);
+
+        assertThat(parse.getId(), is("duplicate"));
     }
 
     @Test
