@@ -23,7 +23,7 @@
                                                 :to="{name: 'plugins/view', params: {cls: namespace + '.' + cls}}"
                                             >
                                                 <div class="icon">
-                                                    <task-icon :only-icon="true" :cls="namespace + '.' + cls" :icons="icons"/>
+                                                    <task-icon :only-icon="true" :cls="namespace + '.' + cls" :icons="icons" />
                                                 </div>
                                                 {{ cls }}
                                             </router-link>
@@ -74,7 +74,7 @@
             },
             group(plugin) {
                 return Object.keys(plugin)
-                    .filter(r => r === "tasks" || r === "triggers" || r === "conditions")
+                    .filter(r => r === "tasks" || r === "triggers" || r === "conditions" || r === "scriptRunners")
                     .flatMap(type => {
                         return (plugin[type] === undefined ? {} : plugin[type])
                             .map(task => {

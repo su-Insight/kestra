@@ -1,6 +1,7 @@
 package io.kestra.core.plugins;
 
 import io.kestra.core.models.conditions.Condition;
+import io.kestra.core.models.script.ScriptRunner;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.secret.SecretPluginInterface;
@@ -88,6 +89,7 @@ public class PluginScanner {
         List<Class<? extends Condition>> conditions = new ArrayList<>();
         List<Class<? extends StorageInterface>> storages = new ArrayList<>();
         List<Class<? extends SecretPluginInterface>> secrets = new ArrayList<>();
+        List<Class<? extends ScriptRunner>> scriptRunners = new ArrayList<>();
         List<Class<?>> controllers = new ArrayList<>();
         List<String> guides = new ArrayList<>();
 
@@ -108,7 +110,11 @@ public class PluginScanner {
             try {
                 beanType = definition.getBeanType();
             } catch (Throwable e) {
-                log.warn("Unable to load class '{}' on plugin '{}'", definition.getName(), externalPlugin.getLocation().toString());
+                log.warn(
+                    "Unable to load class '{}' on plugin '{}'",
+                    definition.getName(), externalPlugin  != null ? externalPlugin.getLocation().toString() : (manifest != null ? manifest.getMainAttributes().getValue("X-Kestra-Title") : ""),
+                    e
+                );
                 continue;
             }
 
@@ -138,6 +144,10 @@ public class PluginScanner {
 
             if (SecretPluginInterface.class.isAssignableFrom(beanType)) {
                 secrets.add(beanType);
+            }
+
+            if (ScriptRunner.class.isAssignableFrom(beanType)) {
+                scriptRunners.add(beanType);
             }
 
             if (beanType.isAnnotationPresent(Controller.class)) {
@@ -173,6 +183,7 @@ public class PluginScanner {
             .controllers(controllers)
             .storages(storages)
             .secrets(secrets)
+            .scriptRunners(scriptRunners)
             .guides(guides)
             .build();
     }

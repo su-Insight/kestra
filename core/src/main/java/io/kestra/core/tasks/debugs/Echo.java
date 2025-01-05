@@ -14,7 +14,7 @@ import io.kestra.core.models.tasks.VoidOutput;
 import io.kestra.core.runners.RunContext;
 import org.slf4j.event.Level;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 
 @SuperBuilder
 @ToString
@@ -23,7 +23,7 @@ import javax.validation.constraints.NotBlank;
 @NoArgsConstructor
 @Schema(
     title = "Log a message in the task logs.",
-    description = "This task is deprecated, please use the io.kestra.core.tasks.log.Log task instead.",
+    description = "This task is deprecated, please use the `io.kestra.core.tasks.log.Log` task instead.",
     deprecated = true
 )
 @Plugin(

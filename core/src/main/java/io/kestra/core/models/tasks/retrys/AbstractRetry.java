@@ -3,6 +3,7 @@ package io.kestra.core.models.tasks.retrys;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.micronaut.core.annotation.Introspected;
+import jakarta.validation.constraints.Min;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -10,8 +11,7 @@ import lombok.experimental.SuperBuilder;
 import net.jodah.failsafe.RetryPolicy;
 
 import java.time.Duration;
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotNull;
+import java.time.Instant;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", visible = true, include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @JsonSubTypes({
@@ -33,6 +33,8 @@ public abstract class AbstractRetry {
 
     @Builder.Default
     private Boolean warningOnRetry = false;
+
+    public abstract Instant nextRetryDate(Integer attemptCount, Instant lastAttempt);
 
     public <T> RetryPolicy<T> toPolicy() {
         RetryPolicy<T> policy = new RetryPolicy<>();
