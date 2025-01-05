@@ -12,7 +12,7 @@ import io.kestra.core.models.triggers.PollingTriggerInterface;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
@@ -39,7 +39,7 @@ abstract public class AbstractSchedulerTest {
         return createFlow(triggers, null);
     }
 
-    protected static Flow createFlow(List<AbstractTrigger> triggers, List<TaskDefault> list) {
+    protected static Flow createFlow(List<AbstractTrigger> triggers, List<PluginDefault> list) {
         Flow.FlowBuilder<?, ?> flow = Flow.builder()
             .id(IdUtils.create())
             .namespace("io.kestra.unittest")
@@ -72,7 +72,7 @@ abstract public class AbstractSchedulerTest {
                 .build()));
 
         if (list != null) {
-            flow.taskDefaults(list);
+            flow.pluginDefaults(list);
         }
 
         return flow

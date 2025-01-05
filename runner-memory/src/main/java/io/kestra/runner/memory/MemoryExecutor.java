@@ -14,10 +14,9 @@ import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.runners.*;
 import io.kestra.core.services.*;
-import io.kestra.core.tasks.flows.ForEachItem;
-import io.kestra.core.tasks.flows.Template;
+import io.kestra.plugin.core.flow.ForEachItem;
+import io.kestra.plugin.core.flow.Template;
 import io.kestra.core.utils.Either;
-import io.micronaut.context.ApplicationContext;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
@@ -26,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,9 +43,6 @@ public class MemoryExecutor implements ExecutorInterface {
     private static final ConcurrentHashMap<String, SubflowExecution<?>> SUBFLOWEXECUTIONS_WATCHER = new ConcurrentHashMap<>();
     private List<Flow> allFlows;
     private final ScheduledExecutorService schedulerDelay = Executors.newSingleThreadScheduledExecutor();
-
-    @Inject
-    private ApplicationContext applicationContext;
 
     @Inject
     private FlowRepositoryInterface flowRepository;
@@ -67,7 +64,7 @@ public class MemoryExecutor implements ExecutorInterface {
     private QueueInterface<LogEntry> logQueue;
 
     @Inject
-    private TaskDefaultService taskDefaultService;
+    private PluginDefaultService pluginDefaultService;
 
     @Inject
     private Optional<Template.TemplateExecutorInterface> templateExecutorInterface;
@@ -106,17 +103,17 @@ public class MemoryExecutor implements ExecutorInterface {
     @Named(QueueFactoryInterface.SUBFLOWEXECUTIONRESULT_NAMED)
     private QueueInterface<SubflowExecutionResult> subflowExecutionResultQueue;
 
+    private final List<Runnable> receiveCancellations = new ArrayList<>();
+
     @Override
     public void run() {
         flowListeners.run();
         flowListeners.listen(flows -> this.allFlows = flows);
 
-        applicationContext.registerSingleton(new DefaultFlowExecutor(flowListeners, this.flowRepository));
-
-        this.executionQueue.receive(MemoryExecutor.class, this::executionQueue);
-        this.workerTaskResultQueue.receive(MemoryExecutor.class, this::workerTaskResultQueue);
-        this.killQueue.receive(MemoryExecutor.class, this::killQueue);
-        this.subflowExecutionResultQueue.receive(Executor.class, this::subflowExecutionResultQueue);
+        this.receiveCancellations.addFirst(this.executionQueue.receive(MemoryExecutor.class, this::executionQueue));
+        this.receiveCancellations.addFirst(this.workerTaskResultQueue.receive(MemoryExecutor.class, this::workerTaskResultQueue));
+        this.receiveCancellations.addFirst(this.killQueue.receive(MemoryExecutor.class, this::killQueue));
+        this.receiveCancellations.addFirst(this.subflowExecutionResultQueue.receive(Executor.class, this::subflowExecutionResultQueue));
     }
 
     private void executionQueue(Either<Execution, DeserializationException> either) {
@@ -126,7 +123,7 @@ public class MemoryExecutor implements ExecutorInterface {
         }
 
         Execution message = either.getLeft();
-        if (skipExecutionService.skipExecution(message.getId())) {
+        if (skipExecutionService.skipExecution(message)) {
             log.warn("Skipping execution {}", message.getId());
             return;
         }
@@ -152,7 +149,7 @@ public class MemoryExecutor implements ExecutorInterface {
             }
         }
 
-        return taskDefaultService.injectDefaults(flow, execution);
+        return pluginDefaultService.injectDefaults(flow, execution);
     }
 
     private void handleExecution(ExecutionState state) {
@@ -225,16 +222,17 @@ public class MemoryExecutor implements ExecutorInterface {
                                 try {
                                     ExecutionState executionState = EXECUTIONS.get(workerTaskResultDelay.getExecutionId());
 
-                                    if (executionState.execution.findTaskRunByTaskRunId(workerTaskResultDelay.getTaskRunId()).getState().getCurrent() == State.Type.PAUSED) {
+                                    if (workerTaskResultDelay.getDelayType().equals(ExecutionDelay.DelayType.RESUME_FLOW)) {
                                         Execution markAsExecution = executionService.markAs(
                                             executionState.execution,
+                                            flow,
                                             workerTaskResultDelay.getTaskRunId(),
                                             workerTaskResultDelay.getState()
                                         );
                                         EXECUTIONS.put(workerTaskResultDelay.getExecutionId(), executionState.from(markAsExecution));
                                         executionQueue.emit(markAsExecution);
-                                    } else if (executionState.execution.findTaskRunByTaskRunId(workerTaskResultDelay.getTaskRunId()).getState().getCurrent().equals(State.Type.FAILED)) {
-                                        Execution newAttempt = executionService.retry(
+                                    } else if (workerTaskResultDelay.getDelayType().equals(ExecutionDelay.DelayType.RESTART_FAILED_TASK)) {
+                                        Execution newAttempt = executionService.retryTask(
                                             executionState.execution,
                                             workerTaskResultDelay.getTaskRunId()
                                         );
@@ -371,7 +369,7 @@ public class MemoryExecutor implements ExecutorInterface {
 
         WorkerTaskResult message = either.getLeft();
 
-        if (skipExecutionService.skipExecution(message.getTaskRun().getExecutionId())) {
+        if (skipExecutionService.skipExecution(message.getTaskRun())) {
             log.warn("Skipping execution {}", message.getTaskRun().getExecutionId());
             return;
         }
@@ -428,7 +426,7 @@ public class MemoryExecutor implements ExecutorInterface {
             log.warn("Skipping execution {}", message.getExecutionId());
             return;
         }
-        if (skipExecutionService.skipExecution(message.getParentTaskRun().getExecutionId())) {
+        if (skipExecutionService.skipExecution(message.getParentTaskRun())) {
             log.warn("Skipping execution {}", message.getParentTaskRun().getExecutionId());
             return;
         }
@@ -512,17 +510,21 @@ public class MemoryExecutor implements ExecutorInterface {
             return;
         }
 
-        ExecutionKilled message = either.getLeft();
+        if (!(either.getLeft() instanceof ExecutionKilledExecution message)) {
+            return;
+        }
+
         if (skipExecutionService.skipExecution(message.getExecutionId())) {
             log.warn("Skipping execution {}", message.getExecutionId());
             return;
         }
 
-
         synchronized (this) {
             if (log.isDebugEnabled()) {
                 executorService.log(log, true, message);
             }
+
+            final Flow flowFromRepository = this.flowRepository.findByExecution(EXECUTIONS.get(message.getExecutionId()).execution);
 
             // save WorkerTaskResult on current QueuedExecution
             EXECUTIONS.compute(message.getExecutionId(), (s, executionState) -> {
@@ -530,11 +532,10 @@ public class MemoryExecutor implements ExecutorInterface {
                     throw new IllegalStateException("Execution state don't exist for " + s + ", receive " + message);
                 }
 
-                return executionState.from(executionService.kill(executionState.execution));
+                return executionState.from(executionService.kill(executionState.execution, flowFromRepository));
             });
 
-            Flow flow = this.flowRepository.findByExecution(EXECUTIONS.get(message.getExecutionId()).execution);
-            flow = transform(flow, EXECUTIONS.get(message.getExecutionId()).execution);
+            Flow flow = transform(flowFromRepository, EXECUTIONS.get(message.getExecutionId()).execution);
 
             this.toExecution(new Executor(EXECUTIONS.get(message.getExecutionId()).execution, null).withFlow(flow));
         }
@@ -652,6 +653,7 @@ public class MemoryExecutor implements ExecutorInterface {
 
     @Override
     public void close() throws IOException {
+        this.receiveCancellations.forEach(Runnable::run);
         schedulerDelay.shutdown();
     }
 }

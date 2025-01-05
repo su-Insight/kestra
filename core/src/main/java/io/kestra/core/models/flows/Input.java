@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.kestra.core.models.flows.input.*;
+import io.kestra.core.models.validations.ManualConstraintViolation;
 import io.micronaut.core.annotation.Introspected;
 import lombok.Builder;
 import lombok.Getter;
@@ -21,9 +22,9 @@ import jakarta.validation.constraints.Pattern;
 @Getter
 @NoArgsConstructor
 @Introspected
-@JsonInclude(JsonInclude.Include.NON_DEFAULT)
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", visible = true, include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @JsonSubTypes({
+    @JsonSubTypes.Type(value = ArrayInput.class, name = "ARRAY"),
     @JsonSubTypes.Type(value = BooleanInput.class, name = "BOOLEAN"),
     @JsonSubTypes.Type(value = DateInput.class, name = "DATE"),
     @JsonSubTypes.Type(value = DateTimeInput.class, name = "DATETIME"),
@@ -38,11 +39,15 @@ import jakarta.validation.constraints.Pattern;
     @JsonSubTypes.Type(value = TimeInput.class, name = "TIME"),
     @JsonSubTypes.Type(value = URIInput.class, name = "URI")
 })
+@JsonInclude(JsonInclude.Include.NON_DEFAULT)
 public abstract class Input<T> implements Data {
     @NotNull
     @NotBlank
     @Pattern(regexp="^[a-zA-Z0-9][.a-zA-Z0-9_-]*")
     String id;
+
+    @Deprecated
+    String name;
 
     @NotNull
     @Valid
@@ -58,15 +63,11 @@ public abstract class Input<T> implements Data {
     public abstract void validate(T input) throws ConstraintViolationException;
 
     @JsonSetter
-    @Deprecated
     public void setName(String name) {
         if (this.id == null) {
             this.id = name;
         }
-    }
 
-    @Deprecated
-    public String getName() {
-        return this.getId();
+        this.name = name;
     }
 }

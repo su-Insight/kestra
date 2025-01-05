@@ -2,7 +2,7 @@ package io.kestra.core.storages;
 
 import io.kestra.core.annotations.Retryable;
 import io.kestra.core.models.executions.Execution;
-import io.micronaut.core.annotation.Introspected;
+import io.kestra.core.models.Plugin;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -13,8 +13,25 @@ import java.io.InputStream;
 import java.net.URI;
 import java.util.List;
 
-@Introspected
-public interface StorageInterface {
+public interface StorageInterface extends AutoCloseable, Plugin {
+
+    /**
+     * Opens any resources or perform any pre-checks for initializing this storage.
+     *
+     * @throws IOException if an error happens during initialization.
+     */
+    default void init() throws IOException {
+        // no-op
+    }
+
+    /**
+     * Closes any resources used by this class.
+     */
+    @Override
+    default void close() {
+        // no-op
+    }
+
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
     InputStream get(String tenantId, URI uri) throws IOException;
 

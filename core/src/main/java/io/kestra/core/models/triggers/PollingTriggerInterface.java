@@ -9,17 +9,7 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 
-public interface PollingTriggerInterface {
-    Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception;
-
-    default ZonedDateTime nextEvaluationDate(ConditionContext conditionContext, Optional<? extends TriggerContext> last) throws Exception {
-        return ZonedDateTime.now().plus(this.getInterval());
-    }
-
-    default ZonedDateTime nextEvaluationDate() {
-        return ZonedDateTime.now().plus(this.getInterval());
-    }
-
+public interface PollingTriggerInterface extends WorkerTriggerInterface {
     @Schema(
         title = "Interval between polling.",
         description = "The interval between 2 different polls of schedule, this can avoid to overload the remote system " +
@@ -29,4 +19,14 @@ public interface PollingTriggerInterface {
     )
     @PluginProperty
     Duration getInterval();
+
+    Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception;
+
+    default ZonedDateTime nextEvaluationDate(ConditionContext conditionContext, Optional<? extends TriggerContext> last) throws Exception {
+        return ZonedDateTime.now().plus(this.getInterval());
+    }
+
+    default ZonedDateTime nextEvaluationDate() {
+        return ZonedDateTime.now().plus(this.getInterval());
+    }
 }

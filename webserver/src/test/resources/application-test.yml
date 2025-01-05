@@ -6,6 +6,11 @@ micronaut:
         mapping: /ui/**
 
   http:
+    client:
+      read-idle-timeout: 60s
+      connect-timeout: 30s
+      read-timeout: 60s
+      http-version: HTTP_1_1
     services:
       api:
         url: http://localhost:28181
@@ -20,7 +25,7 @@ jackson:
   serialization:
     writeDatesAsTimestamps: false
     writeDurationsAsTimestamps: false
-  serialization-inclusion: non_default
+  serialization-inclusion: non_null
   deserialization:
     FAIL_ON_UNKNOWN_PROPERTIES: false
 

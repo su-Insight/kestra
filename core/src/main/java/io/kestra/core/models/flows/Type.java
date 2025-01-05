@@ -20,7 +20,8 @@ public enum Type {
     FILE(FileInput.class.getName()),
     JSON(JsonInput.class.getName()),
     URI(URIInput.class.getName()),
-    SECRET(SecretInput.class.getName());
+    SECRET(SecretInput.class.getName()),
+    ARRAY(ArrayInput.class.getName());
 
     private final String clsName;
 
@@ -29,7 +30,11 @@ public enum Type {
     }
 
     @SuppressWarnings("unchecked")
-    public Class<? extends Input<?>> cls() throws ClassNotFoundException {
-        return (Class<? extends Input<?>>) Class.forName(this.clsName);
+    public Class<? extends Input<?>> cls() {
+        try {
+            return (Class<? extends Input<?>>) Class.forName(this.clsName);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

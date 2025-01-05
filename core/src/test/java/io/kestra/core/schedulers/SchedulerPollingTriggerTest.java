@@ -1,20 +1,23 @@
 package io.kestra.core.schedulers;
 
-import io.kestra.core.models.conditions.types.VariableCondition;
+import io.kestra.core.utils.TestsUtils;
+import io.kestra.plugin.core.condition.ExpressionCondition;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.triggers.Trigger;
+import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.runners.FlowListeners;
 import io.kestra.core.runners.TestMethodScopedWorker;
 import io.kestra.core.runners.Worker;
-import io.kestra.core.tasks.executions.Fail;
+import io.kestra.plugin.core.execution.Fail;
 import io.kestra.core.tasks.test.PollingTrigger;
 import io.kestra.core.utils.Await;
+import io.kestra.core.utils.IdUtils;
 import io.micronaut.context.ApplicationContext;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -53,11 +56,11 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
 
         try (
             AbstractScheduler scheduler = scheduler(flowListenersServiceSpy);
-            Worker worker = new TestMethodScopedWorker(applicationContext, 8, null)
+            Worker worker = applicationContext.createBean(TestMethodScopedWorker.class, IdUtils.create(), 8, null)
         ) {
             AtomicReference<Execution> last = new AtomicReference<>();
 
-            Runnable executionQueueStop = executionQueue.receive(execution -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, execution -> {
                 if (execution.getLeft().getFlowId().equals(flow.getId())) {
                     last.set(execution.getLeft());
                     queueCount.countDown();
@@ -68,8 +71,7 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
             scheduler.run();
 
             queueCount.await(10, TimeUnit.SECONDS);
-            // close the execution queue consumer
-            executionQueueStop.run();
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
             assertThat(last.get(), notNullValue());
@@ -93,11 +95,11 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
 
         try (
             AbstractScheduler scheduler = scheduler(flowListenersServiceSpy);
-            Worker worker = new TestMethodScopedWorker(applicationContext, 8, null)
+            Worker worker = applicationContext.createBean(TestMethodScopedWorker.class, IdUtils.create(), 8, null)
         ) {
             AtomicReference<Execution> last = new AtomicReference<>();
 
-            Runnable executionQueueStop = executionQueue.receive(execution -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, execution -> {
                 if (execution.getLeft().getFlowId().equals(flow.getId())) {
                     last.set(execution.getLeft());
                     queueCount.countDown();
@@ -112,8 +114,7 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
             scheduler.run();
 
             queueCount.await(10, TimeUnit.SECONDS);
-            // close the execution queue consumer
-            executionQueueStop.run();
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
             assertThat(last.get(), notNullValue());
@@ -121,7 +122,7 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
             // Assert that the trigger is now disabled.
             // It needs to await on assertion as it will be disabled AFTER we receive a success execution.
             Trigger trigger = Trigger.of(flow, pollingTrigger);
-            Await.until(() -> this.triggerState.findLast(trigger).map(t -> t.getDisabled()).orElse(false).booleanValue(), Duration.ofMillis(100), Duration.ofSeconds(10));
+            Await.until(() -> this.triggerState.findLast(trigger).map(TriggerContext::getDisabled).orElse(false).booleanValue(), Duration.ofMillis(100), Duration.ofSeconds(10));
         }
     }
 
@@ -132,8 +133,8 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
         PollingTrigger pollingTrigger = createPollingTrigger(null)
             .conditions(
                 List.of(
-                    VariableCondition.builder()
-                        .type(VariableCondition.class.getName())
+                    ExpressionCondition.builder()
+                        .type(ExpressionCondition.class.getName())
                         .expression("{{ trigger.date | date() < now() }}")
                         .build()
                 ))
@@ -147,11 +148,11 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
 
         try (
             AbstractScheduler scheduler = scheduler(flowListenersServiceSpy);
-            Worker worker = new TestMethodScopedWorker(applicationContext, 8, null)
+            Worker worker = applicationContext.createBean(TestMethodScopedWorker.class, IdUtils.create(), 8, null)
         ) {
             AtomicReference<Execution> last = new AtomicReference<>();
 
-            Runnable executionQueueStop = executionQueue.receive(execution -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, execution -> {
                 if (execution.getLeft().getFlowId().equals(flow.getId())) {
                     last.set(execution.getLeft());
                     queueCount.countDown();
@@ -163,7 +164,7 @@ public class SchedulerPollingTriggerTest extends AbstractSchedulerTest {
 
             queueCount.await(10, TimeUnit.SECONDS);
             // close the execution queue consumer
-            executionQueueStop.run();
+            receive.blockLast();
 
             assertThat(queueCount.getCount(), is(0L));
             assertThat(last.get(), notNullValue());

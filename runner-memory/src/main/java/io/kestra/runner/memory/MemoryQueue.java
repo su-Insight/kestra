@@ -1,22 +1,24 @@
 package io.kestra.runner.memory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.hash.Hashing;
 import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.utils.Either;
-import io.micronaut.context.ApplicationContext;
 import lombok.extern.slf4j.Slf4j;
 import io.kestra.core.queues.QueueService;
 import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.utils.ExecutorsUtils;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -24,20 +26,19 @@ import java.util.function.Consumer;
 @Slf4j
 public class MemoryQueue<T> implements QueueInterface<T> {
     private static final ObjectMapper mapper = JacksonMapper.ofJson();
-    private static ExecutorService poolExecutor;
+
+    private final ExecutorService executorService;
 
     private final QueueService queueService;
 
     private final Class<T> cls;
     private final Map<String, List<Consumer<Either<T, DeserializationException>>>> queues = new ConcurrentHashMap<>();
 
-    public MemoryQueue(Class<T> cls, ApplicationContext applicationContext) {
-        if (poolExecutor == null) {
-            ExecutorsUtils executorsUtils = applicationContext.getBean(ExecutorsUtils.class);
-            poolExecutor = executorsUtils.cachedThreadPool("memory-queue");
-        }
-
-        this.queueService = applicationContext.getBean(QueueService.class);
+    public MemoryQueue(final Class<T> cls,
+                       final QueueService queueService,
+                       final ExecutorService executorService) {
+        this.executorService = executorService;
+        this.queueService = queueService;
         this.cls = cls;
     }
 
@@ -57,11 +58,11 @@ public class MemoryQueue<T> implements QueueInterface<T> {
 
         this.queues
             .forEach((consumerGroup, consumers) -> {
-                poolExecutor.execute(() -> {
+                executorService.execute(() -> {
                     Consumer<Either<T, DeserializationException>> consumer;
 
                     synchronized (this) {
-                        if (consumers.size() == 0) {
+                        if (consumers.isEmpty()) {
                             log.debug("No consumer connected on queue '" + this.cls.getName() + "'");
                             return;
                         } else {
@@ -100,12 +101,12 @@ public class MemoryQueue<T> implements QueueInterface<T> {
     }
 
     @Override
-    public Runnable receive(String consumerGroup, Consumer<Either<T, DeserializationException>> consumer) {
-        return this.receive(consumerGroup, null, consumer);
+    public Runnable receive(String consumerGroup, Consumer<Either<T, DeserializationException>> consumer, boolean forUpdate) {
+        return this.receive(consumerGroup, null, consumer, forUpdate);
     }
 
     @Override
-    public synchronized Runnable receive(String consumerGroup, Class<?> queueType, Consumer<Either<T, DeserializationException>> consumer) {
+    public synchronized Runnable receive(String consumerGroup, Class<?> queueType, Consumer<Either<T, DeserializationException>> consumer, boolean forUpdate) {
         String queueName;
         if (queueType == null) {
             queueName = UUID.randomUUID().toString();
@@ -124,16 +125,11 @@ public class MemoryQueue<T> implements QueueInterface<T> {
             synchronized (this) {
                 this.queues.get(queueName).remove(index);
 
-                if (this.queues.get(queueName).size() == 0) {
+                if (this.queues.get(queueName).isEmpty()) {
                     this.queues.remove(queueName);
                 }
             }
         };
-    }
-
-    @Override
-    public void pause() {
-
     }
 
     public int getSubscribersCount() {
@@ -146,8 +142,8 @@ public class MemoryQueue<T> implements QueueInterface<T> {
 
     @Override
     public void close() throws IOException {
-        if (!poolExecutor.isShutdown()) {
-            poolExecutor.shutdown();
+        if (!executorService.isShutdown()) {
+            executorService.shutdown();
         }
     }
 }

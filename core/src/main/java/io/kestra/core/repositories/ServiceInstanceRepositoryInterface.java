@@ -10,6 +10,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Repository service for storing service instance.
@@ -73,6 +75,18 @@ public interface ServiceInstanceRepositoryInterface {
     List<ServiceInstance> findAllInstancesInStates(final Set<Service.ServiceState> states);
 
     /**
+     * Finds all service active instances between the given dates.
+     *
+     * @param type The service type.
+     * @param from The date from (inclusive)
+     * @param to   The date to (exclusive)
+     * @return the list of {@link ServiceInstance}.
+     */
+    List<ServiceInstance> findAllInstancesBetween(final Service.ServiceType type,
+                                                  final Instant from,
+                                                  final Instant to);
+
+    /**
      * Attempt to transition the state of a given service to given new state.
      * This method may not update the service if the transition is not valid.
      *
@@ -119,5 +133,12 @@ public interface ServiceInstanceRepositoryInterface {
         }
     }
 
-
+    /**
+     * Returns the function to be used for mapping column used to sort result.
+     *
+     * @return the mapping function.
+     */
+    default Function<String, String> sortMapping() {
+        return Function.identity();
+    }
 }

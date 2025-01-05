@@ -1,6 +1,6 @@
 package io.kestra.core.validations.validator;
 
-import io.kestra.core.tasks.flows.Dag;
+import io.kestra.plugin.core.flow.Dag;
 import io.kestra.core.validations.DagTaskValidation;
 import io.micronaut.core.annotation.AnnotationValue;
 import io.micronaut.core.annotation.Introspected;
@@ -36,16 +36,18 @@ public class DagTaskValidator  implements ConstraintValidator<DagTaskValidation,
         // Check for not existing taskId
         List<String> invalidDependencyIds = value.dagCheckNotExistTask(taskDepends);
         if (!invalidDependencyIds.isEmpty()) {
-            String errorMessage = "Not existing task id in dependency: " + String.join(", ", invalidDependencyIds);
-            context.messageTemplate(errorMessage);
-
+            context.disableDefaultConstraintViolation();
+            context.buildConstraintViolationWithTemplate( "Not existing task id in dependency: " + String.join(", ", invalidDependencyIds))
+                .addConstraintViolation();
             return false;
         }
 
         // Check for cyclic dependencies
         ArrayList<String> cyclicDependency = value.dagCheckCyclicDependencies(taskDepends);
         if (!cyclicDependency.isEmpty()) {
-            context.messageTemplate("Cyclic dependency detected: " + String.join(", ", cyclicDependency));
+            context.disableDefaultConstraintViolation();
+            context.buildConstraintViolationWithTemplate("Cyclic dependency detected: " + String.join(", ", cyclicDependency))
+                .addConstraintViolation();
 
             return false;
         }

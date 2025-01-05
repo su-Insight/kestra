@@ -52,6 +52,11 @@ public class State {
         this.histories.add(new History(this.current, Instant.now()));
     }
 
+    public State(Type type, List<History> histories) {
+        this.current = type;
+        this.histories = histories;
+    }
+
     public static State of(Type state, List<History> histories) {
         State result = new State(state);
 
@@ -70,6 +75,13 @@ public class State {
         return new State(state, this);
     }
 
+    public State reset() {
+        return new State(
+            Type.CREATED,
+            List.of(this.histories.getFirst())
+        );
+    }
+
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     public Duration getDuration() {
         return Duration.between(
@@ -84,6 +96,7 @@ public class State {
     }
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @JsonInclude(JsonInclude.Include.NON_EMPTY) // otherwise empty optional will be included as null
     public Optional<Instant> getEndDate() {
         if (!this.isTerminated() && !this.isPaused()) {
             return Optional.empty();
@@ -154,8 +167,18 @@ public class State {
     }
 
     @JsonIgnore
+    public boolean isSuccess() {
+        return this.current.isSuccess();
+    }
+
+    @JsonIgnore
     public boolean isRestartable() {
         return this.current.isFailed() || this.isPaused();
+    }
+
+    @JsonIgnore
+    public boolean isResumable() {
+        return this.current.isPaused() || this.current.isRetrying();
     }
 
 
@@ -172,10 +195,11 @@ public class State {
         KILLED,
         CANCELLED,
         QUEUED,
-        RETRYING;
+        RETRYING,
+        RETRIED;
 
         public boolean isTerminated() {
-            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED || this ==  Type.CANCELLED;
+            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED || this == Type.CANCELLED || this == Type.RETRIED;
         }
 
         public boolean isCreated() {
@@ -195,8 +219,13 @@ public class State {
         }
 
         public boolean isRetrying() {
-            return this == Type.RETRYING;
+            return this == Type.RETRYING || this == Type.RETRIED;
         }
+
+        public boolean isSuccess() {
+            return this == Type.SUCCESS;
+        }
+
     }
 
     @Value
