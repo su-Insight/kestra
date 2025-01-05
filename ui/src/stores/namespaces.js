@@ -1,46 +1,108 @@
-import {apiUrl} from "override/utils/route";
 import Utils from "../utils/utils";
+import {apiUrl} from "override/utils/route";
+
+function base(namespace) {
+    return `${apiUrl(this)}/namespaces/${namespace}`;
+}
+const HEADERS = {headers: {"Content-Type": "multipart/form-data"}};
+
+const slashPrefix = (path) => (path.startsWith("/") ? path : `/${path}`);
+const safePath = (path) => encodeURIComponent(path).replace(/%2C|%2F/g, "/");
 
 export default {
     namespaced: true,
     state: {
-        namespaces: undefined,
+        datatypeNamespaces: undefined,
     },
-
     actions: {
-        loadNamespaces({commit}, options) {
-            return this.$http.get(`${apiUrl(this)}/${options.dataType}s/distinct-namespaces`).then(response => {
-                commit("setNamespaces", response.data)
-            })
+        // Create a directory
+        async createDirectory(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files/directory?path=${slashPrefix(payload.path)}`;
+            await this.$http.post(URL);
         },
-        importFile({_commit}, options) {
-            const file = options.file;
-            const formData = new FormData();
-            formData.append("fileContent", file);
 
-            let path;
-            if((file.webkitRelativePath ?? "") === "") {
-                path = file.name;
-            } else {
-                path = file.webkitRelativePath.split("/").slice(1).join("/");
-            }
-            path = path.replace(" ", "_");
+        // List directory content
+        async readDirectory(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files/directory${payload.path ? `?path=${slashPrefix(safePath(payload.path))}` : ""}`;
+            const request = await this.$http.get(URL);
 
-            return this.$http.post(
-                `${apiUrl(this)}/namespaces/${options.namespace}/files?path=/${path}`,
-                formData,
-                {headers: {"Content-Type": "multipart/form-data"}}
-            );
+            return request.data ?? [];
         },
-        exportFiles({_commit}, options) {
-            this.$http.get(`${apiUrl(this)}/namespaces/${options.namespace}/files/export`)
-                .then(response => Utils.downloadUrl(response.request.responseURL, options.namespace + "_files.zip"));
+
+        // Create a file
+        async createFile(_, payload) {
+            const DATA = new FormData();
+            const BLOB = new Blob([payload.content], {type: "text/plain"});
+            DATA.append("fileContent", BLOB);
+
+            const URL = `${base.call(this, payload.namespace)}/files?path=${slashPrefix(payload.path)}`;
+            await this.$http.post(URL, DATA, HEADERS);
+        },
+
+        // Get namespace file content
+        async readFile(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files?path=${slashPrefix(safePath(payload.path))}`;
+            const request = await this.$http.get(URL, {transformResponse: response => response, responseType: "json"})
+
+            return request.data ?? [];
+        },
+
+        // Search for namespace files
+        async searchFiles(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files/search?q=${payload.query}`;
+            const request = await this.$http.get(URL);
+
+            return request.data ?? [];
+        },
+
+        // Import a file or directory
+        async importFileDirectory(_, payload) {
+            const DATA = new FormData();
+            const BLOB = new Blob([payload.content], {type: "text/plain"});
+            DATA.append("fileContent", BLOB);
+
+            const URL = `${base.call(this, payload.namespace)}/files?path=${slashPrefix(safePath(payload.path))}`;
+            await this.$http.post(URL, DATA, HEADERS);
+        },
+
+        // Move a file or directory
+        async moveFileDirectory(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files?from=${slashPrefix(payload.old)}&to=${slashPrefix(payload.new)}`;
+            await this.$http.put(URL);
+        },
+
+        // Rename a file or directory
+        async renameFileDirectory(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files?from=${slashPrefix(payload.old)}&to=${slashPrefix(payload.new)}`;
+            await this.$http.put(URL);
+        },
+
+        // Delete a file or directory
+        async deleteFileDirectory(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files?path=${slashPrefix(payload.path)}`;
+            await this.$http.delete(URL);
+        },
+
+        // Export namespace files as a ZIP
+        async exportFileDirectory(_, payload) {
+            const URL = `${base.call(this, payload.namespace)}/files/export`;
+            const request = await this.$http.get(URL);
+
+            const name = payload.namespace + "_files.zip";
+            Utils.downloadUrl(request.request.responseURL, name);
+        },
+
+        loadNamespacesForDatatype({commit}, options) {
+            return this.$http
+                .get(`${apiUrl(this)}/${options.dataType}s/distinct-namespaces`)
+                .then((response) => {
+                    commit("setDatatypeNamespaces", response.data);
+                });
         }
     },
     mutations: {
-        setNamespaces(state, namespaces) {
-            state.namespaces = namespaces
-        }
+        setDatatypeNamespaces(state, datatypeNamespaces) {
+            state.datatypeNamespaces = datatypeNamespaces;
+        },
     },
-    getters: {}
-}
+};

@@ -3,14 +3,15 @@ package io.kestra.core.validations;
 import io.kestra.core.models.flows.Type;
 import io.kestra.core.models.flows.input.StringInput;
 import io.kestra.core.models.validations.ModelValidator;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 
-@MicronautTest
+@KestraTest
 class InputTest {
     @Inject
     private ModelValidator modelValidator;
@@ -34,7 +35,8 @@ class InputTest {
             .type(Type.STRING)
             .build();
 
-        assertThat(validInput.getName(), is(id));
+        assertThat(validInput.getId(), is(id));
+        assertThat(validInput.getName(), nullValue());
 
         String newName = "newName";
         validInput = StringInput.builder()
@@ -44,5 +46,6 @@ class InputTest {
         validInput.setName(newName);
 
         assertThat(validInput.getId(), is(newName));
+        assertThat(validInput.getName(), is(newName));
     }
 }

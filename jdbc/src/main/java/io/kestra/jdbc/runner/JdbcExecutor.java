@@ -1,14 +1,11 @@
 package io.kestra.jdbc.runner;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.kestra.core.contexts.KestraContext;
 import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.metrics.MetricRegistry;
-import io.kestra.core.models.executions.Execution;
-import io.kestra.core.models.executions.ExecutionKilled;
-import io.kestra.core.models.executions.LogEntry;
-import io.kestra.core.models.executions.TaskRun;
-import io.kestra.core.models.executions.TaskRunAttempt;
+import io.kestra.core.models.executions.*;
 import io.kestra.core.models.executions.statistics.ExecutionCount;
 import io.kestra.core.models.flows.Concurrency;
 import io.kestra.core.models.flows.Flow;
@@ -21,29 +18,19 @@ import io.kestra.core.models.triggers.multipleflows.MultipleConditionStorageInte
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
-import io.kestra.core.runners.DefaultFlowExecutor;
-import io.kestra.core.runners.ExecutableUtils;
-import io.kestra.core.runners.ExecutionQueued;
-import io.kestra.core.runners.ExecutionRunning;
-import io.kestra.core.runners.Executor;
-import io.kestra.core.runners.ExecutorInterface;
-import io.kestra.core.runners.ExecutorService;
-import io.kestra.core.runners.ExecutorState;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.runners.RunContextFactory;
-import io.kestra.core.runners.SubflowExecution;
-import io.kestra.core.runners.SubflowExecutionResult;
-import io.kestra.core.runners.WorkerJob;
-import io.kestra.core.runners.WorkerTask;
-import io.kestra.core.runners.WorkerTaskResult;
-import io.kestra.core.runners.WorkerTaskRunning;
-import io.kestra.core.runners.WorkerTrigger;
-import io.kestra.core.runners.WorkerTriggerRunning;
+import io.kestra.core.runners.*;
 import io.kestra.core.server.Service;
 import io.kestra.core.server.ServiceStateChangeEvent;
-import io.kestra.core.services.*;
-import io.kestra.core.tasks.flows.ForEachItem;
-import io.kestra.core.tasks.flows.Template;
+import io.kestra.core.services.AbstractFlowTriggerService;
+import io.kestra.core.services.ConditionService;
+import io.kestra.core.services.ExecutionService;
+import io.kestra.core.services.FlowListenersInterface;
+import io.kestra.core.services.LogService;
+import io.kestra.core.services.SkipExecutionService;
+import io.kestra.core.services.PluginDefaultService;
+import io.kestra.core.services.WorkerGroupService;
+import io.kestra.plugin.core.flow.ForEachItem;
+import io.kestra.plugin.core.flow.Template;
 import io.kestra.core.topologies.FlowTopologyService;
 import io.kestra.core.utils.Await;
 import io.kestra.core.utils.Either;
@@ -52,9 +39,10 @@ import io.kestra.jdbc.JdbcMapper;
 import io.kestra.jdbc.repository.AbstractJdbcExecutionRepository;
 import io.kestra.jdbc.repository.AbstractJdbcFlowTopologyRepository;
 import io.kestra.jdbc.repository.AbstractJdbcWorkerJobRunningRepository;
-import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import io.micronaut.transaction.exceptions.CannotCreateTransactionException;
+import jakarta.annotation.Nullable;
+import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
@@ -66,6 +54,7 @@ import org.slf4j.event.Level;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -73,6 +62,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -84,14 +74,6 @@ public class JdbcExecutor implements ExecutorInterface, Service {
     private static final ObjectMapper MAPPER = JdbcMapper.of();
 
     private final ScheduledExecutorService scheduledDelay = Executors.newSingleThreadScheduledExecutor();
-
-    private volatile boolean isShutdown = false;
-
-    @Inject
-    private ApplicationContext applicationContext;
-
-    @Inject
-    private FlowRepositoryInterface flowRepository;
 
     @Inject
     private AbstractJdbcExecutionRepository executionRepository;
@@ -113,10 +95,22 @@ public class JdbcExecutor implements ExecutorInterface, Service {
     private QueueInterface<LogEntry> logQueue;
 
     @Inject
+    @Named(QueueFactoryInterface.FLOW_NAMED)
+    private QueueInterface<Flow> flowQueue;
+
+    @Inject
+    @Named(QueueFactoryInterface.KILL_NAMED)
+    protected QueueInterface<ExecutionKilled> killQueue;
+
+    @Inject
+    @Named(QueueFactoryInterface.SUBFLOWEXECUTIONRESULT_NAMED)
+    private QueueInterface<SubflowExecutionResult> subflowExecutionResultQueue;
+
+    @Inject
     private RunContextFactory runContextFactory;
 
     @Inject
-    private TaskDefaultService taskDefaultService;
+    private PluginDefaultService pluginDefaultService;
 
     @Inject
     private Optional<Template.TemplateExecutorInterface> templateExecutorInterface;
@@ -158,14 +152,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
     @Inject
     private FlowTopologyService flowTopologyService;
 
-    @Inject
-    private AbstractJdbcFlowTopologyRepository flowTopologyRepository;
-
     protected List<Flow> allFlows;
-
-    @Inject
-    @Named(QueueFactoryInterface.FLOW_NAMED)
-    private QueueInterface<Flow> flowQueue;
 
     @Inject
     private WorkerGroupService workerGroupService;
@@ -177,41 +164,60 @@ public class JdbcExecutor implements ExecutorInterface, Service {
     private AbstractJdbcWorkerJobRunningRepository workerJobRunningRepository;
 
     @Inject
-    @Named(QueueFactoryInterface.KILL_NAMED)
-    protected QueueInterface<ExecutionKilled> killQueue;
-
-    @Inject
-    @Named(QueueFactoryInterface.SUBFLOWEXECUTIONRESULT_NAMED)
-    private QueueInterface<SubflowExecutionResult> subflowExecutionResultQueue;
-
-    @Inject
     private LogService logService;
 
-    @Inject
-    private JdbcServiceLivenessCoordinator serviceLivenessCoordinator;
+    private final FlowRepositoryInterface flowRepository;
 
-    @Inject
-    private ApplicationEventPublisher<ServiceStateChangeEvent> eventPublisher;
+    private final JdbcServiceLivenessCoordinator serviceLivenessCoordinator;
+
+    private final ApplicationEventPublisher<ServiceStateChangeEvent> eventPublisher;
+
+    private final AbstractJdbcFlowTopologyRepository flowTopologyRepository;
 
     private final String id = IdUtils.create();
+
+    private final AtomicBoolean shutdown = new AtomicBoolean(false);
+
     private final AtomicReference<ServiceState> state = new AtomicReference<>();
+
+    private final List<Runnable> receiveCancellations = new ArrayList<>();
+
+    /**
+     * Creates a new {@link JdbcExecutor} instance. Both constructor and field injection are used
+     * to force Micronaut to respect order when invoking pre-destroy order.
+     *
+     * @param serviceLivenessCoordinator The {@link JdbcServiceLivenessCoordinator}.
+     * @param flowRepository             The {@link FlowRepositoryInterface}.
+     * @param flowTopologyRepository     The {@link AbstractJdbcFlowTopologyRepository}.
+     * @param eventPublisher             The {@link ApplicationEventPublisher}.
+     */
+    @Inject
+    public JdbcExecutor(@Nullable final JdbcServiceLivenessCoordinator serviceLivenessCoordinator,
+                        final FlowRepositoryInterface flowRepository,
+                        final AbstractJdbcFlowTopologyRepository flowTopologyRepository,
+                        final ApplicationEventPublisher<ServiceStateChangeEvent> eventPublisher) {
+        this.serviceLivenessCoordinator = serviceLivenessCoordinator;
+        this.flowRepository = flowRepository;
+        this.flowTopologyRepository = flowTopologyRepository;
+        this.eventPublisher = eventPublisher;
+    }
 
     @SneakyThrows
     @Override
     public void run() {
         setState(ServiceState.CREATED);
-        serviceLivenessCoordinator.setExecutor(this);
+        if (serviceLivenessCoordinator != null) {
+            serviceLivenessCoordinator.setExecutor(this);
+        }
         flowListeners.run();
         flowListeners.listen(flows -> this.allFlows = flows);
 
         Await.until(() -> this.allFlows != null, Duration.ofMillis(100), Duration.ofMinutes(5));
 
-        applicationContext.registerSingleton(new DefaultFlowExecutor(flowListeners, this.flowRepository));
-
-        this.executionQueue.receive(Executor.class, this::executionQueue);
-        this.workerTaskResultQueue.receive(Executor.class, this::workerTaskResultQueue);
-        this.killQueue.receive(Executor.class, this::killQueue);
-        this.subflowExecutionResultQueue.receive(Executor.class, this::subflowExecutionResultQueue);
+        this.receiveCancellations.addFirst(this.executionQueue.receive(Executor.class, this::executionQueue));
+        this.receiveCancellations.addFirst(this.workerTaskResultQueue.receive(Executor.class, this::workerTaskResultQueue));
+        this.receiveCancellations.addFirst(this.killQueue.receive(Executor.class, this::killQueue));
+        this.receiveCancellations.addFirst(this.subflowExecutionResultQueue.receive(Executor.class, this::subflowExecutionResultQueue));
 
         ScheduledFuture<?> scheduledDelayFuture = scheduledDelay.scheduleAtFixedRate(
             this::executionDelaySend,
@@ -221,7 +227,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
         );
 
         // look at exceptions on the scheduledDelay thread
-        Thread scheduledDelayExceptionThread = new Thread(
+        Thread.ofVirtual().name("jdbc-delay-exception-watcher").start(
             () -> {
                 Await.until(scheduledDelayFuture::isDone);
 
@@ -230,21 +236,14 @@ public class JdbcExecutor implements ExecutorInterface, Service {
                 } catch (ExecutionException | InterruptedException e) {
                     if (e.getCause().getClass() != CannotCreateTransactionException.class) {
                         log.error("Executor fatal exception in the scheduledDelay thread", e);
-
-                        try {
-                            close();
-                            applicationContext.stop();
-                        } catch (IOException ioe) {
-                            log.error("Unable to properly close the executor", ioe);
-                        }
+                        close();
+                        KestraContext.getContext().shutdown();
                     }
                 }
-            },
-            "jdbc-delay-exception-watcher"
+            }
         );
-        scheduledDelayExceptionThread.start();
 
-        flowQueue.receive(
+        this.receiveCancellations.addFirst(flowQueue.receive(
             FlowTopology.class,
             either -> {
                 Flow flow;
@@ -276,7 +275,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
                         .collect(Collectors.toList())
                 );
             }
-        );
+        ));
         setState(ServiceState.RUNNING);
     }
 
@@ -286,9 +285,9 @@ public class JdbcExecutor implements ExecutorInterface, Service {
             .forEach(workerJobRunning -> {
                 // WorkerTaskRunning
                 if (workerJobRunning instanceof WorkerTaskRunning workerTaskRunning) {
-                    if (skipExecutionService.skipExecution(workerTaskRunning.getTaskRun().getExecutionId())) {
+                    if (skipExecutionService.skipExecution(workerTaskRunning.getTaskRun())) {
                         // if the execution is skipped, we remove the workerTaskRunning and skip its resubmission
-                        log.warn("Skipping execution {}", workerTaskRunning.getTaskRun().getId());
+                        log.warn("Skipping execution {}", workerTaskRunning.getTaskRun().getExecutionId());
                         workerJobRunningRepository.deleteByKey(workerTaskRunning.uid());
                     } else {
                         workerTaskQueue.emit(WorkerTask.builder()
@@ -331,7 +330,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
         }
 
         Execution message = either.getLeft();
-        if (skipExecutionService.skipExecution(message.getId())) {
+        if (skipExecutionService.skipExecution(message)) {
             log.warn("Skipping execution {}", message.getId());
             return;
         }
@@ -438,10 +437,8 @@ public class JdbcExecutor implements ExecutorInterface, Service {
 
                 subflowExecutionDedup
                     .forEach(subflowExecution -> {
-                        String log = "Create new execution for flow '" +
-                            subflowExecution.getExecution()
-                                .getNamespace() + "'.'" + subflowExecution.getExecution().getFlowId() +
-                            "' with id '" + subflowExecution.getExecution().getId() + "'";
+                        Execution subExecution = subflowExecution.getExecution();
+                        String log = String.format("Created new execution [[link execution=\"%s\" flowId=\"%s\" namespace=\"%s\"]]", subExecution.getId(), subExecution.getFlowId(), subExecution.getNamespace());
 
                         JdbcExecutor.log.info(log);
 
@@ -509,7 +506,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
         }
 
         WorkerTaskResult message = either.getLeft();
-        if (skipExecutionService.skipExecution(message.getTaskRun().getExecutionId())) {
+        if (skipExecutionService.skipExecution(message.getTaskRun())) {
             log.warn("Skipping execution {}", message.getTaskRun().getExecutionId());
             return;
         }
@@ -595,7 +592,7 @@ public class JdbcExecutor implements ExecutorInterface, Service {
             log.warn("Skipping execution {}", message.getExecutionId());
             return;
         }
-        if (skipExecutionService.skipExecution(message.getParentTaskRun().getExecutionId())) {
+        if (skipExecutionService.skipExecution(message.getParentTaskRun())) {
             log.warn("Skipping execution {}", message.getParentTaskRun().getExecutionId());
             return;
         }
@@ -690,34 +687,38 @@ public class JdbcExecutor implements ExecutorInterface, Service {
             return;
         }
 
-        if (skipExecutionService.skipExecution(event.getExecutionId())) {
-            log.warn("Skipping execution {}", event.getExecutionId());
+        if (!(event instanceof ExecutionKilledExecution killedExecution)) {
+            return;
+        }
+
+        if (skipExecutionService.skipExecution(killedExecution.getExecutionId())) {
+            log.warn("Skipping execution {}", killedExecution.getExecutionId());
             return;
         }
 
         if (log.isDebugEnabled()) {
-            executorService.log(log, true, event);
+            executorService.log(log, true, killedExecution);
         }
 
         // Immediately fire the event in EXECUTED state to notify the Workers to kill
         // any remaining tasks for that executing regardless of if the execution exist or not.
         // Note, that this event will be a noop if all tasks for that execution are already killed or completed.
-        killQueue.emit(ExecutionKilled
+        killQueue.emit(ExecutionKilledExecution
             .builder()
-            .executionId(event.getExecutionId())
+            .executionId(killedExecution.getExecutionId())
             .isOnKillCascade(false)
             .state(ExecutionKilled.State.EXECUTED)
             .build()
         );
 
-        Executor executor = mayTransitExecutionToKillingStateAndGet(event.getExecutionId());
+        Executor executor = mayTransitExecutionToKillingStateAndGet(killedExecution.getExecutionId());
 
         // Check whether kill event should be propagated to downstream executions.
         // By default, always propagate the ExecutionKill to sub-flows (for backward compatibility).
-        Boolean isOnKillCascade = Optional.ofNullable(event.getIsOnKillCascade()).orElse(true);
+        Boolean isOnKillCascade = Optional.ofNullable(killedExecution.getIsOnKillCascade()).orElse(true);
         if (isOnKillCascade) {
             executionService
-                .killSubflowExecutions(event.getTenantId(), event.getExecutionId())
+                .killSubflowExecutions(event.getTenantId(), killedExecution.getExecutionId())
                 .doOnNext(killQueue::emit)
                 .blockLast();
         }
@@ -733,7 +734,9 @@ public class JdbcExecutor implements ExecutorInterface, Service {
     private Executor mayTransitExecutionToKillingStateAndGet(final String executionId) {
         return executionRepository.lock(executionId, pair -> {
             Execution currentExecution = pair.getLeft();
-            Execution killing = executionService.kill(currentExecution);
+            Flow flow = this.flowRepository.findByExecution(currentExecution);
+
+            Execution killing = executionService.kill(currentExecution, flow);
             Executor current = new Executor(currentExecution, null)
                 .withExecution(killing, "joinKillingExecution");
             return Pair.of(current, pair.getRight());
@@ -815,43 +818,55 @@ public class JdbcExecutor implements ExecutorInterface, Service {
             }
         }
 
-        return taskDefaultService.injectDefaults(flow, execution);
+        return pluginDefaultService.injectDefaults(flow, execution);
     }
 
-    /** ExecutionDelay is currently two type of execution :
+    /**
+     * ExecutionDelay is currently two type of execution :
      * <br/>
-     * - Paused flow that will be restart after an interval/timeout
+     * - Paused flow that will be restarted after an interval/timeout
      * <br/>
      * - Failed flow that will be retried after an interval
-    **/
-     private void executionDelaySend() {
-        if (isShutdown) {
+     **/
+    private void executionDelaySend() {
+        if (shutdown.get()) {
             return;
         }
 
         executionDelayStorage.get(executionDelay -> {
             Executor result = executionRepository.lock(executionDelay.getExecutionId(), pair -> {
                 Executor executor = new Executor(pair.getLeft(), null);
+                Flow flow = flowRepository.findByExecution(pair.getLeft());
 
                 try {
                     // Handle paused tasks
-                    if (executor.getExecution().findTaskRunByTaskRunId(executionDelay.getTaskRunId()).getState().getCurrent() == State.Type.PAUSED) {
+                    if (executionDelay.getDelayType().equals(ExecutionDelay.DelayType.RESUME_FLOW)) {
 
                         Execution markAsExecution = executionService.markAs(
                             pair.getKey(),
+                            flow,
                             executionDelay.getTaskRunId(),
                             executionDelay.getState()
                         );
 
                         executor = executor.withExecution(markAsExecution, "pausedRestart");
+                    }
                     // Handle failed tasks
-                    } else if (executor.getExecution().findTaskRunByTaskRunId(executionDelay.getTaskRunId()).getState().getCurrent().equals(State.Type.FAILED)) {
-                        Execution newAttempt = executionService.retry(
+                    else if (executionDelay.getDelayType().equals(ExecutionDelay.DelayType.RESTART_FAILED_TASK)) {
+                        Execution newAttempt = executionService.retryTask(
                             pair.getKey(),
                             executionDelay.getTaskRunId()
                         );
-
-                        executor = executor.withExecution(newAttempt, "failedRetry");
+                        executor = executor.withExecution(newAttempt, "retryFailedTask");
+                    }
+                    // Handle failed flow
+                    else if (executionDelay.getDelayType().equals(ExecutionDelay.DelayType.RESTART_FAILED_FLOW)) {
+                        Execution newExecution = executionService.replay(executor.getExecution(), null, null);
+                        executor = executor.withExecution(newExecution, "retryFailedFlow");
+                    }
+                    else if (executionDelay.getDelayType().equals(ExecutionDelay.DelayType.CONTINUE_FLOWABLE)) {
+                        Execution execution  = executionService.retryWaitFor(executor.getExecution(), executionDelay.getTaskRunId());
+                        executor = executor.withExecution(execution, "continueLoop");
                     }
                 } catch (Exception e) {
                     executor = handleFailedExecutionFromExecutor(executor, e);
@@ -878,7 +893,8 @@ public class JdbcExecutor implements ExecutorInterface, Service {
                 String deduplicationKey = taskRun.getParentTaskRunId() + "-" +
                     taskRun.getTaskId() + "-" +
                     taskRun.getValue() + "-" +
-                    (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0);
+                    (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0)
+                    + taskRun.getIteration();
 
                 if (executorState.getChildDeduplication().containsKey(deduplicationKey)) {
                     log.trace("Duplicate Nexts on execution '{}' with key '{}'", execution.getId(), deduplicationKey);
@@ -892,7 +908,8 @@ public class JdbcExecutor implements ExecutorInterface, Service {
 
     private boolean deduplicateWorkerTask(Execution execution, ExecutorState executorState, TaskRun taskRun) {
         String deduplicationKey = taskRun.getId() +
-            (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0);
+            (taskRun.getAttempts() != null ? taskRun.getAttempts().size() : 0)
+            + taskRun.getIteration();
         State.Type current = executorState.getWorkerTaskDeduplication().get(deduplicationKey);
 
         if (current == taskRun.getState().getCurrent()) {
@@ -930,13 +947,26 @@ public class JdbcExecutor implements ExecutorInterface, Service {
         return executor.withExecution(failedExecutionWithLog.getExecution(), "exception");
     }
 
-    /** {@inheritDoc} **/
+    /**
+     * {@inheritDoc}
+     **/
     @Override
-    public void close() throws IOException {
-        setState(ServiceState.TERMINATING);
-        isShutdown = true;
-        scheduledDelay.shutdown();
-        setState(ServiceState.TERMINATED_GRACEFULLY);
+    @PreDestroy
+    public void close() {
+        if (shutdown.compareAndSet(false, true)) {
+            if (log.isDebugEnabled()) {
+                log.debug("Terminating");
+            }
+
+            setState(ServiceState.TERMINATING);
+            this.receiveCancellations.forEach(Runnable::run);
+            scheduledDelay.shutdown();
+            setState(ServiceState.TERMINATED_GRACEFULLY);
+
+            if (log.isDebugEnabled()) {
+                log.debug("Closed ({})", state.get().name());
+            }
+        }
     }
 
     private void setState(final ServiceState state) {
@@ -944,19 +974,25 @@ public class JdbcExecutor implements ExecutorInterface, Service {
         eventPublisher.publishEvent(new ServiceStateChangeEvent(this));
     }
 
-    /** {@inheritDoc} **/
+    /**
+     * {@inheritDoc}
+     **/
     @Override
     public String getId() {
         return id;
     }
 
-    /** {@inheritDoc} **/
+    /**
+     * {@inheritDoc}
+     **/
     @Override
     public ServiceType getType() {
         return ServiceType.EXECUTOR;
     }
 
-    /** {@inheritDoc} **/
+    /**
+     * {@inheritDoc}
+     **/
     @Override
     public ServiceState getState() {
         return state.get();

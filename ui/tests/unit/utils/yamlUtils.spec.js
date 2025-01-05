@@ -7,11 +7,11 @@ namespace: io.kestra.tests
 
 tasks:
   - id: 1-1
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     # comment to keep
     message: 'echo "1-1"'
   - id: 1-2
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     message: 'echo "1-2"'
 `
 
@@ -21,26 +21,26 @@ namespace: io.kestra.tests
 
 tasks:
   - id: nest-1
-    type: io.kestra.core.tasks.flows.Parallel
+    type: io.kestra.plugin.core.flow.Parallel
     tasks:
       - id: nest-2
-        type: io.kestra.core.tasks.flows.Parallel
+        type: io.kestra.plugin.core.flow.Parallel
         tasks:
         - id: nest-3
-          type: io.kestra.core.tasks.flows.Parallel
+          type: io.kestra.plugin.core.flow.Parallel
           tasks:
           - id: nest-4
-            type: io.kestra.core.tasks.flows.Parallel
+            type: io.kestra.plugin.core.flow.Parallel
             tasks:
               - id: 1-1
-                type: io.kestra.core.tasks.log.Log
+                type: io.kestra.plugin.core.log.Log
                 message: 'echo "1-1"'
               - id: 1-2
-                type: io.kestra.core.tasks.log.Log
+                type: io.kestra.plugin.core.log.Log
                 message: 'echo "1-2"'
 
   - id: end
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     commands:
       - 'echo "end"'
 `
@@ -54,21 +54,53 @@ tasks:
     type: io.kestra.core.tasks.unittest.Example
     task:
       id: 1-1
-      type: io.kestra.core.tasks.log.Log
+      type: io.kestra.plugin.core.log.Log
       message: "1-1"
   - id: end
-    type: io.kestra.core.tasks.log.Log
+    type: io.kestra.plugin.core.log.Log
     message: "end"
 `
 
 const replace = `
 id: replaced
-type: io.kestra.core.tasks.log.Log
+type: io.kestra.plugin.core.log.Log
 # comment to add
 message: "replaced"
 `
 
+const extractMapsSample = `
+firstMap:
+  populatedField:
+  presentField:
+  extraField: "firstMap"
+secondMap:
+  populatedField: "populated"
+  presentField:
+  extraField: "secondMap"
+thirdMap:
+  populatedField: "populated"
+  extraField: "thirdMap"
+`
+
 describe("YamlUtils", () => {
+    it("extractMaps with field conditions", () => {
+        const extractMaps = YamlUtils.extractMaps(extractMapsSample, {
+            populatedField: {
+                populated: true
+            },
+            presentField: {
+                present: true
+            }
+        });
+
+        expect(extractMaps.length).toBe(1);
+        const map = extractMaps[0].map;
+        expect(map.populatedField).toBe("populated");
+        expect(map.presentField).toBe(undefined);
+        expect(map.extraField).toBe("secondMap");
+        expect(extractMaps[0].range).toStrictEqual([83,153,153]);
+    })
+
     it("extractTask from a flat flow", () => {
         let doc = YamlUtils.extractTask(flat, "1-1", "tasks");
 

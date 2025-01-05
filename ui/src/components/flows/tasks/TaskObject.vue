@@ -9,7 +9,7 @@
                 <span class="d-flex flex-grow-1">
                     <span class="me-auto">
                         <code>{{ getKey(key) }}</code>&nbsp;
-                        <el-tooltip v-if="hasTooltip(schema)" :persistent="false" transition="" :hide-after="0">
+                        <el-tooltip v-if="hasTooltip(schema)" :persistent="false" transition="" :hide-after="0" effect="light">
                             <template #content>
                                 <markdown class="markdown-tooltip" :source="helpText(schema)" />
                             </template>
@@ -18,14 +18,15 @@
                     </span>
                     <span>
                         <el-tag disable-transitions type="info" size="small">
-                            {{ getType(schema, key) }}
+                            {{ getType(schema) }}
                         </el-tag>
                     </span>
                 </span>
             </template>
             <component
-                :is="`task-${getType(schema)}`"
+                :is="`task-${getType(schema, key)}`"
                 :model-value="getPropertiesValue(key)"
+                :task="modelValue"
                 @update:model-value="onObjectInput(key, $event)"
                 :root="getKey(key)"
                 :schema="schema"
@@ -35,12 +36,14 @@
         </el-form-item>
     </template>
     <template v-else>
-        <task-dynamic
-            :model-value="editorValue"
+        <task-dict
+            :model-value="modelValue"
+            :task="task"
+            @update:model-value="value => $emit('update:modelValue', value)"
             :root="root"
             :schema="schema"
+            :required="required"
             :definitions="definitions"
-            @update:model-value="onInput"
         />
     </template>
 </template>
@@ -52,11 +55,13 @@
     import Kicon from "../../Kicon.vue";
     import Editor from "../../inputs/Editor.vue";
     import Markdown from "../../layout/Markdown.vue";
+    import TaskDict from "./TaskDict.vue";
 
     export default {
         name: "TaskObject",
         mixins: [Task],
         components: {
+            TaskDict,
             Information,
             Help,
             Kicon,

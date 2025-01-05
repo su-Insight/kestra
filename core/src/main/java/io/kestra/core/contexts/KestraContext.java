@@ -1,20 +1,25 @@
 package io.kestra.core.contexts;
 
 import io.kestra.core.models.ServerType;
+import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.utils.VersionProvider;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.context.env.Environment;
-import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Utility class for retrieving common information about a Kestra Server at runtime.
  */
 public abstract class KestraContext {
+
+    private static final Logger log = LoggerFactory.getLogger(KestraContext.class);
 
     private static final AtomicReference<KestraContext> INSTANCE = new AtomicReference<>();
 
@@ -56,9 +61,16 @@ public abstract class KestraContext {
     public abstract String getVersion();
 
     /**
-     * Stops Kestra.
+     * Returns the Kestra Plugin Registry.
+     *
+     * @return the {@link PluginRegistry}.
      */
-    public void exit(int status) {
+    public abstract PluginRegistry getPluginRegistry();
+
+    /**
+     * Shutdowns the Kestra application.
+     */
+    public void shutdown() {
         // noop
     }
 
@@ -72,6 +84,8 @@ public abstract class KestraContext {
         private final ApplicationContext applicationContext;
         private final Environment environment;
         private final String version;
+
+        private final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
         /**
          * Creates a new {@link KestraContext} instance.
@@ -92,14 +106,17 @@ public abstract class KestraContext {
         public ServerType getServerType() {
             return Optional.ofNullable(environment)
                 .flatMap(env -> env.getProperty(KESTRA_SERVER_TYPE, ServerType.class))
-                .orElseThrow(() -> new IllegalStateException("Cannot found required environment property '" + KESTRA_SERVER_TYPE + "'."));
+                .orElse(ServerType.STANDALONE);
         }
 
         /** {@inheritDoc} **/
         @Override
-        public void exit(int status) {
-            applicationContext.close();
-            Runtime.getRuntime().exit(status);
+        public void shutdown() {
+            if (isShutdown.compareAndSet(false, true)) {
+                log.info("Kestra server - Shutdown initiated");
+                applicationContext.close();
+                log.info("Kestra server - Shutdown completed");
+            }
         }
 
         /** {@inheritDoc} **/
@@ -108,9 +125,11 @@ public abstract class KestraContext {
             return version;
         }
 
-        @PreDestroy
-        public void dispose() {
-            setContext(null);
+        /** {@inheritDoc} **/
+        @Override
+        public PluginRegistry getPluginRegistry() {
+            // Lazy init of the PluginRegistry.
+            return this.applicationContext.getBean(PluginRegistry.class);
         }
     }
 }

@@ -1,128 +1,101 @@
 package io.kestra.core.runners;
 
 import io.kestra.core.models.tasks.NamespaceFiles;
-import io.kestra.core.storages.FileAttributes;
+import io.kestra.core.storages.InternalNamespace;
+import io.kestra.core.storages.Namespace;
+import io.kestra.core.storages.NamespaceFile;
 import io.kestra.core.storages.StorageContext;
 import io.kestra.core.storages.StorageInterface;
+import io.kestra.core.utils.Rethrow;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.nio.file.*;
-import java.util.ArrayList;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
-import static io.kestra.core.utils.Rethrow.*;
-import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
-
+/**
+ * @deprecated should not be used anymore
+ */
+@Deprecated
 @Singleton
-@Slf4j
 public class NamespaceFilesService {
-    @Inject
-    private StorageInterface storageInterface;
 
+    private static final Logger log = LoggerFactory.getLogger(NamespaceFilesService.class);
+
+    private final StorageInterface storageInterface;
+
+    @Inject
+    public NamespaceFilesService(final StorageInterface storageInterface) {
+        this.storageInterface = storageInterface;
+    }
+
+    @Deprecated
     public List<URI> inject(RunContext runContext, String tenantId, String namespace, Path basePath, NamespaceFiles namespaceFiles) throws Exception {
-        if (!namespaceFiles.getEnabled()) {
+        if (!Boolean.TRUE.equals(namespaceFiles.getEnabled())) {
             return Collections.emptyList();
         }
 
-        List<URI> list = new ArrayList<>();
-        list.addAll(recursiveList(tenantId, namespace, null));
+        List<NamespaceFile> matchedNamespaceFiles = namespaceFor(tenantId, namespace)
+            .findAllFilesMatching(namespaceFiles.getInclude(), namespaceFiles.getExclude());
 
-
-        list = list
-            .stream()
-            .filter(throwPredicate(f -> {
-                var file = f.getPath();
-
-                if (namespaceFiles.getExclude() != null) {
-                    boolean b = match(runContext.render(namespaceFiles.getExclude()), file);
-
-                    if (b) {
-                        return false;
-                    }
-                }
-
-                if (namespaceFiles.getInclude() != null) {
-                    boolean b = match(namespaceFiles.getInclude(), file);
-
-                    if (!b) {
-                        return false;
-                    }
-                }
-
-                return true;
-            }))
-            .collect(Collectors.toList());
-
-        copy(tenantId, namespace, basePath, list);
-
-        return list;
+        matchedNamespaceFiles.forEach(Rethrow.throwConsumer(namespaceFile -> {
+            InputStream content = storageInterface.get(tenantId, namespaceFile.uri());
+            runContext.workingDir().putFile(namespaceFile.path(), content);
+        }));
+        return matchedNamespaceFiles.stream().map(NamespaceFile::path).map(Path::toUri).toList();
     }
 
-    private URI uri(String namespace, @Nullable URI path) {
+    public URI uri(String namespace, @Nullable URI path) {
         return URI.create(StorageContext.namespaceFilePrefix(namespace) + Optional.ofNullable(path)
             .map(URI::getPath)
             .orElse("")
         );
     }
 
-    private List<URI> recursiveList(String tenantId, String namespace, @Nullable URI path) throws IOException {
-        URI uri = uri(namespace, path);
-
-        List<URI> result = new ArrayList<>();
-        List<FileAttributes> list;
-        try {
-            list = storageInterface.list(tenantId, uri);
-        } catch (FileNotFoundException e) {
-            // prevent crashing upon trying to inject namespace files while the root namespace files folder doesn't exist
-            return result;
-        }
-
-        for (var file: list) {
-            URI current = URI.create((path != null ? path.getPath() : "") +  "/" + file.getFileName());
-
-            if (file.getType() == FileAttributes.FileType.Directory) {
-                result.addAll(this.recursiveList(tenantId, namespace, current));
-            } else {
-                result.add(current);
-            }
-        }
-
-        return result;
+    public List<URI> recursiveList(String tenantId, String namespace, @Nullable URI path) throws IOException {
+        return recursiveList(tenantId, namespace, path, false);
     }
 
-    private static boolean match(List<String> patterns, String file) {
-        return patterns
+    public List<URI> recursiveList(String tenantId, String namespace, @Nullable URI path, boolean includeDirectoryEntries) throws IOException {
+        return namespaceFor(tenantId, namespace)
+            .all(path.getPath(), includeDirectoryEntries)
             .stream()
-            .anyMatch(s -> FileSystems
-                .getDefault()
-                .getPathMatcher("glob:" + (s.matches("\\w+[\\s\\S]*") ? "**/" + s : s))
-                .matches(Paths.get(file))
-            );
+            .map(NamespaceFile::path)
+            .map(Path::toUri)
+            .toList();
     }
 
-    private void copy(String tenantId, String namespace, Path basePath, List<URI> files) throws IOException {
-        files
-            .forEach(throwConsumer(f -> {
-                Path destination = Paths.get(basePath.toString(), f.getPath());
+    private InternalNamespace namespaceFor(String tenantId, String namespace) {
+        return new InternalNamespace(log, tenantId, namespace, storageInterface);
+    }
 
-                if (!destination.getParent().toFile().exists()) {
-                    //noinspection ResultOfMethodCallIgnored
-                    destination.getParent().toFile().mkdirs();
-                }
+    public boolean delete(String tenantId, String namespace, URI path) throws IOException {
+        return namespaceFor(tenantId, namespace).delete(Path.of(path));
+    }
 
-                try (InputStream inputStream = storageInterface.get(tenantId, uri(namespace, f))) {
-                    Files.copy(inputStream, destination, REPLACE_EXISTING);
-                }
-            }));
+    public URI createFile(String tenantId, String namespace, URI path, InputStream inputStream) throws IOException {
+        return namespaceFor(tenantId, namespace).putFile(Path.of(path), inputStream, Namespace.Conflicts.OVERWRITE)
+            .path()
+            .toUri();
+    }
+
+    public URI createDirectory(String tenantId, String namespace, URI path) throws IOException {
+        return namespaceFor(tenantId, namespace).createDirectory(Path.of(path.getPath()));
+    }
+
+    public InputStream content(String tenantId, String namespace, URI path) throws IOException {
+        return namespaceFor(tenantId, namespace).getFileContent(Path.of(path));
+    }
+
+    public static URI toNamespacedStorageUri(String namespace, @Nullable URI relativePath) {
+        return NamespaceFile.of(namespace, relativePath).uri();
     }
 }

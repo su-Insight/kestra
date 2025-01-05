@@ -5,7 +5,7 @@ import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.executions.statistics.LogStatistics;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.data.model.Pageable;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import org.slf4j.event.Level;
@@ -16,14 +16,14 @@ import java.util.List;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@MicronautTest(transactional = false)
+@KestraTest
 public abstract class AbstractLogRepositoryTest {
     @Inject
     protected LogRepositoryInterface logRepository;
 
     private static LogEntry.LogEntryBuilder logEntry(Level level) {
         return LogEntry.builder()
-            .flowId(IdUtils.create())
+            .flowId("flowId")
             .namespace("io.kestra.unittest")
             .taskId("taskId")
             .executionId(IdUtils.create())
@@ -63,7 +63,15 @@ public abstract class AbstractLogRepositoryTest {
         assertThat(list.size(), is(1));
         assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
 
+        list = logRepository.findByExecutionId(null, "io.kestra.unittest", "flowId", save.getExecutionId(), null);
+        assertThat(list.size(), is(1));
+        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+
         list = logRepository.findByExecutionIdAndTaskId(null, save.getExecutionId(), save.getTaskId(), null);
+        assertThat(list.size(), is(1));
+        assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
+
+        list = logRepository.findByExecutionIdAndTaskId(null, "io.kestra.unittest", "flowId", save.getExecutionId(), save.getTaskId(), null);
         assertThat(list.size(), is(1));
         assertThat(list.get(0).getExecutionId(), is(save.getExecutionId()));
 

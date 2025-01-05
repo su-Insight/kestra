@@ -29,8 +29,7 @@
         </template>
     </top-nav-bar>
     <div class="mt-3 edit-flow-div">
-        <editor @save="save" v-model="content" schema-type="flow" lang="yaml" @update:model-value="onChange($event)" @cursor="updatePluginDocumentation" />
-        <div id="guided-right" />
+        <editor @save="save" v-model="content" schema-type="flow" lang="yaml" @update:model-value="onChange" @cursor="updatePluginDocumentation" />
     </div>
 </template>
 
@@ -68,11 +67,8 @@
         },
         methods: {
             stopTour() {
-                this.$tours["guidedTour"].stop();
-                this.$store.commit("core/setGuidedProperties", {
-                    ...this.guidedProperties,
-                    tourStarted: false
-                });
+                this.$tours["guidedTour"]?.stop();
+                this.$store.commit("core/setGuidedProperties", {tourStarted: false});
             },
         },
         created() {
@@ -83,29 +79,12 @@
                 if (!this.guidedProperties.tourStarted
                     && localStorage.getItem("tourDoneOrSkip") !== "true"
                     && this.total === 0) {
-                    this.$tours["guidedTour"].start();
+                    this.$tours["guidedTour"]?.start();
                 }
             }, 200)
             window.addEventListener("popstate", () => {
                 this.stopTour();
             });
-        },
-        watch: {
-            guidedProperties: function () {
-                if (localStorage.getItem("tourDoneOrSkip") !== "true") {
-                    if (this.guidedProperties.source !== undefined) {
-                        this.content = this.guidedProperties.source
-                        this.lastChangeWasGuided = true;
-                    }
-                    if (this.guidedProperties.saveFlow) {
-                        this.save();
-                    }
-                }
-                else if(this.lastChangeWasGuided) {
-                    this.content = "";
-                    this.lastChangeWasGuided = false;
-                }
-            }
         }
     };
 </script>

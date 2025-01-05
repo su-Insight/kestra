@@ -2,12 +2,14 @@ package io.kestra.core.docs;
 
 import io.kestra.core.models.annotations.PluginSubGroup;
 import io.kestra.core.plugins.RegisteredPlugin;
+import io.micronaut.core.annotation.Nullable;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
+
+import static java.util.function.Predicate.not;
 
 @NoArgsConstructor
 @Data
@@ -25,19 +27,26 @@ public class Plugin {
     private List<String> controllers;
     private List<String> storages;
     private List<String> secrets;
-    private List<String> scriptRunners;
+    private List<String> taskRunners;
     private List<String> guides;
+    private List<String> aliases;
     private List<PluginSubGroup.PluginCategory> categories;
+    private String subGroup;
 
-    public static Plugin of(RegisteredPlugin registeredPlugin) {
+    public static Plugin of(RegisteredPlugin registeredPlugin, @Nullable String subgroup) {
         Plugin plugin = new Plugin();
         plugin.name = registeredPlugin.name();
-        plugin.title = registeredPlugin.title();
+        if (subgroup == null) {
+            plugin.title = registeredPlugin.title();
+        } else {
+            plugin.title = subgroup.substring(subgroup.lastIndexOf('.') + 1);
+        }
         plugin.group = registeredPlugin.group();
         plugin.description = registeredPlugin.description();
         plugin.longDescription = registeredPlugin.longDescription();
         plugin.version = registeredPlugin.version();
         plugin.guides = registeredPlugin.getGuides();
+        plugin.aliases = registeredPlugin.getAliases().values().stream().map(Map.Entry::getKey).toList();
         plugin.manifest = registeredPlugin
             .getManifest()
             .getMainAttributes()
@@ -57,31 +66,32 @@ public class Plugin {
             .distinct()
             .toList();
 
-        plugin.tasks = className(filter(registeredPlugin.getTasks()).toArray(Class[]::new));
-        plugin.triggers = className(filter(registeredPlugin.getTriggers()).toArray(Class[]::new));
-        plugin.conditions = className(filter(registeredPlugin.getConditions()).toArray(Class[]::new));
-        plugin.controllers = className(filter(registeredPlugin.getControllers()).toArray(Class[]::new));
-        plugin.storages = className(filter(registeredPlugin.getStorages()).toArray(Class[]::new));
-        plugin.secrets = className(filter(registeredPlugin.getSecrets()).toArray(Class[]::new));
-        plugin.scriptRunners = className(filter(registeredPlugin.getScriptRunner()).toArray(Class[]::new));
+        plugin.subGroup = subgroup;
+
+        plugin.tasks = filterAndGetClassName(registeredPlugin.getTasks()).stream().filter(c -> subgroup == null || c.startsWith(subgroup)).toList();
+        plugin.triggers = filterAndGetClassName(registeredPlugin.getTriggers()).stream().filter(c -> subgroup == null || c.startsWith(subgroup)).toList();
+        plugin.conditions = filterAndGetClassName(registeredPlugin.getConditions()).stream().filter(c -> subgroup == null || c.startsWith(subgroup)).toList();
+        plugin.storages = filterAndGetClassName(registeredPlugin.getStorages()).stream().filter(c -> subgroup == null || c.startsWith(subgroup)).toList();
+        plugin.secrets = filterAndGetClassName(registeredPlugin.getSecrets()).stream().filter(c -> subgroup == null || c.startsWith(subgroup)).toList();
+        plugin.taskRunners = filterAndGetClassName(registeredPlugin.getTaskRunners()).stream().filter(c -> subgroup == null || c.startsWith(subgroup)).toList();
+
 
         return plugin;
     }
 
     /**
-     * we filter from documentation all legacy org.kestra code ...
-     * we do it only on docs to avoid remove backward compatibility everywhere (worker, executor...)
+     * Filters the given list of class all internal Plugin, as well as, all legacy org.kestra classes.
+     * Those classes are only filtered from the documentation to ensure backward compatibility.
+     *
+     * @param list The list of classes?
+     * @return  a filtered streams.
      */
-    private static <T extends Class<?>> Stream<T> filter(List<T> list) {
+    private static List<String> filterAndGetClassName(final List<? extends Class<?>> list) {
         return list
             .stream()
-            .filter(s -> !s.getName().startsWith("org.kestra."));
-    }
-
-    @SuppressWarnings("rawtypes")
-    private static <T> List<String> className(Class[] classes) {
-        return Arrays.stream(classes)
+            .filter(not(io.kestra.core.models.Plugin::isInternal))
             .map(Class::getName)
-            .collect(Collectors.toList());
+            .filter(c -> !c.startsWith("org.kestra."))
+            .toList();
     }
 }

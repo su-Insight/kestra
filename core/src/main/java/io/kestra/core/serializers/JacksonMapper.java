@@ -1,13 +1,21 @@
 
 package io.kestra.core.serializers;
 
+import static com.amazon.ion.impl.lite._Private_LiteDomTrampoline.newLiteSystem;
+
+import com.amazon.ion.IonSystem;
+import com.amazon.ion.impl._Private_IonBinaryWriterBuilder;
+import com.amazon.ion.impl._Private_Utils;
+import com.amazon.ion.system.IonBinaryWriterBuilder;
+import com.amazon.ion.system.IonReaderBuilder;
+import com.amazon.ion.system.IonTextWriterBuilder;
+import com.amazon.ion.system.SimpleCatalog;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.type.TypeFactory;
 import com.fasterxml.jackson.dataformat.ion.IonObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
@@ -15,16 +23,24 @@ import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
-import io.kestra.core.contexts.KestraClassLoader;
+import io.kestra.core.plugins.PluginModule;
+import io.kestra.core.runners.RunContextModule;
 import io.kestra.core.serializers.ion.IonFactory;
 import io.kestra.core.serializers.ion.IonModule;
 import org.yaml.snakeyaml.LoaderOptions;
 
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 
-abstract public class JacksonMapper {
+public final class JacksonMapper {
+    public static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<>() {};
+    public static final TypeReference<List<Object>> LIST_TYPE_REFERENCE = new TypeReference<>() {};
+    public static final TypeReference<Object> OBJECT_TYPE_REFERENCE = new TypeReference<>() {};
+
+    private JacksonMapper() {}
+
     private static final ObjectMapper MAPPER = JacksonMapper.configure(
         new ObjectMapper()
     );
@@ -58,17 +74,15 @@ abstract public class JacksonMapper {
         return YAML_MAPPER;
     }
 
-    private static final TypeReference<Map<String, Object>> TYPE_REFERENCE = new TypeReference<>() {};
-
     public static Map<String, Object> toMap(Object object, ZoneId zoneId) {
         return MAPPER
             .copy()
             .setTimeZone(TimeZone.getTimeZone(zoneId.getId()))
-            .convertValue(object, TYPE_REFERENCE);
+            .convertValue(object, MAP_TYPE_REFERENCE);
     }
 
     public static Map<String, Object> toMap(Object object) {
-        return MAPPER.convertValue(object, TYPE_REFERENCE);
+        return MAPPER.convertValue(object, MAP_TYPE_REFERENCE);
     }
 
     public static <T> T toMap(Object map, Class<T> cls) {
@@ -76,13 +90,14 @@ abstract public class JacksonMapper {
     }
 
     public static Map<String, Object> toMap(String json) throws JsonProcessingException {
-        return MAPPER.readValue(json, TYPE_REFERENCE);
+        return MAPPER.readValue(json, MAP_TYPE_REFERENCE);
     }
 
-    private static final TypeReference<Object> TYPE_REFERENCE_OBJECT = new TypeReference<>() {};
-
+    public static List<Object> toList(String json) throws JsonProcessingException {
+        return MAPPER.readValue(json, LIST_TYPE_REFERENCE);
+    }
     public static Object toObject(String json) throws JsonProcessingException {
-        return MAPPER.readValue(json, TYPE_REFERENCE_OBJECT);
+        return MAPPER.readValue(json, OBJECT_TYPE_REFERENCE);
     }
 
     public static <T> T cast(Object object, Class<T> cls) throws JsonProcessingException {
@@ -97,31 +112,59 @@ abstract public class JacksonMapper {
         }
     }
 
-    private static final ObjectMapper ION_MAPPER = JacksonMapper
-        .configure(
-            new IonObjectMapper(new IonFactory())
-        )
-        .registerModule(new IonModule())
-        .setSerializationInclusion(JsonInclude.Include.ALWAYS);
+    private static final ObjectMapper ION_MAPPER = createIonObjectMapper();
 
     public static ObjectMapper ofIon() {
         return ION_MAPPER;
     }
 
     private static ObjectMapper configure(ObjectMapper mapper) {
-        // unit test can be not init
-        if (KestraClassLoader.isInit()) {
-            TypeFactory tf = TypeFactory.defaultInstance().withClassLoader(KestraClassLoader.instance());
-            mapper.setTypeFactory(tf);
-        }
-
         return mapper
             .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
-            .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .registerModule(new JavaTimeModule())
             .registerModule(new Jdk8Module())
             .registerModule(new ParameterNamesModule())
             .registerModules(new GuavaModule())
+            .registerModule(new PluginModule())
+            .registerModule(new RunContextModule())
             .setTimeZone(TimeZone.getDefault());
+    }
+
+    private static ObjectMapper createIonObjectMapper() {
+        return configure(new IonObjectMapper(new IonFactory(createIonSystem())))
+            .setSerializationInclusion(JsonInclude.Include.ALWAYS)
+            .registerModule(new IonModule());
+    }
+
+    private static IonSystem createIonSystem() {
+        // This code is inspired by the IonSystemBuilder#build() method and the usage of "withWriteTopLevelValuesOnNewLines(true)".
+        //
+        // After the integration of the relevant pull request (https://github.com/amazon-ion/ion-java/pull/781),
+        // it is expected that this code should be replaced with a more simplified version.
+        //
+        // The simplified code would look like below:
+        //
+        // return IonSystemBuilder.standard()
+        //    .withIonTextWriterBuilder(IonTextWriterBuilder.standard().withWriteTopLevelValuesOnNewLines(true))
+        //    .build();
+        //
+        // TODO: Simplify this code once the pull request is integrated.
+
+        final var catalog = new SimpleCatalog();
+
+        final var textWriterBuilder = IonTextWriterBuilder.standard()
+            .withCatalog(catalog)
+            .withCharsetAscii()
+            .withWriteTopLevelValuesOnNewLines(true); // write line separators on new lines instead of spaces
+
+        final var binaryWriterBuilder = IonBinaryWriterBuilder.standard()
+            .withCatalog(catalog)
+            .withInitialSymbolTable(_Private_Utils.systemSymtab(1));
+
+        final var readerBuilder = IonReaderBuilder.standard()
+            .withCatalog(catalog);
+
+        return newLiteSystem(textWriterBuilder, (_Private_IonBinaryWriterBuilder) binaryWriterBuilder, readerBuilder);
     }
 }

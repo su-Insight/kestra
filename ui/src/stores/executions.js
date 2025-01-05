@@ -14,7 +14,11 @@ export default {
         metrics: [],
         metricsTotal: 0,
         filePreview: undefined,
-        subflowsExecutions: {}
+        subflowsExecutions: {},
+        flow: undefined,
+        flowGraph: undefined,
+        namespaces: [],
+        flowsExecutable: []
     },
     actions: {
         loadExecutions({commit}, options) {
@@ -101,8 +105,14 @@ export default {
             return this.$http.delete(`${apiUrl(this)}/executions/kill/by-query`, {params: options});
         },
         resume(_, options) {
-            return this.$http.post(`${apiUrl(this)}/executions/${options.id}/resume`);
+            return this.$http.post(`${apiUrl(this)}/executions/${options.id}/resume`, options.formData, {
+                timeout: 60 * 60 * 1000,
+                headers: {
+                    "content-type": "multipart/form-data"
+                }
+            });
         },
+
         loadExecution({commit}, options) {
             return this.$http.get(`${apiUrl(this)}/executions/${options.id}`).then(response => {
                 commit("setExecution", response.data)
@@ -137,7 +147,7 @@ export default {
             })
         },
         bulkDeleteExecution({_commit}, options) {
-            return this.$http.delete(`${apiUrl(this)}/executions/by-ids`, {data: options.executionsId})
+            return this.$http.delete(`${apiUrl(this)}/executions/by-ids`, {data: options.executionsId, params: {includeNonTerminated: options.includeNonTerminated}})
         },
         queryDeleteExecution({_commit}, options) {
             return this.$http.delete(`${apiUrl(this)}/executions/by-query`, {params: options})
@@ -195,7 +205,19 @@ export default {
             return this.$http.get(`${apiUrl(this)}/executions/${options.executionId}/file/preview`, {
                 params: options
             }).then(response => {
-                commit("setFilePreview", response.data)
+                let data = {...response.data}
+
+                // WORKAROUND, related to https://github.com/kestra-io/plugin-aws/issues/456
+                if(data.extension === "ion") {
+                    const notObjects = data.content.some(e => typeof e !== "object");
+                    
+                    if(notObjects) {   
+                        const content = data.content.length === 1 ? data.content[0] : data.content.join("\n");
+                        data = {...data, type: "TEXT", content}
+                    }
+                }
+
+                commit("setFilePreview", data)
             })
         },
         setLabels(_, options) {
@@ -214,6 +236,36 @@ export default {
         },
         bulkSetLabels({_commit}, options) {
             return this.$http.post(`${apiUrl(this)}/executions/labels/by-ids`,  options)
+        },
+        loadFlowForExecution({commit}, options) {
+            return this.$http.get(`${apiUrl(this)}/executions/flows/${options.namespace}/${options.flowId}`, {params: {revision: options.revision}})
+                .then(response => {
+                    commit("setFlow", response.data)
+                });
+        },
+        loadFlowForExecutionByExecutionId({commit}, options) {
+            return this.$http.get(`${apiUrl(this)}/executions/${options.id}/flow`)
+                .then(response => {
+                    commit("setFlow", response.data)
+                });
+        },
+        loadGraph({commit}, options) {
+            return this.$http.get(`${apiUrl(this)}/executions/${options.id}/graph`)
+                .then(response => {
+                    commit("setFlowGraph", response.data)
+                })
+        },
+        loadNamespaces({commit}) {
+            return this.$http.get(`${apiUrl(this)}/executions/namespaces`)
+                .then(response => {
+                    commit("setNamespaces", response.data)
+                })
+        },
+        loadFlowsExecutable({commit}, options) {
+            return this.$http.get(`${apiUrl(this)}/executions/namespaces/${options.namespace}/flows`)
+                .then(response => {
+                    commit("setFlowsExecutable", response.data)
+                })
         }
     },
     mutations: {
@@ -259,6 +311,18 @@ export default {
         },
         setFilePreview(state, filePreview) {
             state.filePreview = filePreview
+        },
+        setFlow(state, flow) {
+            state.flow = flow
+        },
+        setFlowGraph(state, flowGraph) {
+            state.flowGraph = flowGraph
+        },
+        setNamespaces(state, namespaces) {
+            state.namespaces = namespaces
+        },
+        setFlowsExecutable(state, flowsExecutable) {
+            state.flowsExecutable = flowsExecutable
         }
     },
     getters: {

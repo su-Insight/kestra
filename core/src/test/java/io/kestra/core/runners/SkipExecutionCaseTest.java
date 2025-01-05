@@ -7,7 +7,7 @@ import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.ExecutionRepositoryInterface;
 import io.kestra.core.services.SkipExecutionService;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -16,7 +16,6 @@ import jakarta.inject.Singleton;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Consumer;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -38,7 +37,7 @@ public class SkipExecutionCaseTest {
 
     public void skipExecution() throws TimeoutException, InterruptedException {
         Flow flow = createFlow();
-        Execution execution1 = runnerUtils.newExecution(flow, null, null);
+        Execution execution1 = Execution.newExecution(flow, null, null);
         String execution1Id = execution1.getId();
         skipExecutionService.setSkipExecutions(List.of(execution1Id));
 
