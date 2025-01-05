@@ -10,6 +10,7 @@ import lombok.Getter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Getter
 @AllArgsConstructor
@@ -26,7 +27,9 @@ public class Executor {
     private final List<WorkerTaskResult> workerTaskResults = new ArrayList<>();
     private final List<ExecutionDelay> executionDelays = new ArrayList<>();
     private WorkerTaskResult joined;
-    private final List<WorkerTaskExecution> workerTaskExecutions = new ArrayList<>();
+    private final List<WorkerTaskExecution<?>> workerTaskExecutions = new ArrayList<>();
+    private ExecutionsRunning executionsRunning;
+    private ExecutionQueued executionQueued;
 
     public Executor(Execution execution, Long offset) {
         this.execution = execution;
@@ -38,7 +41,7 @@ public class Executor {
     }
 
     public Boolean canBeProcessed() {
-        return !(this.getException() != null || this.getFlow() == null || this.getFlow() instanceof FlowWithException || this.getExecution().isDeleted());
+        return !(this.getException() != null || this.getFlow() == null || this.getFlow() instanceof FlowWithException || this.getFlow().getTasks() == null || this.getExecution().isDeleted());
     }
 
     public Executor withFlow(Flow flow) {
@@ -91,9 +94,21 @@ public class Executor {
         return this;
     }
 
-    public Executor withWorkerTaskExecutions(List<WorkerTaskExecution> newExecutions, String from) {
+    public Executor withWorkerTaskExecutions(List<WorkerTaskExecution<?>> newExecutions, String from) {
         this.workerTaskExecutions.addAll(newExecutions);
         this.from.add(from);
+
+        return this;
+    }
+
+    public Executor withExecutionQueued(ExecutionQueued executionQueued) {
+        this.executionQueued = executionQueued;
+
+        return this;
+    }
+
+    public Executor withExecutionsRunning(ExecutionsRunning executionsRunning) {
+        this.executionsRunning = executionsRunning;
 
         return this;
     }

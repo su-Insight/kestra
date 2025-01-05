@@ -11,6 +11,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
+import org.slf4j.event.Level;
 
 import java.util.List;
 import javax.validation.Valid;
@@ -27,7 +28,7 @@ import javax.validation.constraints.Pattern;
 abstract public class AbstractTrigger {
     @NotNull
     @NotBlank
-    @Pattern(regexp="[a-zA-Z0-9_-]+")
+    @Pattern(regexp="^[a-zA-Z0-9][a-zA-Z0-9_-]*")
     @Schema(title = "A unique id for the whole flow")
     protected String id;
 
@@ -52,4 +53,6 @@ abstract public class AbstractTrigger {
 
     @Valid
     private WorkerGroup workerGroup;
+
+    private Level minLogLevel;
 }

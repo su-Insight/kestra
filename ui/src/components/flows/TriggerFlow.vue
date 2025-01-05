@@ -1,8 +1,6 @@
 <template>
     <div class="trigger-flow-wrapper">
-        <el-button class="edit-flow-trigger-button" :icon="icon.Flash" :disabled="isDisabled()" :type="type" @click="onClick">
-            {{ $t('execute') }}
-        </el-button>
+        <el-button :icon="icon.Flash" :type="type" :disabled="isDisabled()" @click="onClick()">{{ $t("execute") }}</el-button>
         <el-dialog v-if="isOpen" v-model="isOpen" destroy-on-close :append-to-body="true">
             <template #header>
                 <span v-html="$t('execute the flow', {id: flowId})" />
@@ -22,7 +20,7 @@
 
     export default {
         components: {
-            FlowRun,
+            FlowRun
         },
         props: {
             flowId: {
@@ -74,7 +72,7 @@
                     this.$tours["guidedTour"].nextStep();
                     return;
                 }
-                this.isOpen = !this.isOpen
+                this.isOpen = !this.isOpen;
             },
             closeModal() {
                 this.isOpen = false;

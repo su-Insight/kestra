@@ -36,7 +36,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
           architecture: 'x64'
@@ -86,7 +86,7 @@ jobs:
 
       # JDK
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: 17
@@ -169,6 +169,7 @@ jobs:
               io.kestra.plugin:plugin-couchbase:LATEST
               io.kestra.plugin:plugin-crypto:LATEST
               io.kestra.plugin:plugin-databricks:LATEST
+              io.kestra.plugin:plugin-dataform:LATEST
               io.kestra.plugin:plugin-dbt:LATEST
               io.kestra.plugin:plugin-debezium-mysql:LATEST
               io.kestra.plugin:plugin-debezium-postgres:LATEST
@@ -183,6 +184,7 @@ jobs:
               io.kestra.plugin:plugin-hightouch:LATEST
               io.kestra.plugin:plugin-jdbc-clickhouse:LATEST
               io.kestra.plugin:plugin-jdbc-duckdb:LATEST
+              io.kestra.plugin:plugin-jdbc-druid:LATEST
               io.kestra.plugin:plugin-jdbc-mysql:LATEST
               io.kestra.plugin:plugin-jdbc-oracle:LATEST
               io.kestra.plugin:plugin-jdbc-pinot:LATEST
@@ -216,6 +218,7 @@ jobs:
               io.kestra.plugin:plugin-script-powershell:LATEST
               io.kestra.plugin:plugin-script-python:LATEST
               io.kestra.plugin:plugin-script-r:LATEST
+              io.kestra.plugin:plugin-script-ruby:LATEST
               io.kestra.plugin:plugin-script-shell:LATEST
               io.kestra.plugin:plugin-serdes:LATEST
               io.kestra.plugin:plugin-servicenow:LATEST
@@ -330,7 +333,7 @@ jobs:
 
       # JDK
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: 17

@@ -30,6 +30,13 @@ public interface StorageInterface {
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
     InputStream get(String tenantId, URI uri) throws IOException;
 
+    /**
+     * Returns all files that start with the given prefix.
+     * @return Kestra's internal storage uris of the found files
+     */
+    @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
+    List<URI> filesByPrefix(String tenantId, URI prefix) throws IOException;
+
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
     List<FileAttributes> list(String tenantId, URI uri) throws IOException;
 
@@ -42,8 +49,7 @@ public interface StorageInterface {
      * @return true if the uri points to a file/object that exist in the internal storage.
      */
     default boolean exists(String tenantId, URI uri) {
-        try {
-            get(tenantId, uri);
+        try (InputStream ignored = get(tenantId, uri)){
             return true;
         } catch (IOException ieo) {
             return false;
@@ -51,20 +57,14 @@ public interface StorageInterface {
     }
 
     /**
-     * @param uri
-     * @return
-     * @throws IOException
-     * @deprecated Use {@link #getAttributes(URI)} instead of individual call for every attribute
+     * @deprecated Use {@link #getAttributes(String, URI)}} instead of individual call for every attribute
      */
     @Deprecated
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
     Long size(String tenantId, URI uri) throws IOException;
 
     /**
-     * @param uri
-     * @return
-     * @throws IOException
-     * @deprecated Use {@link #getAttributes(URI)} instead of individual call for every attribute
+     * @deprecated Use {@link #getAttributes(String, URI)} instead of individual call for every attribute
      */
     @Deprecated
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
@@ -169,10 +169,10 @@ public interface StorageInterface {
     }
 
     default String namespaceFilePrefix(String namespace) {
-        return String.join("/", List.of(
-            namespace,
-            "files"
-        ));
+        return fromParts(
+            namespace.replace(".", "/"),
+            "_files"
+        );
     }
 
     default Optional<String> extractExecutionId(URI path) {

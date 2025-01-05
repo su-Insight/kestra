@@ -143,7 +143,7 @@ allprojects {
         // exposed utils
         api group: 'com.google.guava', name: 'guava', version: '32.1.2-jre'
         api group: 'commons-io', name: 'commons-io', version: '2.14.0'
-        api group: 'org.apache.commons', name: 'commons-lang3', version: '3.13.0'
+        api group: 'org.apache.commons', name: 'commons-lang3', version: '3.14.0'
         api "io.swagger.core.v3:swagger-annotations"
     }
 }
@@ -191,6 +191,8 @@ subprojects {
         environment 'SECRET_MY_SECRET', "{\"secretKey\":\"secretValue\"}".bytes.encodeBase64().toString()
         environment 'SECRET_WEBHOOK_KEY', "secretKey".bytes.encodeBase64().toString()
         environment 'SECRET_NON_B64_SECRET', "some secret value"
+        environment 'KESTRA_TEST1', "true"
+        environment 'KESTRA_TEST2', "Pass by env"
     }
 
     testlogger {

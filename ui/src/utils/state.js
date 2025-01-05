@@ -7,7 +7,10 @@ import StopCircle from "vue-material-design-icons/StopCircle.vue";
 import SkipPreviousCircle from "vue-material-design-icons/SkipPreviousCircle.vue";
 import AlertCircle from "vue-material-design-icons/AlertCircle.vue";
 import DotsVerticalCircle from "vue-material-design-icons/DotsVerticalCircle.vue";
+import MotionPauseOutline from "vue-material-design-icons/MotionPauseOutline.vue";
+import Cancel from "vue-material-design-icons/Cancel.vue";
 import {cssVariable} from "./global"
+
 
 const STATE = Object.freeze({
     CREATED: {
@@ -81,6 +84,22 @@ const STATE = Object.freeze({
         isRunning: true,
         isKillable: true,
         isFailed: false,
+    },
+    CANCELLED: {
+        name: "CANCELLED",
+        colorClass: "gray",
+        icon: Cancel,
+        isRunning: false,
+        isKillable: false,
+        isFailed: true,
+    },
+    QUEUED: {
+        name: "QUEUED",
+        colorClass: "gray",
+        icon: MotionPauseOutline,
+        isRunning: false,
+        isKillable: false,
+        isFailed: false,
     }
 });
 
@@ -121,6 +140,14 @@ export default class State {
         return STATE.PAUSED.name;
     }
 
+    static get CANCELLED() {
+        return STATE.CANCELLED.name;
+    }
+
+    static get QUEUED() {
+        return STATE.QUEUED.name;
+    }
+
     static isRunning(state) {
         return STATE[state] && STATE[state].isRunning;
     }
@@ -142,7 +169,8 @@ export default class State {
             return {
                 key: state.name,
                 icon: state.icon,
-                color: cssVariable("--bs-" + state.colorClass)
+                color: cssVariable("--bs-" + state.colorClass),
+                colorClass: state.colorClass
             }
         });
     }
