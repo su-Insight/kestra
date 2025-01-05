@@ -8,6 +8,7 @@ import io.kestra.core.repositories.TemplateRepositoryInterface;
 import io.kestra.core.services.CollectorService;
 import io.kestra.core.services.InstanceService;
 import io.kestra.core.utils.VersionProvider;
+import io.kestra.webserver.services.BasicAuthService;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.annotation.Controller;
@@ -42,6 +43,9 @@ public class MiscController {
     CollectorService collectorService;
 
     @Inject
+    BasicAuthService basicAuthService;
+
+    @Inject
     Optional<TemplateRepositoryInterface> templateRepository;
 
     @io.micronaut.context.annotation.Value("${kestra.anonymous-usage-report.enabled}")
@@ -67,11 +71,11 @@ public class MiscController {
         return HttpResponse.ok("pong");
     }
 
-    @Get("/api/v1/configs")
+    @Get("/api/v1{/tenant}/configs")
     @ExecuteOn(TaskExecutors.IO)
     @Operation(tags = {"Misc"}, summary = "Get current configurations")
     public Configuration configuration() throws JsonProcessingException {
-        Configuration.ConfigurationBuilder builder = Configuration
+        Configuration.ConfigurationBuilder<?, ?> builder = Configuration
             .builder()
             .uuid(instanceService.fetch())
             .version(versionProvider.getVersion())
@@ -82,7 +86,7 @@ public class MiscController {
                 .initial(this.initialPreviewRows)
                 .max(this.maxPreviewRows)
                 .build()
-            );
+            ).isOauthEnabled(basicAuthService.isEnabled());
 
         if (this.environmentName != null || this.environmentColor != null) {
             builder.environment(
@@ -123,6 +127,8 @@ public class MiscController {
         Environment environment;
 
         Preview preview;
+
+        Boolean isOauthEnabled;
     }
 
     @Value

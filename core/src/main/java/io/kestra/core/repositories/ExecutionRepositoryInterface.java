@@ -37,7 +37,8 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> state,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId
     );
 
     Flowable<Execution> find(
@@ -48,7 +49,8 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> state,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId
     );
 
     ArrayListTotal<TaskRun> findTaskRun(
@@ -60,7 +62,8 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> states,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId
     );
 
     Execution delete(Execution execution);
@@ -78,6 +81,11 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime endDate,
         @Nullable DateUtils.GroupType groupBy,
         boolean isTaskRun
+    );
+
+    List<Execution> lastExecutions(
+        @Nullable String tenantId,
+        @Nullable List<FlowFilter> flows
     );
 
     Map<String, Map<String, List<DailyExecutionStatistics>>> dailyGroupByFlowStatistics(
