@@ -86,7 +86,7 @@ public class ServiceLivenessManagerTest {
 
         ServiceInstance value = workerInstanceCaptor.getValue();
         Assertions.assertEquals(Service.ServiceState.CREATED, value.state());
-        Assertions.assertEquals(instance, serviceLivenessManager.allServiceInstances().get(0));
+        Assertions.assertEquals(instance, serviceLivenessManager.allServiceInstances().getFirst());
     }
 
     @Test
@@ -111,7 +111,7 @@ public class ServiceLivenessManagerTest {
         serviceLivenessManager.onSchedule(Instant.now());
 
         // Then
-        Assertions.assertEquals(instance, serviceLivenessManager.allServiceInstances().get(0));
+        Assertions.assertEquals(instance, serviceLivenessManager.allServiceInstances().getFirst());
         Mockito.verify(onStateTransitionFailureCallback, Mockito.never())
             .execute(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.eq(true));
     }
@@ -138,7 +138,7 @@ public class ServiceLivenessManagerTest {
         serviceLivenessManager.onSchedule(Instant.now());
 
         // Then
-        Assertions.assertEquals(instance, serviceLivenessManager.allServiceInstances().get(0));
+        Assertions.assertEquals(instance, serviceLivenessManager.allServiceInstances().getFirst());
         Mockito.verify(onStateTransitionFailureCallback, Mockito.only())
             .execute(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.eq(true));
     }
@@ -153,6 +153,10 @@ public class ServiceLivenessManagerTest {
         Mockito
             .when(repository.mayTransitionServiceTo(Mockito.any(ServiceInstance.class), Mockito.any(Service.ServiceState.class)))
             .thenReturn(new ServiceStateTransition.Response(ABORTED));
+
+        Mockito
+            .when(repository.save(Mockito.any(ServiceInstance.class)))
+            .thenReturn(serviceInstanceFor(running));
 
         // When
         serviceLivenessManager.onSchedule(Instant.now());

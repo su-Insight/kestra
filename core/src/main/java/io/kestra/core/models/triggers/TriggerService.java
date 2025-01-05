@@ -1,13 +1,12 @@
 package io.kestra.core.models.triggers;
 
-import io.kestra.core.exceptions.IllegalVariableEvaluationException;
-import io.kestra.core.models.Label;
 import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.ExecutionTrigger;
 import io.kestra.core.models.tasks.Output;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.runners.RunContext;
+import io.kestra.core.utils.IdUtils;
 
 import java.util.Map;
 
@@ -19,8 +18,9 @@ public abstract class TriggerService {
         Map<String, Object> variables
     ) {
         ExecutionTrigger executionTrigger = ExecutionTrigger.of(trigger, variables);
+        RunContext runContext = conditionContext.getRunContext();
 
-        return generateExecution(trigger, conditionContext, context, executionTrigger);
+        return generateExecution(runContext.getTriggerExecutionId(), trigger, context, executionTrigger, conditionContext.getFlow().getRevision());
     }
 
     public static Execution generateExecution(
@@ -30,23 +30,34 @@ public abstract class TriggerService {
         Output output
     ) {
         ExecutionTrigger executionTrigger = ExecutionTrigger.of(trigger, output);
+        RunContext runContext = conditionContext.getRunContext();
 
-        return generateExecution(trigger, conditionContext, context, executionTrigger);
+        return generateExecution(runContext.getTriggerExecutionId(), trigger, context, executionTrigger, conditionContext.getFlow().getRevision());
     }
 
-    private static Execution generateExecution(
+    public static Execution generateRealtimeExecution(
         AbstractTrigger trigger,
         ConditionContext conditionContext,
         TriggerContext context,
-        ExecutionTrigger executionTrigger
+        Output output
     ) {
-        RunContext runContext = conditionContext.getRunContext();
+        ExecutionTrigger executionTrigger = ExecutionTrigger.of(trigger, output);
 
+        return generateExecution(IdUtils.create(), trigger, context, executionTrigger, conditionContext.getFlow().getRevision());
+    }
+
+    private static Execution generateExecution(
+        String id,
+        AbstractTrigger trigger,
+        TriggerContext context,
+        ExecutionTrigger executionTrigger,
+        Integer flowRevision
+    ) {
         return Execution.builder()
-            .id(runContext.getTriggerExecutionId())
+            .id(id)
             .namespace(context.getNamespace())
             .flowId(context.getFlowId())
-            .flowRevision(context.getFlowRevision())
+            .flowRevision(flowRevision)
             .state(new State())
             .trigger(executionTrigger)
             .labels(trigger.getLabels() == null ? null : trigger.getLabels())

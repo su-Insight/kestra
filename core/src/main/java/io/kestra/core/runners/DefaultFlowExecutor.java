@@ -3,22 +3,24 @@ package io.kestra.core.runners;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.services.FlowListenersInterface;
+import jakarta.inject.Singleton;
 import lombok.Setter;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+@Singleton
 public class DefaultFlowExecutor implements FlowExecutorInterface {
-    private final FlowRepositoryInterface flowRepositoryInterface;
+    private final FlowRepositoryInterface flowRepository;
+
     @Setter
     private List<Flow> allFlows;
 
-    public DefaultFlowExecutor(FlowListenersInterface flowListeners, FlowRepositoryInterface flowRepositoryInterface) {
-        this.flowRepositoryInterface = flowRepositoryInterface;
-        flowListeners.listen(flows -> {
-            this.allFlows = flows;
-        });
+    public DefaultFlowExecutor(FlowListenersInterface flowListeners, FlowRepositoryInterface flowRepository) {
+        this.flowRepository = flowRepository;
+
+        flowListeners.listen(flows -> this.allFlows = flows);
     }
 
     @Override
@@ -40,7 +42,7 @@ public class DefaultFlowExecutor implements FlowExecutorInterface {
         if (find.isPresent()) {
             return find;
         } else {
-            return flowRepositoryInterface.findById(tenantId, namespace, id, revision);
+            return flowRepository.findById(tenantId, namespace, id, revision);
         }
     }
 

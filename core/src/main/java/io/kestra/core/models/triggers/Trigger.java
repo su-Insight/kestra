@@ -78,6 +78,10 @@ public class Trigger extends TriggerContext {
         );
     }
 
+    public String flowUid() {
+        return Flow.uidWithoutRevision(this.getTenantId(), this.getNamespace(), this.getFlowId());
+    }
+
     /**
      * Create a new Trigger with no execution information and no evaluation lock.
      */
@@ -86,7 +90,6 @@ public class Trigger extends TriggerContext {
             .tenantId(flow.getTenantId())
             .namespace(flow.getNamespace())
             .flowId(flow.getId())
-            .flowRevision(flow.getRevision())
             .triggerId(abstractTrigger.getId())
             .stopAfter(abstractTrigger.getStopAfter())
             .build();
@@ -133,7 +136,6 @@ public class Trigger extends TriggerContext {
             .tenantId(execution.getTenantId())
             .namespace(execution.getNamespace())
             .flowId(execution.getFlowId())
-            .flowRevision(execution.getFlowRevision())
             .triggerId(execution.getTrigger().getId())
             .date(trigger.getDate())
             .nextExecutionDate(trigger.getNextExecutionDate())
@@ -161,14 +163,19 @@ public class Trigger extends TriggerContext {
 
     // Used to update trigger in flowListeners
     public static Trigger of(Flow flow, AbstractTrigger abstractTrigger, ConditionContext conditionContext, Optional<Trigger> lastTrigger) throws Exception {
+        ZonedDateTime nextDate = null;
+
+        if (abstractTrigger instanceof PollingTriggerInterface pollingTriggerInterface) {
+            nextDate = pollingTriggerInterface.nextEvaluationDate(conditionContext, Optional.empty());
+        }
+
         return Trigger.builder()
             .tenantId(flow.getTenantId())
             .namespace(flow.getNamespace())
             .flowId(flow.getId())
-            .flowRevision(flow.getRevision())
             .triggerId(abstractTrigger.getId())
             .date(ZonedDateTime.now().truncatedTo(ChronoUnit.SECONDS))
-            .nextExecutionDate(((PollingTriggerInterface) abstractTrigger).nextEvaluationDate(conditionContext, Optional.empty()))
+            .nextExecutionDate(nextDate)
             .stopAfter(abstractTrigger.getStopAfter())
             .disabled(lastTrigger.map(TriggerContext::getDisabled).orElse(Boolean.FALSE))
             .backfill(null)
@@ -215,7 +222,6 @@ public class Trigger extends TriggerContext {
             .tenantId(this.getTenantId())
             .namespace(this.getNamespace())
             .flowId(this.getFlowId())
-            .flowRevision(this.getFlowRevision())
             .triggerId(this.getTriggerId())
             .date(this.getDate())
             .nextExecutionDate(nextExecutionDate)
@@ -230,7 +236,6 @@ public class Trigger extends TriggerContext {
             .tenantId(this.getTenantId())
             .namespace(this.getNamespace())
             .flowId(this.getFlowId())
-            .flowRevision(this.getFlowRevision())
             .triggerId(this.getTriggerId())
             .date(this.getDate())
             .nextExecutionDate(this.getNextExecutionDate())
@@ -291,7 +296,6 @@ public class Trigger extends TriggerContext {
             .tenantId(triggerContext.getTenantId())
             .namespace(triggerContext.getNamespace())
             .flowId(triggerContext.getFlowId())
-            .flowRevision(triggerContext.getFlowRevision())
             .triggerId(triggerContext.getTriggerId())
             .date(triggerContext.getDate())
             .backfill(triggerContext.getBackfill())

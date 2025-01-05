@@ -1,19 +1,18 @@
 package io.kestra.core.docs;
 
-import io.kestra.core.models.script.ScriptRunner;
-import io.kestra.core.models.script.types.ProcessScriptRunner;
+import io.kestra.core.models.tasks.runners.TaskRunner;
+import io.kestra.plugin.core.runner.Process;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.plugins.PluginScanner;
 import io.kestra.core.plugins.RegisteredPlugin;
-import io.kestra.core.tasks.debugs.Echo;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Dag;
-import io.kestra.core.tasks.flows.Subflow;
-import io.kestra.core.tasks.states.Set;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.plugin.core.debug.Echo;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Dag;
+import io.kestra.plugin.core.flow.Subflow;
+import io.kestra.plugin.core.state.Set;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
-import oshi.driver.linux.proc.ProcessStat;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -26,7 +25,7 @@ import java.util.Objects;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class DocumentationGeneratorTest {
     @Inject
     JsonSchemaGenerator jsonSchemaGenerator;
@@ -42,7 +41,7 @@ class DocumentationGeneratorTest {
         List<RegisteredPlugin> scan = pluginScanner.scan(plugins);
 
         assertThat(scan.size(), is(1));
-        ClassPluginDocumentation<? extends Task> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan.get(0), scan.get(0).getTasks().get(0), Task.class);
+        ClassPluginDocumentation<? extends Task> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan.getFirst(), scan.getFirst().getTasks().getFirst(), Task.class);
 
         String render = DocumentationGenerator.render(doc);
 
@@ -99,7 +98,7 @@ class DocumentationGeneratorTest {
 
         String render = DocumentationGenerator.render(doc);
 
-        assertThat(render, containsString("Debugging task that return"));
+        assertThat(render, containsString("Return a value for debugging purposes."));
         assertThat(render, containsString("is mostly useful"));
         assertThat(render, containsString("## Metrics"));
         assertThat(render, containsString("### `length`\n" + "* **Type:** ==counter== "));
@@ -135,6 +134,7 @@ class DocumentationGeneratorTest {
         assertThat(render, containsString("Deprecated"));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void state() throws IOException {
         PluginScanner pluginScanner = new PluginScanner(ClassPluginDocumentationTest.class.getClassLoader());
@@ -155,23 +155,23 @@ class DocumentationGeneratorTest {
         RegisteredPlugin core = pluginScanner.scan();
 
         List<Document> docs = documentationGenerator.generate(core);
-        Document doc = docs.get(0);
+        Document doc = docs.getFirst();
         assertThat(doc.getIcon(), is(notNullValue()));
         assertThat(doc.getBody(), containsString("## <img width=\"25\" src=\"data:image/svg+xml;base64,"));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
-    void scriptRunner() throws IOException {
+    void taskRunner() throws IOException {
         PluginScanner pluginScanner = new PluginScanner(ClassPluginDocumentationTest.class.getClassLoader());
         RegisteredPlugin scan = pluginScanner.scan();
-        Class<ProcessScriptRunner> processScriptRunner = scan.findClass(ProcessScriptRunner.class.getName()).orElseThrow();
+        Class<Process> processTaskRunner = scan.findClass(Process.class.getName()).orElseThrow();
 
-        ClassPluginDocumentation<? extends ScriptRunner> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan, processScriptRunner, ScriptRunner.class);
+        ClassPluginDocumentation<? extends TaskRunner> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan, processTaskRunner, TaskRunner.class);
 
         String render = DocumentationGenerator.render(doc);
 
-        assertThat(render, containsString("title: ProcessScriptRunner"));
-        assertThat(render, containsString("A script runner that runs script as a process on the Kestra host"));
-        assertThat(render, containsString("\uD83D\uDEC8 This plugin is currently in beta"));
+        assertThat(render, containsString("title: Process"));
+        assertThat(render, containsString("Task runner that executes a task as a subprocess on the Kestra host."));
     }
 }

@@ -6,9 +6,11 @@ import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.services.FlowListenersInterface;
 import io.kestra.core.utils.Await;
+import io.kestra.core.utils.TestsUtils;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.List;
@@ -59,7 +61,7 @@ public class DeserializationIssuesCaseTest {
               },
               "task": {
                 "id": "hello",
-                "type": "io.kestra.core.tasks.log.Log"
+                "type": "io.kestra.plugin.core.log.Log"
               },
               "taskrun": {
                 "id": "5PGRX6ve2cztrRSIbfGphO",
@@ -88,8 +90,7 @@ public class DeserializationIssuesCaseTest {
             "date": "2023-11-24T15:48:57.632881597Z",
             "flowId": "http-trigger",
             "namespace": "dev",
-            "triggerId": "http",
-            "flowRevision": 3
+            "triggerId": "http"
           },
           "conditionContext": {
             "flow": {
@@ -97,7 +98,7 @@ public class DeserializationIssuesCaseTest {
               "tasks": [
                 {
                   "id": "hello",
-                  "type": "io.kestra.core.tasks.log.Log",
+                  "type": "io.kestra.plugin.core.log.Log",
                   "message": "Kestra team wishes you a great day! 👋"
                 }
               ],
@@ -226,7 +227,7 @@ public class DeserializationIssuesCaseTest {
 
     public void workerTaskDeserializationIssue(Consumer<QueueMessage> sendToQueue) throws TimeoutException {
         AtomicReference<WorkerTaskResult> workerTaskResult = new AtomicReference<>();
-        workerTaskResultQueue.receive(either -> {
+        Flux<WorkerTaskResult> receive = TestsUtils.receive(workerTaskResultQueue, either -> {
             if (either != null) {
                 workerTaskResult.set(either.getLeft());
             }
@@ -239,14 +240,15 @@ public class DeserializationIssuesCaseTest {
             Duration.ofMillis(100),
             Duration.ofMinutes(1)
         );
+        receive.blockLast();
         assertThat(workerTaskResult.get().getTaskRun().getState().getHistories().size(), is(2));
-        assertThat(workerTaskResult.get().getTaskRun().getState().getHistories().get(0).getState(), is(State.Type.CREATED));
+        assertThat(workerTaskResult.get().getTaskRun().getState().getHistories().getFirst().getState(), is(State.Type.CREATED));
         assertThat(workerTaskResult.get().getTaskRun().getState().getCurrent(), is(State.Type.FAILED));
     }
 
     public void workerTriggerDeserializationIssue(Consumer<QueueMessage> sendToQueue) throws TimeoutException {
         AtomicReference<WorkerTriggerResult> workerTriggerResult = new AtomicReference<>();
-        workerTriggerResultQueue.receive(either -> {
+        Flux<WorkerTriggerResult> receive = TestsUtils.receive(workerTriggerResultQueue, either -> {
             if (either != null) {
                 workerTriggerResult.set(either.getLeft());
             }
@@ -259,6 +261,7 @@ public class DeserializationIssuesCaseTest {
             Duration.ofMillis(100),
             Duration.ofMinutes(1)
         );
+        receive.blockLast();
         assertThat(workerTriggerResult.get().getSuccess(), is(Boolean.FALSE));
     }
 

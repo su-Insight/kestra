@@ -1,12 +1,10 @@
 package io.kestra.cli.commands.plugins;
 
-import io.kestra.core.contexts.KestraClassLoader;
 import io.micronaut.configuration.picocli.PicocliRunner;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.env.Environment;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -23,12 +21,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 class PluginDocCommandTest {
-    @BeforeAll
-    static void init() {
-        if (!KestraClassLoader.isInit()) {
-            KestraClassLoader.create(PluginDocCommandTest.class.getClassLoader());
-        }
-    }
+
+    public static final String PLUGIN_TEMPLATE_TEST = "plugin-template-test-0.17.0-SNAPSHOT.jar";
 
     @Test
     void run() throws IOException, URISyntaxException {
@@ -37,8 +31,8 @@ class PluginDocCommandTest {
 
         FileUtils.copyFile(
             new File(Objects.requireNonNull(PluginListCommandTest.class.getClassLoader()
-                .getResource("plugins/plugin-template-test-0.15.0-SNAPSHOT.jar")).toURI()),
-            new File(URI.create("file://" + pluginsPath.toAbsolutePath() + "/plugin-template-test-0.15.0-SNAPSHOT.jar"))
+                .getResource("plugins/" + PLUGIN_TEMPLATE_TEST)).toURI()),
+            new File(URI.create("file://" + pluginsPath.toAbsolutePath() + "/" + PLUGIN_TEMPLATE_TEST))
         );
 
         Path docPath = Files.createTempDirectory(PluginInstallCommandTest.class.getSimpleName());
@@ -48,11 +42,11 @@ class PluginDocCommandTest {
             String[] args = {"--plugins", pluginsPath.toAbsolutePath().toString(), docPath.toAbsolutePath().toString()};
             PicocliRunner.call(PluginDocCommand.class, ctx, args);
 
-            List<Path> files = Files.list(docPath).collect(Collectors.toList());
+            List<Path> files = Files.list(docPath).toList();
 
             assertThat(files.size(), is(1));
-            assertThat(files.get(0).getFileName().toString(), is("plugin-template-test"));
-            var directory = files.get(0).toFile();
+            assertThat(files.getFirst().getFileName().toString(), is("plugin-template-test"));
+            var directory = files.getFirst().toFile();
             assertThat(directory.isDirectory(), is(true));
             assertThat(directory.listFiles().length, is(3));
 

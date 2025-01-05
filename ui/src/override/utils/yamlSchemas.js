@@ -16,5 +16,9 @@ export const yamlSchemas = (store) => [
     {
         fileMatch: ["trigger-*.yaml"],
         uri: [`${apiUrl(store)}/plugins/schemas/trigger`]
+    },
+    {
+        fileMatch: ["plugindefault-*.yaml"],
+        uri: [`${apiUrl(store)}/plugins/schemas/plugindefault?arrayOf=true`]
     }
 ]

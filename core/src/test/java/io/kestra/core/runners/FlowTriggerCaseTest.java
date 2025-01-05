@@ -5,9 +5,11 @@ import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
+import io.kestra.core.utils.TestsUtils;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
+import reactor.core.publisher.Flux;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -38,7 +40,7 @@ public class FlowTriggerCaseTest {
         AtomicReference<Execution> flowListenerNoInput = new AtomicReference<>();
         AtomicReference<Execution> flowListenerNamespace = new AtomicReference<>();
 
-        executionQueue.receive(either -> {
+        Flux<Execution> receive = TestsUtils.receive(executionQueue, either -> {
             Execution execution = either.getLeft();
             if (execution.getState().getCurrent() == State.Type.SUCCESS) {
                 if (flowListenerNoInput.get() == null && execution.getFlowId().equals("trigger-flow-listener-no-inputs")) {
@@ -60,10 +62,11 @@ public class FlowTriggerCaseTest {
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
 
         assertTrue(countDownLatch.await(15, TimeUnit.SECONDS));
+        receive.blockLast();
 
         assertThat(flowListener.get().getTaskRunList().size(), is(1));
         assertThat(flowListener.get().getState().getCurrent(), is(State.Type.SUCCESS));
-        assertThat(flowListener.get().getTaskRunList().get(0).getOutputs().get("value"), is("childs: from parents: " + execution.getId()));
+        assertThat(flowListener.get().getTaskRunList().getFirst().getOutputs().get("value"), is("childs: from parents: " + execution.getId()));
         assertThat(flowListener.get().getTrigger().getVariables().get("executionId"), is(execution.getId()));
         assertThat(flowListener.get().getTrigger().getVariables().get("namespace"), is("io.kestra.tests.trigger"));
         assertThat(flowListener.get().getTrigger().getVariables().get("flowId"), is("trigger-flow"));

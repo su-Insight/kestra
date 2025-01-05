@@ -7,6 +7,7 @@
 
         <!-- Errors -->
         <el-tooltip
+            effect="light"
             v-if="errors"
             popper-class="p-0 bg-transparent"
             :placement="tooltipPlacement"
@@ -35,6 +36,7 @@
 
         <!-- Warnings -->
         <el-tooltip
+            effect="light"
             v-if="warnings"
             popper-class="p-0 bg-transparent"
             :placement="tooltipPlacement"
@@ -183,9 +185,9 @@
             padding: calc(2 * var(--spacer)) $spacer !important;
             font-family: $font-family-monospace;
             background-color: white;
-            white-space: pre;
+            white-space: normal;
             border-top: 1px solid var(--bs-gray-300);
-            text-wrap: initial;
+            text-wrap: wrap;
 
             html.dark & {
                 color: white;
