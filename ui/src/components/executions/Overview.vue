@@ -4,13 +4,13 @@
             <el-col :span="12" class="crud-align">
                 <crud type="CREATE" permission="EXECUTION" :detail="{executionId: execution.id}" />
             </el-col>
-            <el-col :span="12" class="text-end">
-                <setLabels :execution="execution" />
-                <restart is-replay :execution="execution" @follow="forwardEvent('follow', $event)" />
-                <restart :execution="execution" @follow="forwardEvent('follow', $event)" />
-                <resume :execution="execution" />
-                <kill :execution="execution" />
-                <status :status="execution.state.current" />
+            <el-col :span="12" class="d-flex gap-2 justify-content-end">
+                <set-labels :execution="execution" />
+                <restart is-replay :execution="execution" class="ms-0" @follow="forwardEvent('follow', $event)" />
+                <restart :execution="execution" class="ms-0" @follow="forwardEvent('follow', $event)" />
+                <resume :execution="execution" class="ms-0" />
+                <kill :execution="execution" class="ms-0" />
+                <status :status="execution.state.current" class="ms-0" />
             </el-col>
         </el-row>
 
@@ -128,7 +128,6 @@
                 const stepCount = this.execution.taskRunList
                     ? this.execution.taskRunList.length
                     : 0;
-
                 let ret = [
                     {key: this.$t("namespace"), value: this.execution.namespace},
                     {key: this.$t("flow"), value: this.execution.flowId},
@@ -140,7 +139,9 @@
                     {key: this.$t("created date"), value: this.execution.state.histories[0].date, date: true},
                     {key: this.$t("updated date"), value: this.stop(), date: true},
                     {key: this.$t("duration"), value: this.execution.state.histories, duration: true},
-                    {key: this.$t("steps"), value: stepCount}
+                    {key: this.$t("steps"), value: stepCount},
+                    {key: this.$t("attempt"), value: this.execution?.metadata?.attemptNumber},
+                    {key: this.$t("originalCreatedDate"), value: this.execution?.metadata?.originalCreatedDate, date: true},
                 ];
 
                 if (this.execution.parentId) {

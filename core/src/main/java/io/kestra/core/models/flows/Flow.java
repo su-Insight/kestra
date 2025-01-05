@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
 import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
 import io.kestra.core.exceptions.InternalException;
-import io.kestra.core.models.DeletedInterface;
 import io.kestra.core.models.Label;
 import io.kestra.core.models.TenantInterface;
 import io.kestra.core.models.annotations.PluginProperty;
@@ -16,6 +15,7 @@ import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.listeners.Listener;
 import io.kestra.core.models.tasks.FlowableTask;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.models.tasks.retrys.AbstractRetry;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.validations.ManualConstraintViolation;
 import io.kestra.core.serializers.JacksonMapper;
@@ -25,9 +25,15 @@ import io.kestra.core.services.FlowService;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.validations.FlowValidation;
 import io.micronaut.core.annotation.Introspected;
-import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,10 +41,6 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.ConstraintViolationException;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
 
 @SuperBuilder(toBuilder = true)
 @Getter
@@ -47,7 +49,7 @@ import jakarta.validation.constraints.*;
 @ToString
 @EqualsAndHashCode
 @FlowValidation
-public class Flow implements DeletedInterface, TenantInterface {
+public class Flow extends AbstractFlow {
     private static final ObjectMapper jsonMapper = JacksonMapper.ofJson().copy()
         .setAnnotationIntrospector(new JacksonAnnotationIntrospector() {
             @Override
@@ -57,31 +59,12 @@ public class Flow implements DeletedInterface, TenantInterface {
             }
         });
 
-    @Hidden
-    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
-    String tenantId;
-
-    @NotNull
-    @NotBlank
-    @Pattern(regexp = "^[a-zA-Z0-9][a-zA-Z0-9._-]*")
-    String id;
-
-    @NotNull
-    @Pattern(regexp = "^[a-z0-9][a-z0-9._-]*")
-    String namespace;
-
-    @Min(value = 1)
-    Integer revision;
-
     String description;
 
     @JsonSerialize(using = ListOrMapOfLabelSerializer.class)
     @JsonDeserialize(using = ListOrMapOfLabelDeserializer.class)
     @Schema(implementation = Object.class, anyOf = {List.class, Map.class})
     List<Label> labels;
-
-    @Valid
-    List<Input<?>> inputs;
 
     Map<String, Object> variables;
 
@@ -102,14 +85,6 @@ public class Flow implements DeletedInterface, TenantInterface {
     @Valid
     List<TaskDefault> taskDefaults;
 
-    @NotNull
-    @Builder.Default
-    boolean disabled = false;
-
-    @NotNull
-    @Builder.Default
-    boolean deleted = false;
-
     @Valid
     Concurrency concurrency;
 
@@ -120,6 +95,9 @@ public class Flow implements DeletedInterface, TenantInterface {
     @PluginProperty(dynamic = true)
     @Valid
     List<Output> outputs;
+
+    @Valid
+    protected AbstractRetry retry;
 
     public Logger logger() {
         return LoggerFactory.getLogger("flow." + this.id);
@@ -238,11 +216,27 @@ public class Flow implements DeletedInterface, TenantInterface {
         return allErrors;
     }
 
+    public Task findParentTasksByTaskId(String taskId) {
+        return allTasksWithChilds()
+            .stream()
+            .filter(Task::isFlowable)
+            .filter(task -> ((FlowableTask<?>) task).allChildTasks().stream().anyMatch(t -> t.getId().equals(taskId)))
+            .findFirst()
+            .orElse(null);
+    }
+
     public Task findTaskByTaskId(String taskId) throws InternalException {
         return allTasks()
             .flatMap(t -> t.findById(taskId).stream())
             .findFirst()
             .orElseThrow(() -> new InternalException("Can't find task with id '" + taskId + "' on flow '" + this.id + "'"));
+    }
+
+    public Task findTaskByTaskIdOrNull(String taskId) {
+        return allTasks()
+            .flatMap(t -> t.findById(taskId).stream())
+            .findFirst()
+            .orElse(null);
     }
 
     public Flow updateTask(String taskId, Task newValue) throws InternalException {
