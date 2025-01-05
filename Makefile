@@ -104,15 +104,14 @@ health:
 
 # Kill Kestra running process
 kill:
-	docker compose -f ./docker-compose-ci.yml down;
-
 	PID=$$(ps aux | grep java | grep 'kestra' | grep -v 'grep' | awk '{print $$2}'); \
 	if [ ! -z "$$PID" ]; then \
 		echo "Killing Kestra process (pid=$$PID)."; \
-		kill -9 $$PID; \
+		kill $$PID; \
 	else \
 		echo "No Kestra process to kill."; \
 	fi
+	docker compose -f ./docker-compose-ci.yml down;
 
 # Default configuration for using Kestra with Postgres as backend.
 define KESTRA_POSTGRES_CONFIGURATION =
@@ -145,7 +144,10 @@ export KESTRA_POSTGRES_CONFIGURATION
 # Build and deploy Kestra in standalone mode (using Postgres backend)
 --private-start-standalone-postgres:
 	docker compose -f ./docker-compose-ci.yml up postgres -d;
-
+	echo "Waiting for postgres to be running"
+	until [ "`docker inspect -f {{.State.Running}} kestra-postgres-1`"=="true" ]; do \
+		sleep 1; \
+	done; \
 	rm -rf ${KESTRA_BASEDIR}/bin/confs/ && \
 	mkdir -p ${KESTRA_BASEDIR}/bin/confs/ ${KESTRA_BASEDIR}/logs/ && \
 	touch ${KESTRA_BASEDIR}/bin/confs/application.yml

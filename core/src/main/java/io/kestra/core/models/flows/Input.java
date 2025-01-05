@@ -24,6 +24,7 @@ import jakarta.validation.constraints.Pattern;
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", visible = true, include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @JsonSubTypes({
+    @JsonSubTypes.Type(value = ArrayInput.class, name = "ARRAY"),
     @JsonSubTypes.Type(value = BooleanInput.class, name = "BOOLEAN"),
     @JsonSubTypes.Type(value = DateInput.class, name = "DATE"),
     @JsonSubTypes.Type(value = DateTimeInput.class, name = "DATETIME"),
@@ -44,6 +45,9 @@ public abstract class Input<T> implements Data {
     @Pattern(regexp="^[a-zA-Z0-9][.a-zA-Z0-9_-]*")
     String id;
 
+    @Deprecated
+    String name;
+
     @NotNull
     @Valid
     Type type;
@@ -58,15 +62,11 @@ public abstract class Input<T> implements Data {
     public abstract void validate(T input) throws ConstraintViolationException;
 
     @JsonSetter
-    @Deprecated
     public void setName(String name) {
         if (this.id == null) {
             this.id = name;
         }
-    }
 
-    @Deprecated
-    public String getName() {
-        return this.getId();
+        this.name = name;
     }
 }

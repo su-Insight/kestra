@@ -8,10 +8,13 @@ import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.NextTaskRun;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.models.tasks.InputFilesInterface;
 import io.kestra.core.models.tasks.NamespaceFiles;
 import io.kestra.core.models.tasks.NamespaceFilesInterface;
+import io.kestra.core.models.tasks.OutputFilesInterface;
 import io.kestra.core.models.tasks.ResolvedTask;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.runners.FilesService;
 import io.kestra.core.runners.NamespaceFilesService;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.WorkerTask;
@@ -39,6 +42,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -185,7 +189,7 @@ import jakarta.validation.constraints.NotNull;
     }
 )
 @WorkingDirectoryTaskValidation
-public class WorkingDirectory extends Sequential implements NamespaceFilesInterface {
+public class WorkingDirectory extends Sequential implements NamespaceFilesInterface, InputFilesInterface, OutputFilesInterface {
 
     @Schema(
         title = "Cache configuration.",
@@ -202,6 +206,10 @@ public class WorkingDirectory extends Sequential implements NamespaceFilesInterf
     @Getter(AccessLevel.PRIVATE)
     @Builder.Default
     private transient long cacheDownloadedTime = 0L;
+    
+    private Object inputFiles;
+    
+    private List<String> outputFiles;
 
     @Override
     public List<NextTaskRun> resolveNexts(RunContext runContext, Execution execution, TaskRun parentTaskRun) throws IllegalVariableEvaluationException {
@@ -220,6 +228,7 @@ public class WorkingDirectory extends Sequential implements NamespaceFilesInterf
             .task(task)
             .taskRun(TaskRun.builder()
                 .id(IdUtils.create())
+                .tenantId(parent.getTenantId())
                 .executionId(parent.getExecutionId())
                 .namespace(parent.getNamespace())
                 .flowId(parent.getFlowId())
@@ -264,9 +273,23 @@ public class WorkingDirectory extends Sequential implements NamespaceFilesInterf
             NamespaceFilesService namespaceFilesService = runContext.getApplicationContext().getBean(NamespaceFilesService.class);
             namespaceFilesService.inject(runContext, taskRun.getTenantId(), taskRun.getNamespace(), runContext.tempDir(), this.namespaceFiles);
         }
+        
+        if (this.inputFiles != null) {
+           FilesService.inputFiles(runContext, Map.of(), this.inputFiles);
+        }
     }
 
-    public void postExecuteTasks(RunContext runContext, TaskRun taskRun) {
+    public void postExecuteTasks(RunContext runContext, TaskRun taskRun) throws Exception {
+        
+        if (this.outputFiles != null) {
+            try {
+                FilesService.outputFiles(runContext, this.outputFiles);
+            } catch (Exception e) {
+                runContext.logger().error("Unable to capture WorkingDirectory output files", e);
+                throw e;
+            }
+        }
+        
         if (cache == null) {
             return;
         }
@@ -309,11 +332,16 @@ public class WorkingDirectory extends Sequential implements NamespaceFilesInterf
                     try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
                          ZipOutputStream archive = new ZipOutputStream(bos)) {
 
-                        for (var file : matchesList) {
-                            var relativeFileName = file.toFile().getPath().substring(runContext.tempDir().toString().length() + 1);
+                        for (var path : matchesList) {
+                            File file = path.toFile();
+                            if (file.isDirectory() || !file.canRead()) {
+                                continue;
+                            }
+
+                            var relativeFileName = file.getPath().substring(runContext.tempDir().toString().length() + 1);
                             var zipEntry = new ZipEntry(relativeFileName);
                             archive.putNextEntry(zipEntry);
-                            archive.write(Files.readAllBytes(file));
+                            archive.write(Files.readAllBytes(path));
                             archive.closeEntry();
                         }
 

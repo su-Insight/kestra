@@ -30,6 +30,21 @@
             EditorView,
             TopNavBar
         },
+        created() {
+            if (this.$route.query.reset) {
+                localStorage.setItem("tourDoneOrSkip", undefined);
+                this.$store.commit("core/setGuidedProperties", {
+                    tourStarted: false,
+                    flowSource: undefined,
+                    saveFlow: false,
+                    executeFlow: false,
+                    validateInputs: false,
+                    monacoRange: undefined,
+                    monacoDisableRange: undefined
+                });
+                this.$tours["guidedTour"].start();
+            }
+        },
         beforeUnmount() {
             this.$store.commit("flow/setFlowValidation", undefined);
         },
@@ -53,7 +68,7 @@ labels:
 inputs:
   - id: payload
     type: JSON
-    defaults: |
+    defaults: |-
       [{"name": "kestra", "rating": "best in class"}]
 
 tasks:

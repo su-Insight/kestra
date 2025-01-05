@@ -7,6 +7,7 @@ import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.executions.AbstractMetricEntry;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
+import io.kestra.core.services.FlowService;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
@@ -82,15 +83,19 @@ abstract public class PluginUtilsService {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public static Map<String, String> transformInputFiles(RunContext runContext, @NotNull Object inputFiles) throws IllegalVariableEvaluationException, JsonProcessingException {
+        return PluginUtilsService.transformInputFiles(runContext, Collections.emptyMap(), inputFiles);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, String> transformInputFiles(RunContext runContext, Map<String, Object> additionalVars, @NotNull Object inputFiles) throws IllegalVariableEvaluationException, JsonProcessingException {
         if (inputFiles instanceof Map) {
             return (Map<String, String>) inputFiles;
         } else if (inputFiles instanceof String) {
             final TypeReference<Map<String, String>> reference = new TypeReference<>() {};
 
             return JacksonMapper.ofJson(false).readValue(
-                runContext.render((String) inputFiles),
+                runContext.render((String) inputFiles, additionalVars),
                 reference
             );
         } else {
@@ -130,7 +135,7 @@ abstract public class PluginUtilsService {
 
                 if (render.startsWith("kestra://")) {
                     try (
-                        InputStream inputStream = runContext.uriToInputStream(new URI(render));
+                        InputStream inputStream = runContext.storage().getFile(new URI(render));
                         OutputStream outputStream = new BufferedOutputStream(new FileOutputStream(filePath))
                     ) {
                         int byteRead;
@@ -147,6 +152,7 @@ abstract public class PluginUtilsService {
             }
         }
     }
+
     public static Map<String, Object> parseOut(String line, Logger logger, RunContext runContext)  {
         Matcher m = PATTERN.matcher(line);
         Map<String, Object> outputs = new HashMap<>();
@@ -177,4 +183,50 @@ abstract public class PluginUtilsService {
         private Map<String, Object> outputs;
         private List<AbstractMetricEntry<T>> metrics;
     }
+
+    /**
+     * This helper method will allow gathering the execution information from a task parameters:
+     * - If executionId is null, it is fetched from the runContext variables (a.k.a. current execution).
+     * - If executionId is not null but namespace and flowId are null, namespace and flowId will be fetched from the runContext variables.
+     * - Otherwise, all params must be set
+     * It will then check that the namespace is allowed to access the target namespace.
+     * <p>
+     * It will throw IllegalArgumentException for any incompatible set of variables.
+     */
+    public static ExecutionInfo executionFromTaskParameters(RunContext runContext, String namespace, String flowId, String executionId) throws IllegalVariableEvaluationException {
+        var flowInfo = runContext.flowInfo();
+
+        String realTenantId = flowInfo.tenantId();
+        String realExecutionId;
+        String realNamespace;
+        String realFlowId;
+        if (executionId != null) {
+            realExecutionId = runContext.render(executionId);
+
+            if (namespace != null && flowId != null) {
+                realNamespace = runContext.render(namespace);
+                realFlowId = runContext.render(flowId);
+                // validate that the flow exists: a.k.a access is authorized by this namespace
+                FlowService flowService = runContext.getApplicationContext().getBean(FlowService.class);
+                flowService.checkAllowedNamespace(flowInfo.tenantId(), realNamespace, flowInfo.tenantId(), flowInfo.namespace());
+            } else if (namespace != null || flowId != null) {
+                throw new IllegalArgumentException("Both `namespace` and `flowId` must be set when `executionId` is set.");
+            } else {
+                realNamespace = flowInfo.namespace();
+                realFlowId = flowInfo.id();
+            }
+
+        } else {
+            if (namespace != null || flowId != null) {
+                throw new IllegalArgumentException("`namespace` and `flowId` should only be set when `executionId` is set.");
+            }
+            realExecutionId = (String) new HashMap<>((Map<String, Object>) runContext.getVariables().get("execution")).get("id");
+            realNamespace = flowInfo.namespace();
+            realFlowId = flowInfo.id();
+        }
+
+        return new ExecutionInfo(realTenantId, realNamespace, realFlowId, realExecutionId);
+    }
+
+    public record ExecutionInfo(String tenantId, String namespace, String flowId, String id) {}
 }

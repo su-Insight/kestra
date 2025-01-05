@@ -15,7 +15,8 @@ import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Input;
 import io.kestra.core.models.flows.input.SecretInput;
-import io.kestra.core.models.script.ScriptRunner;
+import io.kestra.core.models.flows.input.StringInput;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.common.EncryptedString;
 import io.kestra.core.models.triggers.AbstractTrigger;
@@ -307,6 +308,7 @@ public class RunContext {
                 executionMap.put("originalId", execution.getOriginalId());
             }
 
+
             builder
                 .put("execution", executionMap.build());
 
@@ -317,8 +319,29 @@ public class RunContext {
                 }
                 builder.put("outputs", outputs);
             }
-
-            Map<String, Object> inputs = new HashMap<>();
+            
+            if (execution.getTrigger() != null && execution.getTrigger().getVariables() != null) {
+                builder.put("trigger", execution.getTrigger().getVariables());
+            }
+            
+            if (execution.getLabels() != null) {
+                builder.put("labels", execution.getLabels()
+                    .stream()
+                    .filter(label -> label.value() != null && label.key() != null)
+                    .map(label -> new AbstractMap.SimpleEntry<>(
+                        label.key(),
+                        label.value()
+                    ))
+                    // using an accumulator in case labels with the same key exists: the first is kept
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (first, second) -> first))
+                );
+            }
+            
+            if (execution.getVariables() != null) {
+                builder.putAll(execution.getVariables());
+            }
+            
+            final Map<String, Object> inputs = new HashMap<>();
             if (execution.getInputs() != null) {
                 inputs.putAll(execution.getInputs());
                 if (decryptVariables && flow != null && flow.getInputs() != null) {
@@ -335,34 +358,26 @@ public class RunContext {
                     }
                 }
             }
+            
             if (flow != null && flow.getInputs() != null) {
                 // we add default inputs value from the flow if not already set, this will be useful for triggers
                 flow.getInputs().stream()
                     .filter(input -> input.getDefaults() != null && !inputs.containsKey(input.getId()))
                     .forEach(input -> inputs.put(input.getId(), input.getDefaults()));
             }
+            
             if (!inputs.isEmpty()) {
                 builder.put("inputs", inputs);
-            }
-
-            if (execution.getTrigger() != null && execution.getTrigger().getVariables() != null) {
-                builder.put("trigger", execution.getTrigger().getVariables());
-            }
-
-            if (execution.getLabels() != null) {
-                builder.put("labels", execution.getLabels()
-                    .stream()
-                    .filter(label -> label.value() != null)
-                    .map(label -> new AbstractMap.SimpleEntry<>(
-                        label.key(),
-                        label.value()
-                    ))
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
-                );
-            }
-
-            if (execution.getVariables() != null) {
-                builder.putAll(execution.getVariables());
+                ImmutableMap<String, Object> prebuildVariables = builder.build();
+                for (Input<?> input : flow.getInputs()) {
+                    if (input instanceof StringInput) {
+                        try {
+                            inputs.put(input.getId(), render((String) inputs.get(input.getId()), prebuildVariables));
+                        } catch (IllegalVariableEvaluationException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                }
             }
         }
 
@@ -373,7 +388,6 @@ public class RunContext {
                     "type", trigger.getType()
                 ));
         }
-
         return builder.build();
     }
 
@@ -531,6 +545,10 @@ public class RunContext {
         this.initBean(applicationContext);
         this.initLogger(workerTrigger.getTriggerContext(), workerTrigger.getTrigger());
 
+        Map<String, Object> clone = new HashMap<>(this.variables);
+        clone.put("addSecretConsumer", (Consumer<String>) s -> runContextLogger.usedSecret(s));
+        this.variables = ImmutableMap.copyOf(clone);
+
         // Mutability hack to update the triggerExecutionId for each evaluation on the worker
         return forScheduler(workerTrigger.getTriggerContext(), workerTrigger.getTrigger());
     }
@@ -547,8 +565,8 @@ public class RunContext {
         return this;
     }
 
-    public RunContext forScriptRunner(ScriptRunner scriptRunner) {
-        this.initPluginConfiguration(applicationContext, scriptRunner.getType());
+    public RunContext forTaskRunner(TaskRunner taskRunner) {
+        this.initPluginConfiguration(applicationContext, taskRunner.getType());
 
         return this;
     }
@@ -590,12 +608,22 @@ public class RunContext {
     }
 
     public Map<String, String> renderMap(Map<String, String> inline) throws IllegalVariableEvaluationException {
+        return renderMap(inline, Collections.emptyMap());
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, String> renderMap(Map<String, String> inline, Map<String, Object> variables) throws IllegalVariableEvaluationException {
+        if (inline == null) {
+            return null;
+        }
+
+        Map<String, Object> allVariables = mergeWithNullableValues(this.variables, variables);
         return inline
             .entrySet()
             .stream()
             .map(throwFunction(entry -> new AbstractMap.SimpleEntry<>(
-                this.render(entry.getKey(), variables),
-                this.render(entry.getValue(), variables)
+                this.render(entry.getKey(), allVariables),
+                this.render(entry.getValue(), allVariables)
             )))
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
@@ -891,6 +919,15 @@ public class RunContext {
         // normally only tests should not have the flow variable
         return flow != null ? flow.get("tenantId") : null;
     }
+
+    @SuppressWarnings("unchecked")
+    public FlowInfo flowInfo() {
+        Map<String, Object> flow = (Map<String, Object>) this.getVariables().get("flow");
+        // normally only tests should not have the flow variable
+        return flow == null ? null : new FlowInfo((String) flow.get("tenantId"), (String) flow.get("namespace"), (String) flow.get("id"), (Integer) flow.get("revision"));
+    }
+
+    public record FlowInfo(String tenantId, String namespace, String id, Integer revision) {}
 
     /**
      * Returns the value of the specified configuration property for the plugin type

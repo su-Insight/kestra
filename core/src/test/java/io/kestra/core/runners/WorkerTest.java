@@ -2,10 +2,7 @@ package io.kestra.core.runners;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.collect.ImmutableMap;
-import io.kestra.core.models.executions.Execution;
-import io.kestra.core.models.executions.ExecutionKilled;
-import io.kestra.core.models.executions.LogEntry;
-import io.kestra.core.models.executions.TaskRun;
+import io.kestra.core.models.executions.*;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
@@ -22,6 +19,7 @@ import io.micronaut.context.ApplicationContext;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -63,7 +61,7 @@ class WorkerTest {
 
     @Test
     void success() throws TimeoutException {
-        Worker worker = new Worker(applicationContext, 8, null);
+        Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, null);
         worker.run();
 
         AtomicReference<WorkerTaskResult> workerTaskResult = new AtomicReference<>(null);
@@ -82,13 +80,13 @@ class WorkerTest {
 
     @Test
     void workerGroup() {
-        Worker worker = new Worker(applicationContext, 8, "toto");
+        Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, "toto");
         assertThat(worker.getWorkerGroup(), nullValue());
     }
 
     @Test
     void failOnWorkerTaskWithFlowable() throws TimeoutException, JsonProcessingException {
-        Worker worker = new Worker(applicationContext, 8, null);
+        Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, null);
         worker.run();
 
         AtomicReference<WorkerTaskResult> workerTaskResult = new AtomicReference<>(null);
@@ -142,7 +140,7 @@ class WorkerTest {
         List<LogEntry> logs = new CopyOnWriteArrayList<>();
         workerTaskLogQueue.receive(either -> logs.add(either.getLeft()));
 
-        Worker worker = new Worker(applicationContext, 8, null);
+        Worker worker = applicationContext.createBean(Worker.class, IdUtils.create(), 8, null);
         worker.run();
 
         List<WorkerTaskResult> workerTaskResult = new ArrayList<>();
@@ -160,7 +158,7 @@ class WorkerTest {
 
         Thread.sleep(500);
 
-        executionKilledQueue.emit(ExecutionKilled.builder().executionId(workerTask.getTaskRun().getExecutionId()).build());
+        executionKilledQueue.emit(ExecutionKilledExecution.builder().executionId(workerTask.getTaskRun().getExecutionId()).build());
 
         Await.until(
             () -> workerTaskResult.stream().filter(r -> r.getTaskRun().getState().isTerminated()).count() == 5,
@@ -185,6 +183,12 @@ class WorkerTest {
         // child process is stopped and we never received 3 logs
         Thread.sleep(1000);
         assertThat(logs.stream().filter(logEntry -> logEntry.getMessage().equals("3")).count(), is(0L));
+    }
+
+    @Test
+    void shouldCreateInstanceGivenApplicationContext() {
+        Assertions.assertDoesNotThrow(() -> new Worker(applicationContext, 8, null));
+
     }
 
     private WorkerTask workerTask(long sleepDuration) {

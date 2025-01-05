@@ -7,29 +7,31 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.NextTaskRun;
 import io.kestra.core.models.executions.TaskRun;
+import io.kestra.core.models.flows.Input;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.hierarchies.AbstractGraph;
 import io.kestra.core.models.hierarchies.GraphCluster;
 import io.kestra.core.models.hierarchies.GraphTask;
 import io.kestra.core.models.hierarchies.RelationType;
 import io.kestra.core.models.tasks.FlowableTask;
+import io.kestra.core.models.tasks.ResolvedTask;
 import io.kestra.core.models.tasks.Task;
-import io.kestra.core.models.tasks.VoidOutput;
 import io.kestra.core.runners.FlowableUtils;
 import io.kestra.core.runners.RunContext;
+import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.utils.GraphUtils;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @SuperBuilder
 @ToString
@@ -42,6 +44,7 @@ import java.util.Optional;
 @Plugin(
     examples = {
         @Example(
+            title = "Pause the execution and wait for a manual approval",
             full = true,
             code = """
                 id: human_in_the_loop
@@ -54,21 +57,79 @@ import java.util.Optional;
 
                   - id: pause
                     type: io.kestra.core.tasks.flows.Pause
-                    tasks:
-                      - id: run_post_approval
-                        type: io.kestra.plugin.scripts.shell.Commands
-                        runner: PROCESS
-                        commands:
-                          - echo "Manual approval received! Continuing the execution..."
+
+                  - id: run_post_approval
+                    type: io.kestra.plugin.scripts.shell.Commands
+                    runner: PROCESS
+                    commands:
+                      - echo "Manual approval received! Continuing the execution..."
 
                   - id: post_resume
                     type: io.kestra.core.tasks.debugs.Return
                     format: "{{ task.id }} started on {{ taskrun.startDate }} after the Pause"
                 """
+        ),
+        @Example(
+            title = "Vacation approval process pausing the execution for approval and waiting for input from a human to approve or reject the request.",
+            full = true,
+            code = """
+                id: vacation_approval_process
+                namespace: dev
+
+                inputs:
+                  - id: request.name
+                    type: STRING
+                    defaults: Rick Astley
+
+                  - id: request.start_date
+                    type: DATE
+                    defaults: 2042-07-01
+
+                  - id: request.end_date
+                    type: DATE
+                    defaults: 2042-07-07
+
+                  - id: slack_webhook_uri
+                    type: URI
+                    defaults: https://reqres.in/api/slack
+
+                tasks:
+                  - id: send_approval_request
+                    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+                    url: "{{ inputs.slack_webhook_uri }}"
+                    payload: |
+                      {
+                        "channel": "#vacation",
+                        "text": "Validate holiday request for {{ inputs.request.name }}. To approve the request, click on the `Resume` button here http://localhost:28080/ui/executions/{{flow.namespace}}/{{flow.id}}/{{execution.id}}"
+                      }
+
+                  - id: wait_for_approval
+                    type: io.kestra.core.tasks.flows.Pause
+                    onResume:
+                      - id: approved
+                        description: Whether to approve the request
+                        type: BOOLEAN
+                        defaults: true
+                      - id: reason
+                        description: Reason for approval or rejection
+                        type: STRING
+                        defaults: Well-deserved vacation
+
+                  - id: approve
+                    type: io.kestra.plugin.fs.http.Request
+                    uri: https://reqres.in/api/products
+                    method: POST
+                    contentType: application/json
+                    body: "{{ inputs.request }}"
+
+                  - id: log
+                    type: io.kestra.core.tasks.log.Log
+                    message: Status is {{ outputs.wait_for_approval.onResume.reason }}. Process finished with {{ outputs.approve.body }}
+                """
         )
     }
 )
-public class Pause extends Sequential implements FlowableTask<VoidOutput> {
+public class Pause extends Task implements FlowableTask<Pause.Output> {
     @Schema(
         title = "Duration of the pause — useful if you want to pause the execution for a fixed amount of time.",
         description = "If no delay and no timeout are configured, the execution will never end until it's manually resumed from the UI or API."
@@ -82,6 +143,16 @@ public class Pause extends Sequential implements FlowableTask<VoidOutput> {
     )
     @PluginProperty
     private Duration timeout;
+
+    @Valid
+    @Schema(
+        title = "Inputs to be passed to the execution when it's resumed.",
+        description = "Before resuming the execution, the user will be prompted to fill in these inputs. The inputs can be used to pass additional data to the execution which is useful for human-in-the-loop scenarios. The `onResume` inputs work the same way as regular [flow inputs](https://kestra.io/docs/workflow-components/inputs) — they can be of any type and can have default values. You can access those values in downstream tasks using the `onResume` output of the Pause task."
+    )
+    private List<Input<?>> onResume;
+
+    @Valid
+    protected List<Task> errors;
 
     @Valid
     @PluginProperty
@@ -105,6 +176,21 @@ public class Pause extends Sequential implements FlowableTask<VoidOutput> {
         );
 
         return subGraph;
+    }
+
+    @Override
+    public List<Task> allChildTasks() {
+        return Stream
+            .concat(
+                this.getTasks() != null ? this.getTasks().stream() : Stream.empty(),
+                this.getErrors() != null ? this.getErrors().stream() : Stream.empty()
+            )
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ResolvedTask> childTasks(RunContext runContext, TaskRun parentTaskRun) throws IllegalVariableEvaluationException {
+        return FlowableUtils.resolveTasks(this.getTasks(), parentTaskRun);
     }
 
     @Override
@@ -136,6 +222,20 @@ public class Pause extends Sequential implements FlowableTask<VoidOutput> {
             return Optional.of(State.Type.SUCCESS);
         }
 
-        return super.resolveState(runContext, execution, parentTaskRun);
+        return FlowableTask.super.resolveState(runContext, execution, parentTaskRun);
+    }
+
+    public Map<String, Object> generateOutputs(Map<String, Object> inputs) {
+        Output build = Output.builder()
+            .onResume(inputs)
+            .build();
+
+        return JacksonMapper.toMap(build);
+    }
+
+    @Builder
+    @Getter
+    public static class Output implements io.kestra.core.models.tasks.Output {
+        private Map<String, Object> onResume;
     }
 }

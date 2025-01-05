@@ -7,6 +7,7 @@ import io.kestra.core.events.CrudEventType;
 import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.models.SearchResult;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.FlowForExecution;
 import io.kestra.core.models.flows.FlowWithException;
 import io.kestra.core.models.flows.FlowWithSource;
 import io.kestra.core.models.triggers.Trigger;
@@ -98,11 +99,49 @@ public abstract class AbstractJdbcFlowRepository extends AbstractJdbcRepository 
             });
     }
 
+    @Override
+    public Optional<Flow> findByIdWithoutAcl(String tenantId, String namespace, String id, Optional<Integer> revision) {
+        return jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> {
+                DSLContext context = DSL.using(configuration);
+                Select<Record1<String>> from;
+
+                if (revision.isPresent()) {
+                    from = context
+                        .select(field("value", String.class))
+                        .from(jdbcRepository.getTable())
+                        .where(this.noAclDefaultFilter(tenantId))
+                        .and(field("namespace").eq(namespace))
+                        .and(field("id", String.class).eq(id))
+                        .and(field("revision", Integer.class).eq(revision.get()));
+                } else {
+                    from = context
+                        .select(field("value", String.class))
+                        .from(fromLastRevision(true))
+                        .where(this.noAclDefaultFilter(tenantId))
+                        .and(field("namespace", String.class).eq(namespace))
+                        .and(field("id", String.class).eq(id));
+                }
+
+
+                return this.jdbcRepository.fetchOne(from);
+            });
+    }
+
     protected Table<Record> fromLastRevision(boolean asterisk) {
         return JdbcFlowRepositoryService.lastRevision(jdbcRepository, asterisk);
     }
 
     protected Condition revisionDefaultFilter(String tenantId) {
+        return buildTenantCondition(tenantId);
+    }
+
+    protected Condition noAclDefaultFilter(String tenantId) {
+        return buildTenantCondition(tenantId);
+    }
+
+    protected Condition defaultExecutionFilter(String tenantId) {
         return buildTenantCondition(tenantId);
     }
 
@@ -222,14 +261,36 @@ public abstract class AbstractJdbcFlowRepository extends AbstractJdbcRepository 
         return this.jdbcRepository
             .getDslContextWrapper()
             .transactionResult(configuration -> {
-                SelectConditionStep<Record1<Object>> select = DSL
-                    .using(configuration)
-                    .select(field("value"))
-                    .from(fromLastRevision(true))
-                    .where(field("namespace").eq(namespace))
+                SelectConditionStep<Record1<Object>> select =
+                    findByNamespaceSelect(tenantId, namespace)
                     .and(this.defaultFilter(tenantId));
 
                 return this.jdbcRepository.fetch(select);
+            });
+    }
+
+    @Override
+    public List<FlowForExecution> findByNamespaceExecutable(String tenantId, String namespace) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> {
+                SelectConditionStep<Record1<Object>> select =
+                    findByNamespaceSelect(tenantId, namespace)
+                    .and(this.defaultExecutionFilter(tenantId));
+
+                return this.jdbcRepository.fetch(select);
+            }).stream().map(FlowForExecution::of).toList();
+    }
+
+    private SelectConditionStep<Record1<Object>> findByNamespaceSelect(String tenantId, String namespace) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> {
+                return DSL
+                    .using(configuration)
+                    .select(field("value"))
+                    .from(fromLastRevision(true))
+                    .where(field("namespace").eq(namespace));
             });
     }
 
@@ -471,6 +532,21 @@ public abstract class AbstractJdbcFlowRepository extends AbstractJdbcRepository 
                 .select(field("namespace"))
                 .from(fromLastRevision(true))
                 .where(this.defaultFilter(tenantId))
+                .groupBy(field("namespace"))
+                .fetch()
+                .map(record -> record.getValue("namespace", String.class))
+            );
+    }
+
+    @Override
+    public List<String> findDistinctNamespaceExecutable(String tenantId) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> DSL
+                .using(configuration)
+                .select(field("namespace"))
+                .from(fromLastRevision(true))
+                .where(this.defaultExecutionFilter(tenantId))
                 .groupBy(field("namespace"))
                 .fetch()
                 .map(record -> record.getValue("namespace", String.class))

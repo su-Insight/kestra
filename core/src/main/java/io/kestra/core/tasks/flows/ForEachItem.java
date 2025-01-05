@@ -350,7 +350,7 @@ public class ForEachItem extends Task implements FlowableTask<VoidOutput>, Child
         // This setter is needed for the serialization framework, but the list is hardcoded in the getter anyway.
     }
 
-    @Hidden
+    @Plugin(internal = true)
     @Getter
     @NoArgsConstructor
     public static class ForEachItemSplit extends Task implements RunnableTask<ForEachItemSplit.Output> {
@@ -391,11 +391,11 @@ public class ForEachItem extends Task implements FlowableTask<VoidOutput>, Child
         }
     }
 
-    @Hidden
+    @Plugin(internal = true)
     @Getter
     @NoArgsConstructor
     public static class ForEachItemExecutable extends Task implements ExecutableTask<Output> {
-        static final String SUFFIX = "_item";
+        static final String SUFFIX = "_items";
 
         private Map<String, Object> inputs;
         private Boolean inheritLabels;
@@ -544,7 +544,7 @@ public class ForEachItem extends Task implements FlowableTask<VoidOutput>, Child
         }
     }
 
-    @Hidden
+    @Plugin(internal = true)
     @Getter
     @NoArgsConstructor
     public static class ForEachItemMergeOutputs extends Task implements RunnableTask<ForEachItemMergeOutputs.Output> {

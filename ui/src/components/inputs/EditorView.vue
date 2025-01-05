@@ -170,7 +170,8 @@
 
     const editorDomElement = ref(null);
     const editorWidthStorageKey = "editor-size";
-    const editorWidth = ref(localStorage.getItem(editorWidthStorageKey));
+    const localStorageStoredWidth = localStorage.getItem(editorWidthStorageKey);
+    const editorWidth = ref(localStorageStoredWidth ?? 50);
     const validationDomElement = ref(null);
     const isLoading = ref(false);
     const haveChange = ref(props.isDirty)
@@ -232,6 +233,10 @@
         return `revision: ${props.nextRevision}\n${flowYaml.value}`;
     })
 
+    watch(flowYaml, (newYaml) => {
+        store.commit("core/setAutocompletionSource", newYaml)
+    })
+
     const initYamlSource = async () => {
         flowYaml.value = props.flow.source;
         flowYamlOrigin.value = props.flow.source;
@@ -284,6 +289,7 @@
 
     onMounted(async () => {
         await initYamlSource();
+
         // Save on ctrl+s in topology
         document.addEventListener("keydown", save);
         // Guided tour
@@ -304,6 +310,7 @@
     })
 
     onBeforeUnmount(() => {
+        store.commit("core/setAutocompletionSource", undefined);
         window.removeEventListener("resize", onResize)
 
         store.commit("plugin/setEditorPlugin", undefined);
@@ -354,18 +361,11 @@
     const updatePluginDocumentation = (event) => {
         const taskType = yamlUtils.getTaskType(event.model.getValue(), event.position)
         const pluginSingleList = store.getters["plugin/getPluginSingleList"];
-        const pluginsDocumentation = store.getters["plugin/getPluginsDocumentation"];
         if (taskType && pluginSingleList && pluginSingleList.includes(taskType)) {
-            if (!pluginsDocumentation[taskType]) {
-                store
-                    .dispatch("plugin/load", {cls: taskType})
-                    .then(plugin => {
-                        store.commit("plugin/setPluginsDocumentation", {...pluginsDocumentation, [taskType]: plugin});
-                        store.commit("plugin/setEditorPlugin", plugin);
-                    });
-            } else if (pluginsDocumentation[taskType]) {
-                store.commit("plugin/setEditorPlugin", pluginsDocumentation[taskType]);
-            }
+            store.dispatch("plugin/load", {cls: taskType})
+                .then(plugin => {
+                    store.commit("plugin/setEditorPlugin", plugin);
+                });
         } else {
             store.commit("plugin/setEditorPlugin", undefined);
         }
@@ -420,7 +420,7 @@
 
     const onEdit = (event) => {
         flowYaml.value = event;
-        if (!props.isCreating && (routeParams.id !== flowParsed.value.id || routeParams.namespace !== flowParsed.value.namespace)) {
+        if (flowParsed.value && !props.isCreating && (routeParams.id !== flowParsed.value.id || routeParams.namespace !== flowParsed.value.namespace)) {
             store.dispatch("core/showMessage", {
                 variant: "error",
                 title: t("readonly property"),
@@ -808,7 +808,7 @@
             ref="editorDomElement"
             v-if="combinedEditor || viewType === editorViewTypes.SOURCE"
             :class="combinedEditor ? 'editor-combined' : ''"
-            :style="combinedEditor ? {'flex-basis': leftEditorWidth, 'flex-grow': 0} : {}"
+            :style="combinedEditor ? {'flex': '0 0 ' + leftEditorWidth} : {}"
             @save="save"
             @execute="execute"
             v-model="flowYaml"

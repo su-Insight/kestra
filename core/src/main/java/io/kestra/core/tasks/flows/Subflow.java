@@ -13,11 +13,12 @@ import io.kestra.core.models.tasks.ExecutableTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.runners.ExecutableUtils;
 import io.kestra.core.runners.FlowExecutorInterface;
+import io.kestra.core.runners.FlowInputOutput;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.runners.RunnerUtils;
 import io.kestra.core.runners.SubflowExecution;
 import io.kestra.core.runners.SubflowExecutionResult;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import lombok.experimental.SuperBuilder;
 
 import lombok.Builder;
@@ -83,6 +84,7 @@ public class Subflow extends Task implements ExecutableTask<Subflow.Output>, Chi
         description = "By default, the last, i.e. the most recent, revision of the subflow is executed."
     )
     @PluginProperty(dynamic = true)
+    @Min(value = 1)
     private Integer revision;
 
     @Schema(
@@ -200,9 +202,9 @@ public class Subflow extends Task implements ExecutableTask<Subflow.Output>, Chi
         if (subflowOutputs != null) {
             try {
                 Map<String, Object> outputs = runContext.render(subflowOutputs);
-                RunnerUtils runnerUtils = runContext.getApplicationContext().getBean(RunnerUtils.class); // this is hacking
-                if (flow.getOutputs() != null && runnerUtils != null) {
-                    outputs = runnerUtils.typedOutputs(flow, execution, outputs);
+                FlowInputOutput flowInputOutput = runContext.getApplicationContext().getBean(FlowInputOutput.class); // this is hacking
+                if (flow.getOutputs() != null && flowInputOutput != null) {
+                    outputs = flowInputOutput.typedOutputs(flow, execution, outputs);
                 }
                 builder.outputs(outputs);
             } catch (Exception e) {

@@ -64,6 +64,7 @@
     import {mapGetters} from "vuex";
     import BookMultipleOutline from "vue-material-design-icons/BookMultipleOutline.vue";
     import Close from "vue-material-design-icons/Close.vue";
+    import {TabFocus} from "monaco-editor/esm/vs/editor/browser/config/tabFocus.js";
 
     const MonacoEditor = defineAsyncComponent(() =>
         import("./MonacoEditor.vue")
@@ -102,7 +103,6 @@
                     BookMultipleOutline: shallowRef(BookMultipleOutline),
                     Close: shallowRef(Close)
                 },
-                oldDecorations: [],
                 editorDocumentation: undefined,
                 plugin: undefined,
                 taskType: undefined,
@@ -209,6 +209,8 @@
 
                 this.editor = editor;
 
+                this.decorations = this.editor.createDecorationsCollection();
+
                 if (!this.original) {
                     this.editor.onDidBlurEditorWidget(() => {
                         this.$emit("focusout", editor.getValue());
@@ -222,18 +224,25 @@
                     this.$refs.monacoEditor.focus();
                 }
 
-                this.editor.addAction({
-                    id: "kestra-save",
-                    label: "Save",
-                    keybindings: [
-                        KeyMod.CtrlCmd | KeyCode.KeyS,
-                    ],
-                    contextMenuGroupId: "navigation",
-                    contextMenuOrder: 1.5,
-                    run: (ed) => {
-                        this.$emit("save", ed.getValue())
+                if (!this.readOnly) {
+                    this.editor.addAction({
+                        id: "kestra-save",
+                        label: "Save",
+                        keybindings: [
+                            KeyMod.CtrlCmd | KeyCode.KeyS,
+                        ],
+                        contextMenuGroupId: "navigation",
+                        contextMenuOrder: 1.5,
+                        run: (ed) => {
+                            this.$emit("save", ed.getValue())
+                        }
+                    });
+                }
+                else {
+                    if (this.lang === "json") {
+                        editor.getAction("editor.action.formatDocument").run()
                     }
-                });
+                }
 
                 this.editor.addAction({
                     id: "kestra-execute",
@@ -248,13 +257,15 @@
                     }
                 });
 
+                // TabFocus is global to all editor so revert the behavior on non inputs
+                this.editor.onDidFocusEditorText(() => {
+                    TabFocus.setTabFocusMode(this.input);
+                })
+
                 if (this.input) {
-                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyF, () => {
-                    })
-                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyH, () => {
-                    })
-                    this.editor.addCommand(KeyCode.F1, () => {
-                    })
+                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyF, () => {});
+                    this.editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyH, () => {});
+                    this.editor.addCommand(KeyCode.F1, () => {});
                 }
 
                 if (this.original === undefined && this.navbar && this.fullHeight) {
@@ -308,27 +319,27 @@
                     this.editor.onDidContentSizeChange(_ => {
                         if (this.guidedProperties.monacoRange) {
                             editor.revealLine(this.guidedProperties.monacoRange.endLineNumber);
-                            let decorations = [
-                                {
-                                    range: this.guidedProperties.monacoRange,
-                                    options: {
-                                        isWholeLine: true,
-                                        inlineClassName: "highlight-text"
-                                    },
-                                    className: "highlight-text",
-                                }
-                            ];
-                            decorations = this.guidedProperties.monacoDisableRange ? decorations.concat([
-                                {
+                            const decorationsToAdd = [];
+                            decorationsToAdd.push({
+                                range: this.guidedProperties.monacoRange,
+                                options: {
+                                    isWholeLine: true,
+                                    inlineClassName: "highlight-text"
+                                },
+                                className: "highlight-text",
+                            });
+                            if (this.guidedProperties.monacoDisableRange) {
+                                decorationsToAdd.push({
                                     range: this.guidedProperties.monacoDisableRange,
                                     options: {
                                         isWholeLine: true,
                                         inlineClassName: "disable-text"
                                     },
                                     className: "disable-text",
-                                },
-                            ]) : decorations;
-                            this.oldDecorations = this.editor.deltaDecorations(this.oldDecorations, decorations)
+                                });
+                            }
+
+                            this.decorations.set(decorationsToAdd);
                         } else {
                             this.highlightPebble();
                         }
@@ -363,14 +374,14 @@
             highlightPebble() {
                 // Highlight code that match pebble content
                 let model = this.editor.getModel();
-                let decorations = [];
                 let text = model.getValue();
                 let regex = new RegExp("\\{\\{(.+?)}}", "g");
                 let match;
+                const decorationsToAdd = [];
                 while ((match = regex.exec(text)) !== null) {
                     let startPos = model.getPositionAt(match.index);
                     let endPos = model.getPositionAt(match.index + match[0].length);
-                    decorations.push({
+                    decorationsToAdd.push({
                         range: {
                             startLineNumber: startPos.lineNumber,
                             startColumn: startPos.column,
@@ -382,7 +393,7 @@
                         }
                     });
                 }
-                this.oldDecorations = this.editor.deltaDecorations(this.oldDecorations, decorations);
+                this.decorations.set(decorationsToAdd);
             }
         },
     };
@@ -515,10 +526,10 @@
         height: 100%;
 
         &.get-started {
-            background: url("../../assets/onboarding/onboarding-started-light.svg") no-repeat center;
+            background: url("../../assets/onboarding/onboarding-doc-light.svg") no-repeat center;
 
             html.dark & {
-                background: url("../../assets/onboarding/onboarding-started-dark.svg") no-repeat center;
+                background: url("../../assets/onboarding/onboarding-doc-dark.svg") no-repeat center;
             }
         }
     }
