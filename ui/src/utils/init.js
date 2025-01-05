@@ -17,6 +17,7 @@ import {
     PointElement,
     Tooltip,
     Filler,
+    Legend,
     ArcElement,
     DoughnutController,
 } from "chart.js";
@@ -58,6 +59,7 @@ export default (app, routes, stores, translations) => {
         ArcElement,
         DoughnutController,
         Tooltip,
+        Legend,
         CategoryScale,
         LinearScale,
         TreemapController,
@@ -74,6 +76,11 @@ export default (app, routes, stores, translations) => {
         history: createWebHistory(KESTRA_UI_PATH),
         routes
     });
+
+    router.afterEach((to) => {
+        window.dispatchEvent(new CustomEvent("KestraRouterAfterEach", to))
+    })
+
     app.use(router)
 
     // Google Analytics

@@ -1,15 +1,18 @@
 package io.kestra.core.services;
 
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
-import org.junit.jupiter.api.Test;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.Type;
+import io.kestra.core.models.flows.input.StringInput;
+import io.kestra.core.tasks.debugs.Echo;
 import io.kestra.core.tasks.debugs.Return;
+import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import jakarta.inject.Inject;
+import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -114,5 +117,30 @@ class FlowServiceTest {
 
         assertThat(warnings.size(), is(1));
         assertThat(warnings.get(0), containsString("The system namespace is reserved for background workflows"));
+    }
+
+    @Test
+    void propertyRenamingDeprecation() {
+        Flow flow = Flow.builder()
+            .id("flowId")
+            .namespace("io.kestra.unittest")
+            .inputs(List.of(
+                StringInput.builder()
+                    .id("inputWithId")
+                    .type(Type.STRING)
+                    .build(),
+                StringInput.builder()
+                    .name("inputWithName")
+                    .type(Type.STRING)
+                    .build()
+            ))
+            .tasks(Collections.singletonList(Echo.builder()
+                .id("taskId")
+                .type(Return.class.getName())
+                .format("test")
+                .build()))
+            .build();
+
+        assertThat(flowService.deprecationPaths(flow), containsInAnyOrder("inputs[1].name", "tasks[0]"));
     }
 }

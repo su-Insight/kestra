@@ -17,21 +17,33 @@ export default {
         list({commit}) {
             return this.$http.get(`${apiUrl(this)}/plugins`, {}).then(response => {
                 commit("setPlugins", response.data)
-                commit("setPluginSingleList", response.data.map(plugin => plugin.tasks.concat(plugin.triggers, plugin.conditions, plugin.controllers, plugin.storages, plugin.scriptRunners)).flat())
+                commit("setPluginSingleList", response.data.map(plugin => plugin.tasks.concat(plugin.triggers, plugin.conditions, plugin.controllers, plugin.storages, plugin.taskRunners)).flat())
                 return response.data;
             })
         },
-        load({commit}, options) {
+        load({commit, state}, options) {
             if (options.cls === undefined) {
                 throw new Error("missing required cls");
             }
 
+            const cachedPluginDoc = state.pluginsDocumentation[options.cls];
+            if (!options.all && cachedPluginDoc) {
+                return Promise.resolve(cachedPluginDoc);
+            }
+
             return this.$http.get(`${apiUrl(this)}/plugins/${options.cls}`, {params: options}).then(response => {
-                if (options.all === true) {
-                    commit("setPluginAllProps", response.data)
-                } else {
-                    commit("setPlugin", response.data)
+                if (options.commit !== false) {
+                    if (options.all === true) {
+                        commit("setPluginAllProps", response.data);
+                    } else {
+                        commit("setPlugin", response.data);
+                    }
                 }
+
+                if (!options.all) {
+                    commit("addPluginDocumentation", {[options.cls]: response.data});
+                }
+
                 return response.data;
             })
         },
@@ -51,6 +63,13 @@ export default {
                 commit("setIcons", icons);
 
                 return icons;
+            });
+        },
+        groupIcons(_) {
+            return Promise.all([
+                this.$http.get(`${apiUrl(this)}/plugins/icons/groups`, {}),
+            ]).then(responses => {
+                return responses[0].data
             });
         },
         loadInputsType({commit}) {
@@ -92,6 +111,9 @@ export default {
         },
         setPluginsDocumentation(state, pluginsDocumentation) {
             state.pluginsDocumentation = pluginsDocumentation
+        },
+        addPluginDocumentation(state, pluginDocumentation) {
+            state.pluginsDocumentation = {...state.pluginsDocumentation, ...pluginDocumentation}
         },
         setEditorPlugin(state, editorPlugin) {
             state.editorPlugin = editorPlugin
