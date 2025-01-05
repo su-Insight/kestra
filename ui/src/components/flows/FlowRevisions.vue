@@ -1,5 +1,5 @@
 <template>
-    <div v-if="revisions && revisions.length > 1">
+    <div class="flow-revision" v-if="revisions && revisions.length > 1">
         <el-select v-model="sideBySide" class="mb-3">
             <el-option
                 v-for="item in displayTypes"
@@ -9,7 +9,7 @@
             />
         </el-select>
         <el-row :gutter="15">
-            <el-col :span="12">
+            <el-col :span="12" v-if="revisionLeft !== undefined">
                 <div class="revision-select mb-3">
                     <el-select v-model="revisionLeft">
                         <el-option
@@ -36,7 +36,7 @@
 
                 <crud class="mt-3" permission="FLOW" :detail="{namespace: $route.params.namespace, flowId: $route.params.id, revision: revisionNumber(revisionLeft)}" />
             </el-col>
-            <el-col :span="12">
+            <el-col :span="12" v-if="revisionRight !== undefined">
                 <div class="revision-select mb-3">
                     <el-select v-model="revisionRight">
                         <el-option
@@ -65,24 +65,22 @@
             </el-col>
         </el-row>
 
-        <div ref="editorContainer" class="mt-3">
-            <editor
-                :diff-side-by-side="sideBySide"
-                :model-value="revisionRightText"
-                :original="revisionLeftText"
-                lang="yaml"
-                :show-doc="false"
-            />
-        </div>
+        <editor
+            class="mt-1"
+            :diff-side-by-side="sideBySide"
+            :model-value="revisionRightText"
+            :original="revisionLeftText"
+            lang="yaml"
+            :show-doc="false"
+        />
 
-
-        <el-drawer v-if="isModalOpen" v-model="isModalOpen" destroy-on-close :append-to-body="true" size="">
+        <drawer v-if="isModalOpen" v-model="isModalOpen">
             <template #header>
                 <h5>{{ $t("revision") + `: ` + revision }}</h5>
             </template>
 
             <editor v-model="revisionYaml" lang="yaml" />
-        </el-drawer>
+        </drawer>
     </div>
     <div v-else>
         <el-alert class="mb-0" show-icon :closable="false">
@@ -101,10 +99,11 @@
     import YamlUtils from "../../utils/yamlUtils";
     import Editor from "../../components/inputs/Editor.vue";
     import Crud from "override/components/auth/Crud.vue";
+    import Drawer from "../Drawer.vue";
     import {saveFlowTemplate} from "../../utils/flowTemplate";
 
     export default {
-        components: {Editor, Crud},
+        components: {Editor, Crud, Drawer},
         created() {
             this.load();
         },
@@ -220,8 +219,8 @@
         },
         data() {
             return {
-                revisionLeft: 0,
-                revisionRight: 0,
+                revisionLeft: undefined,
+                revisionRight: undefined,
                 revision: undefined,
                 revisionId: undefined,
                 revisionYaml: undefined,
@@ -235,15 +234,26 @@
         },
     };
 </script>
-<style scoped lang="scss">
-.revision-select {
-    display: flex;
 
-    > div {
-        &:first-child {
-            flex: 2;
+<style scoped lang="scss">
+    .flow-revision {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+    }
+
+    .ks-editor {
+        flex: 1;
+        padding-bottom: var(--spacer);
+    }
+
+    .revision-select {
+        display: flex;
+
+        > div {
+            &:first-child {
+                flex: 2;
+            }
         }
     }
-}
-
 </style>

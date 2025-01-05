@@ -4,11 +4,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.FlowWithSource;
 import io.kestra.core.models.triggers.AbstractTrigger;
+import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.serializers.JacksonMapper;
+import io.kestra.core.serializers.YamlFlowParser;
 import io.kestra.core.utils.ListUtils;
 import io.micronaut.context.ApplicationContext;
+import io.micronaut.context.annotation.Value;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -39,7 +43,34 @@ public class FlowService {
     ConditionService conditionService;
 
     @Inject
+    FlowRepositoryInterface flowRepository;
+
+    @Inject
+    YamlFlowParser yamlFlowParser;
+
+    @Inject
+    TaskDefaultService taskDefaultService;
+
+    @Inject
     ApplicationContext applicationContext;
+
+    @Value("${kestra.system-flows.namespace:system}")
+    private String systemFlowNamespace;
+
+    public FlowWithSource importFlow(String tenantId, String source) {
+        Flow withTenant = yamlFlowParser.parse(source, Flow.class).toBuilder()
+            .tenantId(tenantId)
+            .build();
+
+        return flowRepository
+            .findById(withTenant.getTenantId(), withTenant.getNamespace(), withTenant.getId())
+            .map(previous -> flowRepository.update(withTenant, previous, source, taskDefaultService.injectDefaults(withTenant)))
+            .orElseGet(() -> flowRepository.create(withTenant, source, taskDefaultService.injectDefaults(withTenant)));
+    }
+
+    public List<FlowWithSource> findByNamespaceWithSource(String tenantId, String namespace) {
+        return flowRepository.findByNamespaceWithSource(tenantId, namespace);
+    }
 
     public Stream<Flow> keepLastVersion(Stream<Flow> stream) {
         return keepLastVersionCollector(stream);
@@ -47,6 +78,13 @@ public class FlowService {
 
     public List<String> deprecationPaths(Flow flow) {
         return deprecationTraversal("", flow).toList();
+    }
+
+    public List<String> warnings(Flow flow) {
+        if (flow != null && flow.getNamespace() != null && flow.getNamespace().equals(systemFlowNamespace)) {
+            return List.of("The system namespace is reserved for background workflows intended to perform routine tasks such as sending alerts and purging logs. Please use another namespace name.");
+        }
+        return Collections.emptyList();
     }
 
     private Stream<String> deprecationTraversal(String prefix, Object object) {
@@ -143,6 +181,16 @@ public class FlowService {
                 .noneMatch(c -> c.getId().equals(p.getId()))
             )
             .collect(Collectors.toList());
+    }
+
+    public static List<AbstractTrigger> findUpdatedTrigger(Flow flow, Flow previous) {
+        return ListUtils.emptyOnNull(flow.getTriggers())
+            .stream()
+            .filter(oldTrigger -> ListUtils.emptyOnNull(previous.getTriggers())
+                .stream()
+                .anyMatch(trigger -> trigger.getId().equals(oldTrigger.getId()) && !trigger.equals(oldTrigger))
+            )
+            .toList();
     }
 
     public static String cleanupSource(String source) {

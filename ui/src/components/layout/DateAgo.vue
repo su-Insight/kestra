@@ -1,9 +1,11 @@
 <template>
-    <el-tooltip v-if="date" :content="inverted ? from : full" :persistent="false" transition="" :hide-after="0">
+    <el-tooltip :key="uid('tooltip')" v-if="date" :content="inverted ? from : full" :persistent="false" transition="" :hide-after="0">
         <span :class="className">{{ inverted ? full : from }}</span>
     </el-tooltip>
 </template>
 <script>
+    import Utils from "../../utils/utils";
+
     export default {
         props: {
             date: {
@@ -15,11 +17,17 @@
                 default: false
             },
             format: {
-                type: String
+                type: String,
+                default: undefined
             },
             className: {
                 type: String,
                 default: null
+            }
+        },
+        methods: {
+            uid(key) {
+                return key + "-" + Utils.uid();
             }
         },
         computed: {
@@ -28,7 +36,8 @@
             },
             full() {
                 return this.$filters.date(this.date, this.format);
-            }
+            },
+
         }
     };
 </script>

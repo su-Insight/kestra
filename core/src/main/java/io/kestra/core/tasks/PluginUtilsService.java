@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
 
@@ -62,7 +62,7 @@ abstract public class PluginUtilsService {
                         tempFile = File.createTempFile(s + "_", null, tempDirectory.toFile());
                     }
 
-                    result.put(s, "{{workingDir}}/" + tempFile.getName());
+                    result.put(s, additionalVars.get("workingDir") + "/" + tempFile.getName());
                 }));
 
             if (!isDir) {
@@ -82,15 +82,19 @@ abstract public class PluginUtilsService {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public static Map<String, String> transformInputFiles(RunContext runContext, @NotNull Object inputFiles) throws IllegalVariableEvaluationException, JsonProcessingException {
+        return PluginUtilsService.transformInputFiles(runContext, Collections.emptyMap(), inputFiles);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, String> transformInputFiles(RunContext runContext, Map<String, Object> additionalVars, @NotNull Object inputFiles) throws IllegalVariableEvaluationException, JsonProcessingException {
         if (inputFiles instanceof Map) {
             return (Map<String, String>) inputFiles;
         } else if (inputFiles instanceof String) {
             final TypeReference<Map<String, String>> reference = new TypeReference<>() {};
 
             return JacksonMapper.ofJson(false).readValue(
-                runContext.render((String) inputFiles),
+                runContext.render((String) inputFiles, additionalVars),
                 reference
             );
         } else {
