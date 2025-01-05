@@ -19,11 +19,12 @@ import BlueprintDetail from "../components/flows/blueprints/BlueprintDetail.vue"
 import Triggers from "../components/admin/Triggers.vue";
 import Workers from "../components/admin/Workers.vue";
 import Editor from "../components/namespace/Editor.vue";
+import Stats from "override/components/admin/stats/Stats.vue";
 
 
 export default [
     //Flows
-    {name: "root", path: '/', redirect: {name: 'home'}},
+    {name: "root", path: "/", redirect: {name: "home"}},
     {name: "home", path: "/:tenant?/dashboard", component: Home},
     {name: "welcome", path: "/:tenant?/welcome", component: Welcome},
 
@@ -66,6 +67,7 @@ export default [
     //Admin
     {name: "admin/triggers", path: "/:tenant?/admin/triggers", component: Triggers},
     {name: "admin/workers", path: "/:tenant?/admin/workers", component: Workers},
+    {name: "admin/stats", path: "/:tenant?/admin/stats", component: Stats},
 
     //Errors
     {name: "errors/404-wildcard", path: "/:pathMatch(.*)", component: Errors, props: {code: 404}},

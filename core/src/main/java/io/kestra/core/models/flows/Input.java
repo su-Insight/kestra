@@ -1,6 +1,7 @@
 package io.kestra.core.models.flows;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.kestra.core.models.flows.input.*;
@@ -10,11 +11,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
-import javax.validation.ConstraintViolationException;
-import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 @SuperBuilder
 @Getter
@@ -31,6 +32,7 @@ import javax.validation.constraints.Pattern;
     @JsonSubTypes.Type(value = FloatInput.class, name = "FLOAT"),
     @JsonSubTypes.Type(value = IntInput.class, name = "INT"),
     @JsonSubTypes.Type(value = JsonInput.class, name = "JSON"),
+    @JsonSubTypes.Type(value = SecretInput.class, name = "SECRET"),
     @JsonSubTypes.Type(value = StringInput.class, name = "STRING"),
     @JsonSubTypes.Type(value = TimeInput.class, name = "TIME"),
     @JsonSubTypes.Type(value = URIInput.class, name = "URI")
@@ -38,10 +40,10 @@ import javax.validation.constraints.Pattern;
 public abstract class Input<T> {
     @NotNull
     @NotBlank
-    @Pattern(regexp="[.a-zA-Z0-9_-]+")
-    String name;
+    @Pattern(regexp="^[a-zA-Z0-9][.a-zA-Z0-9_-]*")
+    String id;
 
-    @NotBlank
+
     @NotNull
     @Valid
     Type type;
@@ -55,6 +57,14 @@ public abstract class Input<T> {
 
     public abstract void validate(T input) throws ConstraintViolationException;
 
+    @JsonSetter
+    @Deprecated
+    public void setName(String name) {
+        if (this.id == null) {
+            this.id = name;
+        }
+    }
+
     @Introspected
     public enum Type {
         STRING(StringInput.class.getName()),
@@ -67,7 +77,8 @@ public abstract class Input<T> {
         DURATION(DurationInput.class.getName()),
         FILE(FileInput.class.getName()),
         JSON(JsonInput.class.getName()),
-        URI(URIInput.class.getName());
+        URI(URIInput.class.getName()),
+        SECRET(SecretInput.class.getName());
 
         private final String clsName;
 

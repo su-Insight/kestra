@@ -8,8 +8,8 @@ import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -156,10 +156,12 @@ public class State {
         SUCCESS,
         WARNING,
         FAILED,
-        KILLED;
+        KILLED,
+        CANCELLED,
+        QUEUED;
 
         public boolean isTerminated() {
-            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED;
+            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED || this ==  Type.CANCELLED;
         }
 
         public boolean isCreated() {

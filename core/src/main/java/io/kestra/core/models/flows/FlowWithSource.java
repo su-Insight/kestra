@@ -24,6 +24,7 @@ public class FlowWithSource extends Flow {
             .description(this.description)
             .labels(this.labels)
             .inputs(this.inputs)
+            .outputs(this.outputs)
             .variables(this.variables)
             .tasks(this.tasks)
             .errors(this.errors)
@@ -32,6 +33,7 @@ public class FlowWithSource extends Flow {
             .taskDefaults(this.taskDefaults)
             .disabled(this.disabled)
             .deleted(this.deleted)
+            .concurrency(this.concurrency)
             .build();
     }
 
@@ -58,12 +60,14 @@ public class FlowWithSource extends Flow {
 
     public static FlowWithSource of(Flow flow, String source) {
         return FlowWithSource.builder()
+            .tenantId(flow.tenantId)
             .id(flow.id)
             .namespace(flow.namespace)
             .revision(flow.revision)
             .description(flow.description)
             .labels(flow.labels)
             .inputs(flow.inputs)
+            .outputs(flow.outputs)
             .variables(flow.variables)
             .tasks(flow.tasks)
             .errors(flow.errors)
@@ -73,6 +77,7 @@ public class FlowWithSource extends Flow {
             .disabled(flow.disabled)
             .deleted(flow.deleted)
             .source(source)
+            .concurrency(flow.concurrency)
             .build();
     }
 }

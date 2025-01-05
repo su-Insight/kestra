@@ -8,10 +8,11 @@ import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.storages.StorageInterface;
+import io.micronaut.context.annotation.Property;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -31,6 +32,7 @@ import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SuppressWarnings("OptionalGetWithoutIsPresent")
+@Property(name = "kestra.crypto.secret-key", value = "I6EGNzRESu3X3pKZidrqCGOHQFUFC0yK")
 public class InputsTest extends AbstractMemoryRunnerTest {
     public static Map<String, Object> inputs = ImmutableMap.<String, Object>builder()
         .put("string", "myString")
@@ -41,7 +43,7 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         .put("date", "2019-10-06")
         .put("time", "18:27:49")
         .put("duration", "PT5M6S")
-        .put("file", Objects.requireNonNull(InputsTest.class.getClassLoader().getResource("application.yml")).getPath())
+        .put("file", Objects.requireNonNull(InputsTest.class.getClassLoader().getResource("application-test.yml")).getPath())
         .put("json", "{\"a\": \"b\"}")
         .put("uri", "https://www.google.com")
         .put("nested.string", "a string")
@@ -54,6 +56,7 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         .put("validatedDuration", "PT15S")
         .put("validatedFloat", "0.42")
         .put("validatedTime", "11:27:49")
+        .put("secret", "secret")
         .build();
 
     @Inject
@@ -71,8 +74,9 @@ public class InputsTest extends AbstractMemoryRunnerTest {
             flow,
             Execution.builder()
                 .id("test")
-                .namespace("test")
+                .namespace(flow.getNamespace())
                 .flowRevision(1)
+                .flowId(flow.getId())
                 .build(),
             map
         );
@@ -108,7 +112,7 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         assertThat(typeds.get("date"), is(LocalDate.parse("2019-10-06")));
         assertThat(typeds.get("time"), is(LocalTime.parse("18:27:49")));
         assertThat(typeds.get("duration"), is(Duration.parse("PT5M6S")));
-        assertThat((URI) typeds.get("file"), is(new URI("kestra:///io/kestra/tests/inputs/executions/test/inputs/file/application.yml")));
+        assertThat((URI) typeds.get("file"), is(new URI("kestra:///io/kestra/tests/inputs/executions/test/inputs/file/application-test.yml")));
         assertThat(
             CharStreams.toString(new InputStreamReader(storageInterface.get(null, (URI) typeds.get("file")))),
             is(CharStreams.toString(new InputStreamReader(new FileInputStream((String) inputs.get("file")))))
@@ -125,6 +129,7 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         assertThat(typeds.get("validatedDuration"), is(Duration.parse("PT15S")));
         assertThat(typeds.get("validatedFloat"), is(0.42F));
         assertThat(typeds.get("validatedTime"), is(LocalTime.parse("11:27:49")));
+        assertThat(typeds.get("secret"), not("secret")); // secret inputs are encrypted
     }
 
     @Test
@@ -150,11 +155,16 @@ public class InputsTest extends AbstractMemoryRunnerTest {
             (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, inputs)
         );
 
-        assertThat(execution.getTaskRunList(), hasSize(5));
+        assertThat(execution.getTaskRunList(), hasSize(6));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
         assertThat(
             (String) execution.findTaskRunsByTaskId("file").get(0).getOutputs().get("value"),
-            matchesRegex("kestra:///io/kestra/tests/inputs/executions/.*/inputs/file/application.yml")
+            matchesRegex("kestra:///io/kestra/tests/inputs/executions/.*/inputs/file/application-test.yml")
+        );
+        // secret inputs are decrypted to be used as task properties
+        assertThat(
+            (String) execution.findTaskRunsByTaskId("secret").get(0).getOutputs().get("value"),
+            is("secret")
         );
     }
 

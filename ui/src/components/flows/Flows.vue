@@ -108,8 +108,12 @@
                             </bulk-select>
                         </template>
                         <template #default>
-                            <el-table-column prop="id" sortable="custom" :sort-orders="['ascending', 'descending']"
-                                             :label="$t('id')">
+                            <el-table-column
+                                prop="id"
+                                sortable="custom"
+                                :sort-orders="['ascending', 'descending']"
+                                :label="$t('id')"
+                            >
                                 <template #default="scope">
                                     <router-link
                                         :to="{name: 'flows/update', params: {namespace: scope.row.namespace, id: scope.row.id}}"
@@ -117,10 +121,10 @@
                                         {{ $filters.invisibleSpace(scope.row.id) }}
                                     </router-link>
                                     &nbsp;<markdown-tooltip
-                                    :id="scope.row.namespace + '-' + scope.row.id"
-                                    :description="scope.row.description"
-                                    :title="scope.row.namespace + '.' + scope.row.id"
-                                />
+                                        :id="scope.row.namespace + '-' + scope.row.id"
+                                        :description="scope.row.description"
+                                        :title="scope.row.namespace + '.' + scope.row.id"
+                                    />
                                 </template>
                             </el-table-column>
 
@@ -130,10 +134,33 @@
                                 </template>
                             </el-table-column>
 
-                            <el-table-column prop="namespace" sortable="custom"
-                                             :sort-orders="['ascending', 'descending']"
-                                             :label="$t('namespace')"
-                                             :formatter="(_, __, cellValue) => $filters.invisibleSpace(cellValue)" />
+                            <el-table-column
+                                prop="namespace"
+                                sortable="custom"
+                                :sort-orders="['ascending', 'descending']"
+                                :label="$t('namespace')"
+                                :formatter="(_, __, cellValue) => $filters.invisibleSpace(cellValue)"
+                            />
+
+                            <el-table-column
+                                prop="state.startDate"
+                                :label="$t('last execution date')"
+                                v-if="user.hasAny(permission.EXECUTION)"
+                            >
+                                <template #default="scope">
+                                    <date-ago v-if="lastExecutionByFlowReady" :inverted="true" :date="getLastExecution(scope.row).startDate" />
+                                </template>
+                            </el-table-column>
+
+                            <el-table-column
+                                prop="state.current"
+                                :label="$t('last execution status')"
+                                v-if="user.hasAny(permission.EXECUTION)"
+                            >
+                                <template #default="scope">
+                                    <status v-if="lastExecutionByFlowReady && getLastExecution(scope.row).lastStatus" :status="getLastExecution(scope.row).lastStatus" size="small" />
+                                </template>
+                            </el-table-column>
 
                             <el-table-column
                                 prop="state"
@@ -161,7 +188,8 @@
                             <el-table-column column-key="action" class-name="row-action">
                                 <template #default="scope">
                                     <router-link
-                                        :to="{name: 'flows/update', params : {namespace: scope.row.namespace, id: scope.row.id}}">
+                                        :to="{name: 'flows/update', params : {namespace: scope.row.namespace, id: scope.row.id}}"
+                                    >
                                         <kicon :tooltip="$t('details')" placement="left">
                                             <TextSearch />
                                         </kicon>
@@ -197,12 +225,14 @@
     import TopNavBar from "../../components/layout/TopNavBar.vue";
     import RouteContext from "../../mixins/routeContext";
     import DataTableActions from "../../mixins/dataTableActions";
+    import DateAgo from "../layout/DateAgo.vue";
     import SelectTableActions from "../../mixins/selectTableActions";
     import RestoreUrl from "../../mixins/restoreUrl";
     import DataTable from "../layout/DataTable.vue";
     import SearchField from "../layout/SearchField.vue";
     import StateChart from "../stats/StateChart.vue";
     import StateGlobalChart from "../stats/StateGlobalChart.vue";
+    import Status from "../Status.vue";
     import TriggerAvatar from "./TriggerAvatar.vue";
     import MarkdownTooltip from "../layout/MarkdownTooltip.vue"
     import Kicon from "../Kicon.vue"
@@ -216,9 +246,11 @@
             NamespaceSelect,
             TextSearch,
             DataTable,
+            DateAgo,
             SearchField,
             StateChart,
             StateGlobalChart,
+            Status,
             TriggerAvatar,
             MarkdownTooltip,
             Kicon,
@@ -233,13 +265,14 @@
                 permission: permission,
                 action: action,
                 dailyGroupByFlowReady: false,
+                lastExecutionByFlowReady: false,
                 dailyReady: false,
                 file: undefined,
             };
         },
         computed: {
             ...mapState("flow", ["flows", "total"]),
-            ...mapState("stat", ["dailyGroupByFlow", "daily"]),
+            ...mapState("stat", ["dailyGroupByFlow", "daily", "lastExecutions"]),
             ...mapState("auth", ["user"]),
             routeInfo() {
                 return {
@@ -404,6 +437,22 @@
                     return [];
                 }
             },
+            getLastExecution(row) {
+                let noState = {state: null, startDate: null}
+                if (this.lastExecutions && this.lastExecutions.length > 0) {
+                    let filteredFlowExec = this.lastExecutions.filter((executedFlow) => executedFlow.flowId == row.id && executedFlow.namespace == row.namespace)
+                    if (filteredFlowExec.length > 0) {
+                        return {
+                            lastStatus: filteredFlowExec[0].state?.current,
+                            startDate: filteredFlowExec[0].state?.startDate
+                        }
+                    }
+                    return noState
+                }
+                else {
+                    return noState
+                }
+            },
             loadQuery(base) {
                 let queryFilter = this.queryWithFilter();
 
@@ -431,7 +480,7 @@
                     }))
                     .then(flows => {
                         this.dailyGroupByFlowReady = false;
-                        callback();
+                        this.lastExecutionByFlowReady = false;
 
                         if (flows.results && flows.results.length > 0) {
                             if (this.user && this.user.hasAny(permission.EXECUTION)) {
@@ -447,9 +496,21 @@
                                     .then(() => {
                                         this.dailyGroupByFlowReady = true
                                     })
+
+                                this.$store
+                                    .dispatch("stat/lastExecutions", {
+                                        flows: flows.results
+                                            .map(flow => {
+                                                return {namespace: flow.namespace, id: flow.id}
+                                            }),
+                                    })
+                                    .then(() => {
+                                        this.lastExecutionByFlowReady = true
+                                    })
                             }
                         }
                     })
+                    .finally(callback);
             },
             rowClasses(row) {
                 return row && row.row && row.row.disabled ? "disabled" : "";
