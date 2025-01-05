@@ -46,18 +46,23 @@
         </el-table>
 
         <div v-if="execution.trigger" class="mt-4">
-            <h5>{{ $t('trigger') }}</h5>
+            <h5>{{ $t("trigger") }}</h5>
             <vars :execution="execution" :data="execution.trigger" />
         </div>
 
         <div v-if="execution.inputs" class="mt-4">
-            <h5>{{ $t('inputs') }}</h5>
+            <h5>{{ $t("inputs") }}</h5>
             <vars :execution="execution" :data="inputs" />
         </div>
 
         <div v-if="execution.variables" class="mt-4">
-            <h5>{{ $t('variables') }}</h5>
+            <h5>{{ $t("variables") }}</h5>
             <vars :execution="execution" :data="execution.variables" />
+        </div>
+
+        <div v-if="execution.outputs" class="mt-4">
+            <h5>{{ $t("outputs") }}</h5>
+            <vars :execution="execution" :data="execution.outputs" />
         </div>
     </div>
 </template>
@@ -96,9 +101,7 @@
                 if (!this.execution || State.isRunning(this.execution.state.current)) {
                     return new Date().toISOString(true)
                 } else {
-                    return this.execution.state.histories[
-                        this.execution.state.histories.length - 1
-                    ].date;
+                    return this.execution.state.histories[this.execution.state.histories.length - 1].date;
                 }
             }
         },
@@ -113,6 +116,7 @@
             }
         },
         computed: {
+            ...mapState("flow", ["flow"]),
             ...mapState("execution", ["execution"]),
             items() {
                 if (!this.execution) {
@@ -163,14 +167,26 @@
                 return ret;
             },
             inputs() {
-                return toRaw(this.execution.inputs);
+                if (!this.flow) {
+                    return []
+                }
+
+                let inputs = toRaw(this.execution.inputs);
+                Object.keys(inputs).forEach(key => {
+                    this.flow.inputs.forEach(input => {
+                        if (key === input.name && input.type === "SECRET") {
+                            inputs[key] = "******";
+                        }
+                    })
+                })
+                return inputs;
             }
         },
     };
 </script>
 <style scoped lang="scss">
-.crud-align {
-    display: flex;
-    align-items: center;
-}
+    .crud-align {
+        display: flex;
+        align-items: center;
+    }
 </style>

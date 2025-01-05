@@ -11,12 +11,13 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
+import org.slf4j.event.Level;
 
 import java.util.List;
-import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "type", visible = true, include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @SuperBuilder
@@ -27,14 +28,14 @@ import javax.validation.constraints.Pattern;
 abstract public class AbstractTrigger {
     @NotNull
     @NotBlank
-    @Pattern(regexp="[a-zA-Z0-9_-]+")
-    @Schema(title = "A unique id for the whole flow")
+    @Pattern(regexp="^[a-zA-Z0-9][a-zA-Z0-9_-]*")
+    @Schema(title = "A unique ID for the whole flow.")
     protected String id;
 
     @NotNull
     @NotBlank
     @Pattern(regexp="\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*(\\.\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)*")
-    @Schema(title = "The class name for this current trigger")
+    @Schema(title = "The class name for this current trigger.")
     protected String type;
 
     private String description;
@@ -42,7 +43,7 @@ abstract public class AbstractTrigger {
     @Valid
     @PluginProperty
     @Schema(
-        title = "List of Conditions in order to limit the flow trigger."
+        title = "List of conditions in order to limit the flow trigger."
     )
     private List<Condition> conditions;
 
@@ -52,4 +53,6 @@ abstract public class AbstractTrigger {
 
     @Valid
     private WorkerGroup workerGroup;
+
+    private Level minLogLevel;
 }

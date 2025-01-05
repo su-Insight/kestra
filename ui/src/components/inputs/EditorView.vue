@@ -4,12 +4,6 @@
 
     // Icons
     import ContentSave from "vue-material-design-icons/ContentSave.vue";
-    import LightningBolt from "vue-material-design-icons/LightningBolt.vue";
-    import FileEdit from "vue-material-design-icons/FileEdit.vue";
-    import Exclamation from "vue-material-design-icons/Exclamation.vue";
-    import DotsVertical from "vue-material-design-icons/DotsVertical.vue";
-    import ContentCopy from "vue-material-design-icons/ContentCopy.vue";
-    import Delete from "vue-material-design-icons/Delete.vue";
 
     import ValidationError from "../flows/ValidationError.vue";
     import Blueprints from "override/components/flows/blueprints/Blueprints.vue";
@@ -28,6 +22,7 @@
     import {editorViewTypes} from "../../utils/constants";
     import Utils from "@kestra-io/ui-libs/src/utils/Utils";
     import {apiUrl} from "override/utils/route";
+    import EditorButtons from "./EditorButtons.vue";
 
     const store = useStore();
     const router = getCurrentInstance().appContext.config.globalProperties.$router;
@@ -81,8 +76,8 @@
         },
         guidedProperties: {
             type: Object,
-            default: {
-                tourStarted: false
+            default: () => {
+                return {tourStarted: false};
             }
         },
         flowError: {
@@ -95,7 +90,7 @@
         },
         expandedSubflows: {
             type: Array,
-            default: []
+            default: () => []
         }
     })
 
@@ -521,7 +516,12 @@
                         store.dispatch("core/isUnsaved", false);
                         router.push({
                             name: "flows/update",
-                            params: {id: flowParsed.id, namespace: flowParsed.namespace, tab: "editor"}
+                            params: {
+                                id: flowParsed.id,
+                                namespace: flowParsed.namespace,
+                                tab: "editor",
+                                tenant: routeParams.tenant
+                            }
                         });
                     })
             } else {
@@ -554,7 +554,7 @@
             user.isAllowed(
                 permission.FLOW,
                 action.DELETE,
-                namespace
+                props.namespace
             )
         );
     }
@@ -593,7 +593,10 @@
                             .dispatch("flow/deleteFlow", metadata)
                             .then(() => {
                                 return router.push({
-                                    name: "flows/list"
+                                    name: "flows/list",
+                                    params: {
+                                        tenant: routeParams.tenant
+                                    }
                                 });
                             })
                             .then(() => {
@@ -668,89 +671,37 @@
             @update:model-value="editorUpdate($event)"
             @cursor="updatePluginDocumentation($event)"
             :creating="isCreating"
-            @restartGuidedTour="() => persistViewType(editorViewTypes.SOURCE)"
+            @restart-guided-tour="() => persistViewType(editorViewTypes.SOURCE)"
             :read-only="isReadOnly"
         >
             <template #extends-navbar>
                 <ValidationError ref="validationDomElement" tooltip-placement="bottom-start" size="small" class="ms-2" :error="flowError" :warnings="flowWarnings" />
             </template>
             <template #buttons>
-                <ul>
-                    <li v-if="isAllowedEdit || canDelete">
-                        <el-dropdown>
-                            <el-button type="default" :disabled="isReadOnly">
-                                <DotsVertical title="" />
-                                {{ $t("actions") }}
-                            </el-button>
-                            <template #dropdown>
-                                <el-dropdown-menu class="m-dropdown-menu">
-                                    <el-dropdown-item
-                                        v-if="!props.isCreating && canDelete"
-                                        :icon="Delete"
-                                        size="large"
-                                        @click="deleteFlow"
-                                    >
-                                        {{ $t("delete") }}
-                                    </el-dropdown-item>
-
-                                    <el-dropdown-item
-                                        v-if="!props.isCreating"
-                                        :icon="ContentCopy"
-                                        size="large"
-                                        @click="() => router.push({name: 'flows/create', query: {copy: true}})"
-                                    >
-                                        {{ $t("copy") }}
-                                    </el-dropdown-item>
-                                    <el-dropdown-item
-                                        v-if="isAllowedEdit"
-                                        :icon="Exclamation"
-                                        size="large"
-                                        @click="isNewErrorOpen = true;"
-                                        :disabled="!flowHaveTasks()"
-                                    >
-                                        {{ $t("add global error handler") }}
-                                    </el-dropdown-item>
-                                    <el-dropdown-item
-                                        v-if="isAllowedEdit"
-                                        :icon="LightningBolt"
-                                        size="large"
-                                        @click="isNewTriggerOpen = true;"
-                                        :disabled="!flowHaveTasks()"
-                                    >
-                                        {{ $t("add trigger") }}
-                                    </el-dropdown-item>
-                                    <el-dropdown-item
-                                        v-if="isAllowedEdit"
-                                        :icon="FileEdit"
-                                        size="large"
-                                        @click="isEditMetadataOpen = true;"
-                                    >
-                                        {{ $t("edit metadata") }}
-                                    </el-dropdown-item>
-                                </el-dropdown-menu>
-                            </template>
-                        </el-dropdown>
-                    </li>
-                    <li>
-                        <el-button
-                            :icon="ContentSave"
-                            @click="save"
-                            v-if="isAllowedEdit"
-                            :type="flowError ? 'danger' : 'primary'"
-                            :disabled="!haveChange && !isCreating"
-                            class="edit-flow-save-button"
-                        >
-                            {{ $t("save") }}
-                        </el-button>
-                    </li>
-                </ul>
+                <EditorButtons
+                    v-if="![editorViewTypes.TOPOLOGY, editorViewTypes.SOURCE_TOPOLOGY].includes(viewType)"
+                    :is-creating="props.isCreating"
+                    :is-read-only="props.isReadOnly"
+                    :can-delete="canDelete()"
+                    :is-allowed-edit="isAllowedEdit()"
+                    :have-change="haveChange"
+                    :flow-have-tasks="flowHaveTasks()"
+                    :flow-error="flowError"
+                    @delete-flow="deleteFlow"
+                    @save="save"
+                    @copy="() => router.push({name: 'flows/create', query: {copy: true}, params: {tenant: routeParams.tenant}})"
+                    @open-new-error="isNewErrorOpen = true;"
+                    @open-new-trigger="isNewTriggerOpen = true;"
+                    @open-edit-metadata="isEditMetadataOpen = true;"
+                />
             </template>
         </editor>
         <div class="slider" @mousedown="dragEditor" v-if="combinedEditor" />
         <Blueprints v-if="viewType === 'source-blueprints' || blueprintsLoaded" @loaded="blueprintsLoaded = true" :class="{'d-none': viewType !== editorViewTypes.SOURCE_BLUEPRINTS}" embed class="combined-right-view enhance-readability" />
         <div
             class="topology-display"
-            :class="viewType === editorViewTypes.SOURCE_TOPOLOGY ? 'combined-right-view' : viewType === editorViewTypes.TOPOLOGY ? 'vueflow': 'hide-view'"
+            v-if="viewType === editorViewTypes.SOURCE_TOPOLOGY || viewType === editorViewTypes.TOPOLOGY"
+            :class="viewType === editorViewTypes.SOURCE_TOPOLOGY ? 'combined-right-view' : 'vueflow'"
         >
             <LowCodeEditor
                 v-if="flowGraph"
@@ -775,7 +726,7 @@
                 </template>
             </LowCodeEditor>
             <el-alert v-else type="warning" :closable="false">
-                {{ $t("unable to generate graph")}}
+                {{ $t("unable to generate graph") }}
             </el-alert>
         </div>
         <PluginDocumentation
@@ -859,6 +810,22 @@
             class="to-topology-button"
             @switch-view="switchViewType"
         />
+        <EditorButtons
+            v-if="[editorViewTypes.TOPOLOGY, editorViewTypes.SOURCE_TOPOLOGY].includes(viewType)"
+            :is-creating="props.isCreating"
+            :is-read-only="props.isReadOnly"
+            :can-delete="canDelete()"
+            :is-allowed-edit="isAllowedEdit()"
+            :have-change="haveChange"
+            :flow-have-tasks="flowHaveTasks()"
+            :flow-error="flowError"
+            @delete-flow="deleteFlow"
+            @save="save"
+            @copy="() => router.push({name: 'flows/create', query: {copy: true}, params: {tenant: routeParams.tenant}})"
+            @open-new-error="isNewErrorOpen = true;"
+            @open-new-trigger="isNewTriggerOpen = true;"
+            @open-edit-metadata="isEditMetadataOpen = true;"
+        />
     </el-card>
 </template>
 
@@ -877,6 +844,13 @@
         position: absolute;
         top: 30px;
         right: 45px;
+    }
+
+    .to-action-button {
+        position: absolute;
+        bottom: 30px;
+        right: 45px;
+        display: flex;
     }
 
     .editor-combined {

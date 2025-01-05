@@ -47,6 +47,18 @@
     &.no-focus {
         outline: none !important;
     }
+
+    &.wh-15 {
+        padding: 0;
+        border: 0;
+        width: 1.5rem;
+        height: 1.5rem;
+
+        * {
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+    }
 }
 
 .el-input-group__append, .el-input-group__prepend {
@@ -123,11 +135,24 @@
 
 
 .el-select {
+    &.fit-text .el-select__input {
+        width: fit-content !important;
+    }
     .el-tag {
         color: var(--el-select-input-color);
 
         html.dark & {
             background-color: var(--bs-gray-200);
+        }
+    }
+
+    .el-select__wrapper {
+        background-color: var(--input-bg);
+
+        &.is-disabled {
+            html.dark & {
+                background-color: var(--bs-gray-400);
+            }
         }
     }
 }
@@ -169,16 +194,22 @@ form.ks-horizontal {
         }
 
         @include res(sm) {
+            $label-size: math.div(1, 24) * 4 * 100 * 1%;
+            --label-size: #{$label-size};
+            &.small {
+                --label-size: calc(#{$label-size} / 2);
+            }
+
             .el-form-item__label {
-                max-width: (math.div(1, 24) * 4 * 100) * 1%;
-                flex: 0 0 (math.div(1, 24) * 4 * 100) * 1%;
+                max-width: var(--label-size);
+                flex: 0 0 var(--label-size);
                 text-align: right;
             }
 
             .el-form-item__content {
                 align-items: flex-start;
-                max-width: (math.div(1, 24) * 20 * 100) * 1%;
-                flex: 0 0 (math.div(1, 24) * 20 * 100) * 1%;
+                max-width: calc(100% - var(--label-size));
+                flex: 0 0 calc(100% - var(--label-size));
             }
         }
     }
@@ -357,7 +388,6 @@ form.ks-horizontal {
     .el-card__header {
         padding: $card-cap-padding-y $card-cap-padding-x;
         font-weight: bold;
-        font-size: var(--font-size-sm)
     }
 
 }
@@ -407,6 +437,7 @@ form.ks-horizontal {
 
     &.is-dark {
         color: var(--bs-gray-100);
+
         background: var(--bs-gray-900);
         border: 1px solid var(--bs-border-color);
 
@@ -730,6 +761,35 @@ form.ks-horizontal {
 
     .el-dialog__headerbtn .el-dialog__close {
         color: var(--bs-primary);
+    }
+
+    .bottom-buttons {
+        margin-top: 36px;
+        display: flex;
+
+        > * {
+            flex: 1;
+
+            * {
+                margin: 0;
+            }
+        }
+
+        .left-align {
+            &, & div {
+                gap: $spacer;
+                display: flex;
+                flex-direction: row
+            }
+        }
+
+        .right-align {
+            &, & div {
+                gap: $spacer;
+                display: flex;
+                flex-direction: row-reverse;
+            }
+        }
     }
 }
 

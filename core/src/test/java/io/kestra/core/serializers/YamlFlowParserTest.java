@@ -1,5 +1,6 @@
 package io.kestra.core.serializers;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Input;
@@ -14,7 +15,7 @@ import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -24,6 +25,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -123,11 +125,21 @@ class YamlFlowParserTest {
     void inputs() {
         Flow flow = this.parse("flows/valids/inputs.yaml");
 
-        assertThat(flow.getInputs().size(), is(24));
-        assertThat(flow.getInputs().stream().filter(Input::getRequired).count(), is(6L));
+        assertThat(flow.getInputs().size(), is(25));
+        assertThat(flow.getInputs().stream().filter(Input::getRequired).count(), is(7L));
         assertThat(flow.getInputs().stream().filter(r -> !r.getRequired()).count(), is(18L));
         assertThat(flow.getInputs().stream().filter(r -> r.getDefaults() != null).count(), is(1L));
         assertThat(flow.getInputs().stream().filter(r -> r instanceof StringInput && ((StringInput)r).getValidator() != null).count(), is(1L));
+    }
+
+
+    @Test
+    void inputsOld() {
+        Flow flow = this.parse("flows/tests/inputs-old.yaml");
+
+        assertThat(flow.getInputs().size(), is(1));
+        assertThat(flow.getInputs().get(0).getId(), is("myInput"));
+        assertThat(flow.getInputs().get(0).getType(), is(Input.Type.STRING));
     }
 
     @Test
@@ -180,6 +192,14 @@ class YamlFlowParserTest {
         assertThat(((Return) flow.getTasks().get(0)).getFormat(), containsString("\n"));
         assertThat(((Return) flow.getTasks().get(1)).getFormat(), containsString("Lorem Ipsum"));
         assertThat(((Return) flow.getTasks().get(1)).getFormat(), containsString("\n"));
+
+        // This ensures Handlebars TemplateFileLoader is reset between usages.
+        // Moreover, it also asserts that in case of loading a flow from a string (and not a file) leads to non-existent directory location to load files from
+        ConstraintViolationException constraintViolationException = assertThrows(
+            ConstraintViolationException.class,
+            () -> parseString("flows/helpers/include.yaml")
+        );
+        assertThat(constraintViolationException.getMessage(), endsWith("The partial '/lorem.txt.hbs' at '/lorem.txt.hbs' could not be found"));
     }
 
     @Test
@@ -212,11 +232,25 @@ class YamlFlowParserTest {
             () -> this.parse("flows/invalids/invalid-property.yaml")
         );
 
-        assertThat(exception.getMessage(), is("Unrecognized field \"invalid\" (class io.kestra.core.tasks.debugs.Return), not marked as ignorable (8 known properties: \"timeout\", \"format\", \"retry\", \"type\", \"id\", \"description\", \"workerGroup\", \"disabled\"])"));
+        assertThat(exception.getMessage(), is("Unrecognized field \"invalid\" (class io.kestra.core.tasks.debugs.Return), not marked as ignorable (10 known properties: \"logLevel\", \"timeout\", \"format\", \"retry\", \"type\", \"id\", \"description\", \"workerGroup\", \"disabled\", \"allowFailure\"])"));
         assertThat(exception.getConstraintViolations().size(), is(1));
         assertThat(exception.getConstraintViolations().iterator().next().getPropertyPath().toString(), is("io.kestra.core.models.flows.Flow[\"tasks\"]->java.util.ArrayList[0]->io.kestra.core.tasks.debugs.Return[\"invalid\"]"));
     }
 
+    @Test
+    void invalidPropertyOk() throws IOException {
+        URL resource = TestsUtils.class.getClassLoader().getResource("flows/invalids/invalid-property.yaml");
+        assert resource != null;
+
+        File file = new File(resource.getFile());
+        String flowSource = Files.readString(file.toPath(), Charset.defaultCharset());
+        TypeReference<Map<String, Object>> TYPE_REFERENCE = new TypeReference<>() {};
+        Map<String, Object> flow = JacksonMapper.ofYaml().readValue(flowSource, TYPE_REFERENCE);
+
+        Flow parse = yamlFlowParser.parse(flow, Flow.class, false);
+
+        assertThat(parse.getId(), is("duplicate"));
+    }
 
     @Test
     void includeFailed() {

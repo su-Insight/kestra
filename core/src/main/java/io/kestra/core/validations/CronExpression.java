@@ -1,10 +1,11 @@
 package io.kestra.core.validations;
 
-import javax.validation.Constraint;
+import io.kestra.core.validations.validator.CronExpressionValidator;
+import jakarta.validation.Constraint;
 import java.lang.annotation.*;
 
 @Retention(RetentionPolicy.RUNTIME)
-@Constraint(validatedBy = { })
+@Constraint(validatedBy = CronExpressionValidator.class)
 public @interface CronExpression {
     String message() default "invalid cron expression ({validatedValue})";
 }

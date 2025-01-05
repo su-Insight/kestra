@@ -22,6 +22,19 @@ micronaut:
     idle-timeout: 60m
     netty:
       max-chunk-size: 10MB
+      responses:
+        file:
+          cache-seconds: 86400
+          cache-control:
+            public: true
+
+      # Access log configuration, see https://docs.micronaut.io/latest/guide/index.html#accessLogger
+      access-logger:
+        enabled: true
+        logger-name: io.kestra.webserver.access
+        log-format: "[Date: %{yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'}t] [Duration: %D ms] [Method: %m] [Url: %x] [Status: %s] [Length: %b] [Ip: %a] [Port: %p]"
+        exclusions:
+          - /ui/.+
   caches:
     default:
       maximum-weight: 10485760
@@ -32,6 +45,11 @@ micronaut:
         url: https://api.kestra.io
 
       remote-api:
+        read-idle-timeout: 180s
+        connect-timeout: 180s
+        read-timeout: 180s
+
+      proxy:
         read-idle-timeout: 180s
         connect-timeout: 180s
         read-timeout: 180s
@@ -119,9 +137,9 @@ kestra:
       multipleconditions:
         table: "multipleconditions"
         cls: io.kestra.core.models.triggers.multipleflows.MultipleConditionWindow
-      workertaskexecutions:
-        table: "workertaskexecutions"
-        cls: io.kestra.core.runners.WorkerTaskExecution
+      subflow_executions:
+        table: "subflow_executions"
+        cls: io.kestra.core.runners.SubflowExecution
       executorstate:
         table: "executorstate"
         cls: io.kestra.core.runners.ExecutorState
@@ -140,6 +158,9 @@ kestra:
       workerjobrunning:
         cls: io.kestra.core.runners.WorkerJobRunning
         table: "worker_job_running"
+      executionqueued:
+        table: "execution_queued"
+        cls: io.kestra.core.runners.ExecutionQueued
 
     queues:
       min-poll-interval: 25ms
@@ -166,12 +187,6 @@ kestra:
     prefix: kestra
 
   server:
-    access-log:
-      enabled: true
-      name: io.kestra.webserver.access
-      format: "[Date: {}] [Duration: {} ms] [Method: {}] [Url: {}] [Status: {}] [Length: {}] [Ip: {}] [Port: {}]"
-      filters:
-        - ".*\\[Url: /api/.*"
     basic-auth:
       enabled: false
       # These URLs will not be authenticated, by default we open some of the Micronaut default endpoints but not all for security reasons
@@ -191,3 +206,9 @@ kestra:
   heartbeat:
     frequency: 10s
     heartbeat-missed: 3
+
+  tasks:
+    # Global configuration for task 'Subflow'
+    subflow:
+      # Enable/Disable the task parameter's outputs.
+      allow-parameter-outputs: false

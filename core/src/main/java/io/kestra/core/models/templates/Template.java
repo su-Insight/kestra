@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
 import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
 import io.kestra.core.models.DeletedInterface;
+import io.kestra.core.models.TenantInterface;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.validations.ManualConstraintViolation;
 import io.kestra.core.serializers.JacksonMapper;
@@ -17,13 +18,13 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.util.*;
-import javax.validation.ConstraintViolation;
-import javax.validation.ConstraintViolationException;
-import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 @SuperBuilder(toBuilder = true)
 @Getter
@@ -32,7 +33,7 @@ import javax.validation.constraints.Pattern;
 @Introspected
 @ToString
 @EqualsAndHashCode
-public class Template implements DeletedInterface {
+public class Template implements DeletedInterface, TenantInterface {
     private static final ObjectMapper YAML_MAPPER = JacksonMapper.ofYaml().copy()
         .setAnnotationIntrospector(new JacksonAnnotationIntrospector() {
             @Override
@@ -43,17 +44,17 @@ public class Template implements DeletedInterface {
         })
         .setSerializationInclusion(JsonInclude.Include.NON_DEFAULT);
 
-    @Pattern(regexp="[a-z0-9_-]+")
     @Hidden
+    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
     private String tenantId;
 
     @NotNull
     @NotBlank
-    @Pattern(regexp = "[a-zA-Z0-9._-]+")
+    @Pattern(regexp = "^[a-zA-Z0-9][a-zA-Z0-9._-]*")
     private String id;
 
     @NotNull
-    @Pattern(regexp="[a-z0-9._-]+")
+    @Pattern(regexp="^[a-z0-9][a-z0-9._-]*")
     private String namespace;
 
     String description;
