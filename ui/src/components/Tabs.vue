@@ -1,33 +1,43 @@
 <template>
-    <div class="tabs-nav">
-        <el-tabs class="nav-tabs-flow-root router-link" v-model="activeName">
-            <el-tab-pane
-                v-for="tab in tabs"
-                :key="tab.name"
-                :label="tab.title"
-                :name="tab.name || 'default'"
-                :disabled="tab.disabled"
-            >
-                <template #label>
-                    <component :is="embedActiveTab ? 'a' : 'router-link'" @click.native="embeddedTabChange(tab)" :to="embedActiveTab ? undefined : to(tab)">
-                        {{ tab.title }}
-                        <el-badge :type="tab.count > 0 ? 'danger' : 'primary'" :value="tab.count" v-if="tab.count !== undefined" />
-                    </component>
-                </template>
-            </el-tab-pane>
-        </el-tabs>
-        <component
-            v-bind="{...activeTab.props, ...attrsWithoutClass}"
-            v-on="activeTab['v-on'] ?? {}"
-            ref="tabContent"
-            :is="activeTab.component"
-            embed
-        />
-    </div>
+    <el-tabs class="router-link" :class="{top: top}" v-model="activeName">
+        <el-tab-pane
+            v-for="tab in tabs.filter(t => !t.hidden)"
+            :key="tab.name"
+            :label="tab.title"
+            :name="tab.name || 'default'"
+            :disabled="tab.disabled"
+        >
+            <template #label>
+                <component :is="embedActiveTab ? 'a' : 'router-link'" @click="embeddedTabChange(tab)" :to="embedActiveTab ? undefined : to(tab)">
+                    {{ tab.title }}
+                    <el-badge :type="tab.count > 0 ? 'danger' : 'primary'" :value="tab.count" v-if="tab.count !== undefined" />
+                </component>
+            </template>
+        </el-tab-pane>
+    </el-tabs>
+
+    <section ref="container" v-bind="$attrs" :class="{...containerClass, 'd-flex flex-row': isEditorActiveTab}">
+        <EditorSidebar v-if="isEditorActiveTab" ref="sidebar" :style="`flex: 0 0 calc(${explorerWidth}% - 11px);`" />
+        <div v-if="isEditorActiveTab && explorerVisible" @mousedown.prevent.stop="dragSidebar" class="slider" />
+        <div :style="`flex: 1 1 ${100 - (isEditorActiveTab && explorerVisible ? explorerWidth : 0)}%;`">
+            <component
+                v-bind="{...activeTab.props, ...attrsWithoutClass}"
+                v-on="activeTab['v-on'] ?? {}"
+                ref="tabContent"
+                :is="activeTab.component"
+                embed
+            />
+        </div>
+    </section>
 </template>
 
 <script>
+    import {mapState, mapMutations} from "vuex";
+
+    import EditorSidebar from "./inputs/EditorSidebar.vue";
+
     export default {
+        components: {EditorSidebar},
         props: {
             tabs: {
                 type: Array,
@@ -36,6 +46,10 @@
             routeName: {
                 type: String,
                 default: ""
+            },
+            top: {
+                type: Boolean,
+                default: true
             },
             /**
              * The active embedded tab. If this component is not embedded, keep it undefined.
@@ -72,8 +86,28 @@
             this.setActiveName();
         },
         methods: {
+            ...mapMutations("editor", ["changeExplorerWidth"]),
+            dragSidebar(e){
+                const SELF = this;
+
+                let dragX = e.clientX;
+
+                let blockWidth = this.$refs.sidebar.$el.offsetWidth;
+                let parentWidth = this.$refs.container.offsetWidth;
+
+                let blockWidthPercent = (blockWidth / parentWidth) * 100;
+
+                document.onmousemove = function onMouseMove(e) {
+                    let percent = blockWidthPercent + ((e.clientX - dragX) / parentWidth) * 100;
+                    SELF.changeExplorerWidth(percent)               
+                };
+
+                document.onmouseup = () => {
+                    document.onmousemove = document.onmouseup = null;
+                };
+            },
             embeddedTabChange(tab) {
-                this.$emit('changed', tab);
+                this.$emit("changed", tab);
             },
             setActiveName() {
                 this.activeName = this.activeTab.name || "default";
@@ -94,9 +128,23 @@
             },
         },
         computed: {
+            ...mapState({
+                explorerVisible: (state) => state.editor.explorerVisible,
+                explorerWidth: (state) => state.editor.explorerWidth,
+            }),
+            containerClass() {
+                if (this.activeTab.containerClass) {
+                    return {[this.activeTab.containerClass] : true};
+                }
+
+                return {"container" : true, "mt-4": true};
+            },
             activeTab() {
                 return this.tabs
                     .filter(tab => (this.embedActiveTab ?? this.$route.params.tab) === tab.name)[0] || this.tabs[0];
+            },
+            isEditorActiveTab() {
+                return this.activeTab.name === "editor";
             },
             // Those are passed to the rendered component
             // We need to exclude class as it's already applied to this component root div
@@ -126,6 +174,20 @@
             a {
                 color: var(--el-text-color-disabled);
             }
+        }
+    }
+
+    .slider {
+        flex: 0 0 3px;
+        border-radius: 0.15rem;
+        margin: 0 4px;
+        background-color: var(--bs-border-color);
+        border: none;
+        cursor: col-resize;
+        user-select: none; /* disable selection */
+
+        &:hover {
+            background-color: var(--bs-secondary);
         }
     }
 </style>

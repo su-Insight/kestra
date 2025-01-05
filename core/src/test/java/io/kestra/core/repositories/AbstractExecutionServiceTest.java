@@ -9,7 +9,7 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.services.ExecutionService;
 import io.kestra.core.storages.StorageInterface;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
@@ -48,7 +48,7 @@ public abstract class AbstractExecutionServiceTest {
 
     @Test
     void purge() throws Exception {
-        URL resource = AbstractExecutionServiceTest.class.getClassLoader().getResource("application.yml");
+        URL resource = AbstractExecutionServiceTest.class.getClassLoader().getResource("application-test.yml");
         File tempFile = File.createTempFile("test", "");
         Files.copy(new FileInputStream(Objects.requireNonNull(resource).getFile()), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
@@ -60,7 +60,8 @@ public abstract class AbstractExecutionServiceTest {
             .revision(1)
             .build();
 
-        Execution execution = Execution.builder()
+        Execution execution = Execution
+            .builder()
             .id(IdUtils.create())
             .state(state)
             .flowId(flow.getId())
@@ -70,14 +71,24 @@ public abstract class AbstractExecutionServiceTest {
 
         Return task = Return.builder().id(IdUtils.create()).type(Return.class.getName()).build();
 
+        TaskRun taskRun = TaskRun
+            .builder()
+            .namespace(flow.getNamespace())
+            .id(IdUtils.create())
+            .executionId(execution.getId())
+            .flowId(flow.getId())
+            .taskId(task.getId())
+            .state(state)
+            .build();
+
         RunContext runContext = runContextFactory.of(
             flow,
             task,
             execution,
-            TaskRun.builder().id(IdUtils.create()).taskId(task.getId()).state(state).build()
+            taskRun
         );
 
-        execution.withInputs(Map.of("test", runContext.putTempFile(tempFile)));
+        execution.withInputs(Map.of("test", runContext.storage().putFile(tempFile)));
 
         executionRepository.save(execution);
 

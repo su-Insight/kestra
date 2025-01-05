@@ -9,7 +9,7 @@
                 </li>
 
                 <li>
-                    <router-link v-if="flow" :to="{name: 'flows/create', query: {copy: true}}">
+                    <router-link v-if="flow && canCreate" :to="{name: 'flows/create', query: {copy: true}}">
                         <el-button :icon="icon.ContentCopy" size="large">
                             {{ $t('copy') }}
                         </el-button>
@@ -29,8 +29,7 @@
         </template>
     </top-nav-bar>
     <div class="mt-3 edit-flow-div">
-        <editor @save="save" v-model="content" schema-type="flow" lang="yaml" @update:model-value="onChange($event)" @cursor="updatePluginDocumentation" />
-        <div id="guided-right" />
+        <editor @save="save" v-model="content" schema-type="flow" lang="yaml" @update:model-value="onChange" @cursor="updatePluginDocumentation" />
     </div>
 </template>
 
@@ -69,10 +68,7 @@
         methods: {
             stopTour() {
                 this.$tours["guidedTour"].stop();
-                this.$store.commit("core/setGuidedProperties", {
-                    ...this.guidedProperties,
-                    tourStarted: false
-                });
+                this.$store.commit("core/setGuidedProperties", {tourStarted: false});
             },
         },
         created() {
@@ -89,23 +85,6 @@
             window.addEventListener("popstate", () => {
                 this.stopTour();
             });
-        },
-        watch: {
-            guidedProperties: function () {
-                if (localStorage.getItem("tourDoneOrSkip") !== "true") {
-                    if (this.guidedProperties.source !== undefined) {
-                        this.content = this.guidedProperties.source
-                        this.lastChangeWasGuided = true;
-                    }
-                    if (this.guidedProperties.saveFlow) {
-                        this.save();
-                    }
-                }
-                else if(this.lastChangeWasGuided) {
-                    this.content = "";
-                    this.lastChangeWasGuided = false;
-                }
-            }
         }
     };
 </script>

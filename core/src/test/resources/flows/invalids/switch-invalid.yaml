@@ -2,12 +2,12 @@ id: switch-impossible
 namespace: io.kestra.tests
 
 inputs:
-  - name: string
+  - id: string
     type: STRING
 
 tasks:
   - id: impossible
-    type: io.kestra.core.tasks.flows.Switch
+    type: io.kestra.plugin.core.flow.Switch
     value: "{{inputs.string}}"
     cases: {}
     defaults: null

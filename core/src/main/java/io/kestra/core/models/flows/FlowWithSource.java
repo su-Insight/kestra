@@ -24,14 +24,16 @@ public class FlowWithSource extends Flow {
             .description(this.description)
             .labels(this.labels)
             .inputs(this.inputs)
+            .outputs(this.outputs)
             .variables(this.variables)
             .tasks(this.tasks)
             .errors(this.errors)
             .listeners(this.listeners)
             .triggers(this.triggers)
-            .taskDefaults(this.taskDefaults)
+            .pluginDefaults(this.pluginDefaults)
             .disabled(this.disabled)
             .deleted(this.deleted)
+            .concurrency(this.concurrency)
             .build();
     }
 
@@ -51,28 +53,31 @@ public class FlowWithSource extends Flow {
         return source.replaceFirst("(?m)^revision: \\d+\n?","");
     }
 
-    public boolean isUpdatable(Flow flow, String flowSource) {
+    public boolean equals(Flow flow, String flowSource) {
         return this.equalsWithoutRevision(flow) &&
             this.source.equals(cleanupSource(flowSource));
     }
 
     public static FlowWithSource of(Flow flow, String source) {
         return FlowWithSource.builder()
+            .tenantId(flow.tenantId)
             .id(flow.id)
             .namespace(flow.namespace)
             .revision(flow.revision)
             .description(flow.description)
             .labels(flow.labels)
             .inputs(flow.inputs)
+            .outputs(flow.outputs)
             .variables(flow.variables)
             .tasks(flow.tasks)
             .errors(flow.errors)
             .listeners(flow.listeners)
             .triggers(flow.triggers)
-            .taskDefaults(flow.taskDefaults)
+            .pluginDefaults(flow.pluginDefaults)
             .disabled(flow.disabled)
             .deleted(flow.deleted)
             .source(source)
+            .concurrency(flow.concurrency)
             .build();
     }
 }

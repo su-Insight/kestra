@@ -2,6 +2,8 @@ package io.kestra.core.runners;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.kestra.core.models.executions.Execution;
+import io.kestra.core.models.executions.ExecutionKilled;
+import io.kestra.core.models.executions.ExecutionKilledExecution;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithException;
@@ -25,8 +27,18 @@ public class Executor {
     private final List<WorkerTask> workerTasks = new ArrayList<>();
     private final List<WorkerTaskResult> workerTaskResults = new ArrayList<>();
     private final List<ExecutionDelay> executionDelays = new ArrayList<>();
-    private WorkerTaskResult joined;
-    private final List<WorkerTaskExecution> workerTaskExecutions = new ArrayList<>();
+    private WorkerTaskResult joinedWorkerTaskResult;
+    private final List<SubflowExecution<?>> subflowExecutions = new ArrayList<>();
+    private final List<SubflowExecutionResult> subflowExecutionResults = new ArrayList<>();
+    private SubflowExecutionResult joinedSubflowExecutionResult;
+    private ExecutionRunning executionRunning;
+    private ExecutionResumed executionResumed;
+    private ExecutionResumed joinedExecutionResumed;
+
+    /**
+     * List of {@link ExecutionKilled} to be propagated part of the execution.
+     */
+    private List<ExecutionKilledExecution> executionKilled;
 
     public Executor(Execution execution, Long offset) {
         this.execution = execution;
@@ -34,11 +46,23 @@ public class Executor {
     }
 
     public Executor(WorkerTaskResult workerTaskResult) {
-        this.joined = workerTaskResult;
+        this.joinedWorkerTaskResult = workerTaskResult;
+    }
+
+    public Executor(SubflowExecutionResult subflowExecutionResult) {
+        this.joinedSubflowExecutionResult = subflowExecutionResult;
+    }
+
+    public Executor(ExecutionResumed executionResumed) {
+        this.joinedExecutionResumed = executionResumed;
+    }
+
+    public Executor(List<ExecutionKilledExecution> executionKilled) {
+        this.executionKilled = executionKilled;
     }
 
     public Boolean canBeProcessed() {
-        return !(this.getException() != null || this.getFlow() == null || this.getFlow() instanceof FlowWithException || this.getExecution().isDeleted());
+        return !(this.getException() != null || this.getFlow() == null || this.getFlow() instanceof FlowWithException || this.getFlow().getTasks() == null || this.getExecution().isDeleted());
     }
 
     public Executor withFlow(Flow flow) {
@@ -91,10 +115,33 @@ public class Executor {
         return this;
     }
 
-    public Executor withWorkerTaskExecutions(List<WorkerTaskExecution> newExecutions, String from) {
-        this.workerTaskExecutions.addAll(newExecutions);
+    public Executor withSubflowExecutions(List<SubflowExecution<?>> subflowExecutions, String from) {
+        this.subflowExecutions.addAll(subflowExecutions);
         this.from.add(from);
 
+        return this;
+    }
+
+    public Executor withSubflowExecutionResults(List<SubflowExecutionResult> subflowExecutionResults, String from) {
+        this.subflowExecutionResults.addAll(subflowExecutionResults);
+        this.from.add(from);
+
+        return this;
+    }
+
+    public Executor withExecutionRunning(ExecutionRunning executionRunning) {
+        this.executionRunning = executionRunning;
+
+        return this;
+    }
+
+    public Executor withExecutionResumed(ExecutionResumed executionResumed) {
+        this.executionResumed = executionResumed;
+        return this;
+    }
+
+    public Executor withExecutionKilled(final List<ExecutionKilledExecution> executionKilled) {
+        this.executionKilled = executionKilled;
         return this;
     }
 

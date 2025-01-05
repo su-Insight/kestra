@@ -1,23 +1,23 @@
 package io.kestra.core.runners.pebble;
 
+import io.kestra.core.runners.pebble.expression.NullCoalescingExpression;
+import io.kestra.core.runners.pebble.filters.*;
 import io.kestra.core.runners.pebble.functions.*;
+import io.kestra.core.runners.pebble.tests.JsonTest;
+import io.micronaut.core.annotation.Nullable;
 import io.pebbletemplates.pebble.extension.*;
 import io.pebbletemplates.pebble.operator.Associativity;
 import io.pebbletemplates.pebble.operator.BinaryOperator;
 import io.pebbletemplates.pebble.operator.BinaryOperatorImpl;
 import io.pebbletemplates.pebble.operator.UnaryOperator;
 import io.pebbletemplates.pebble.tokenParser.TokenParser;
-import io.kestra.core.runners.pebble.expression.NullCoalescingExpression;
-import io.kestra.core.runners.pebble.filters.*;
-import io.kestra.core.runners.pebble.tests.JsonTest;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
 
 import static io.pebbletemplates.pebble.operator.BinaryOperatorType.NORMAL;
 
@@ -28,6 +28,14 @@ public class Extension extends AbstractExtension {
 
     @Inject
     private ReadFileFunction readFileFunction;
+
+    @Inject
+    @Nullable
+    private RenderFunction renderFunction;
+
+    @Inject
+    @Nullable
+    private RenderOnceFunction renderOnceFunction;
 
     @Override
     public List<TokenParser> getTokenParsers() {
@@ -60,6 +68,7 @@ public class Extension extends AbstractExtension {
         filters.put("timestampMicro", new TimestampMicroFilter());
         filters.put("timestampNano", new TimestampNanoFilter());
         filters.put("jq", new JqFilter());
+        filters.put("escapeChar", new EscapeCharFilter());
         filters.put("json", new JsonFilter());
         filters.put("keys", new KeysFilter());
         filters.put("number", new NumberFilter());
@@ -69,7 +78,12 @@ public class Extension extends AbstractExtension {
         filters.put("substringBeforeLast", new SubstringBeforeLastFilter());
         filters.put("substringAfter", new SubstringAfterFilter());
         filters.put("substringAfterLast", new SubstringAfterLastFilter());
-
+        filters.put("flatten", new FlattenFilter());
+        filters.put("indent", new IndentFilter());
+        filters.put("nindent", new NindentFilter());
+        filters.put("yaml", new YamlFilter());
+        filters.put("startsWith", new StartsWithFilter());
+        filters.put("endsWith", new EndsWithFilter());
         return filters;
     }
 
@@ -84,15 +98,25 @@ public class Extension extends AbstractExtension {
 
     @Override
     public Map<String, Function> getFunctions() {
-        Map<String, Function> tests = new HashMap<>();
+        Map<String, Function> functions = new HashMap<>();
 
-        tests.put("now", new NowFunction());
-        tests.put("json", new JsonFunction());
-        tests.put("currentEachOutput", new CurrentEachOutputFunction());
-        tests.put("secret", secretFunction);
-        tests.put("read", readFileFunction);
+        functions.put("now", new NowFunction());
+        functions.put("json", new JsonFunction());
+        functions.put("currentEachOutput", new CurrentEachOutputFunction());
+        functions.put("secret", secretFunction);
+        functions.put("read", readFileFunction);
+        if (this.renderFunction != null) {
+            functions.put("render", renderFunction);
+        }
+        if (this.renderOnceFunction != null) {
+            functions.put("renderOnce", renderOnceFunction);
+        }
+        functions.put("encrypt", new EncryptFunction());
+        functions.put("decrypt", new DecryptFunction());
+        functions.put("yaml", new YamlFunction());
+        functions.put("printContext", new PrintContextFunction());
 
-        return tests;
+        return functions;
     }
 
     @Override

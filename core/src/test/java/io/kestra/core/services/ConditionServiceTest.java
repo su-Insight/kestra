@@ -3,12 +3,12 @@ package io.kestra.core.services;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.models.conditions.Condition;
 import io.kestra.core.models.conditions.ConditionContext;
-import io.kestra.core.models.conditions.types.ExecutionFlowCondition;
-import io.kestra.core.models.conditions.types.ExecutionNamespaceCondition;
+import io.kestra.plugin.core.condition.ExecutionFlowCondition;
+import io.kestra.plugin.core.condition.ExecutionNamespaceCondition;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.flows.Flow;
-import io.kestra.core.models.triggers.types.Schedule;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.runners.RunContext;
@@ -84,7 +84,7 @@ class ConditionServiceTest {
 
         conditionService.valid(flow, conditions, conditionContext);
 
-        LogEntry matchingLog = TestsUtils.awaitLog(logs, logEntry -> logEntry.getNamespace().equals("io.kestra.core.services.ConditionServiceTest") && logEntry.getFlowId().equals("exception"));
+        LogEntry matchingLog = TestsUtils.awaitLog(logs, logEntry -> logEntry.getNamespace().equals("io.kestra.core.services.conditionservicetest") && logEntry.getFlowId().equals("exception"));
         assertThat(matchingLog, notNullValue());
     }
 }

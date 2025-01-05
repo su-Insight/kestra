@@ -1,15 +1,16 @@
 package io.kestra.core.services;
 
-import io.kestra.core.models.conditions.types.ExecutionFlowCondition;
-import io.kestra.core.models.conditions.types.ExecutionStatusCondition;
-import io.kestra.core.models.conditions.types.MultipleCondition;
-import io.kestra.core.models.conditions.types.VariableCondition;
+import io.kestra.plugin.core.condition.ExecutionFlowCondition;
+import io.kestra.plugin.core.condition.ExecutionStatusCondition;
+import io.kestra.plugin.core.condition.MultipleCondition;
+import io.kestra.plugin.core.condition.ExpressionCondition;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.topologies.FlowRelation;
 import io.kestra.core.serializers.YamlFlowParser;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Parallel;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Parallel;
+import io.kestra.plugin.core.flow.Subflow;
 import io.kestra.core.topologies.FlowTopologyService;
 import io.kestra.core.utils.TestsUtils;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
@@ -43,9 +44,9 @@ class FlowTopologyServiceTest {
                 Parallel.builder()
                     .id("para")
                     .type(Parallel.class.getName())
-                    .tasks(List.of(io.kestra.core.tasks.flows.Flow.builder()
+                    .tasks(List.of(Subflow.builder()
                         .id("launch")
-                        .type(io.kestra.core.tasks.flows.Flow.class.getName())
+                        .type(Subflow.class.getName())
                         .namespace("io.kestra.ee")
                         .flowId("child")
                         .build()
@@ -98,7 +99,7 @@ class FlowTopologyServiceTest {
             .revision(1)
             .tasks(List.of(returnTask()))
             .triggers(List.of(
-                io.kestra.core.models.triggers.types.Flow.builder()
+                io.kestra.plugin.core.trigger.Flow.builder()
                     .conditions(List.of(
                         ExecutionFlowCondition.builder()
                             .namespace("io.kestra.ee")
@@ -137,7 +138,7 @@ class FlowTopologyServiceTest {
             .revision(1)
             .tasks(List.of(returnTask()))
             .triggers(List.of(
-                io.kestra.core.models.triggers.types.Flow.builder()
+                io.kestra.plugin.core.trigger.Flow.builder()
                     .conditions(List.of(
                         ExecutionStatusCondition.builder()
                             .in(List.of(State.Type.SUCCESS))
@@ -155,7 +156,7 @@ class FlowTopologyServiceTest {
                                 "filtered", ExecutionStatusCondition.builder()
                                     .in(List.of(State.Type.SUCCESS))
                                     .build(),
-                                "variables", VariableCondition.builder()
+                                "variables", ExpressionCondition.builder()
                                     .expression("{{ true }}")
                                     .build()
                             ))

@@ -3,6 +3,7 @@
     import Slack from "vue-material-design-icons/Slack.vue";
     import {pageFromRoute} from "../utils/eventsRouter";
     import {h} from "vue"
+    import Markdown from "../utils/markdown";
 
     export default {
         name: "ErrorToast",
@@ -23,9 +24,6 @@
             },
         },
         computed: {
-            text () {
-                return this.message.message || this.message.content.message
-            },
             title () {
                 return this.message.title || "Error"
             },
@@ -39,10 +37,13 @@
                 if (this.notifications) {
                     this.notifications.close();
                 }
-            }
+            },
+            async toMarkdown(content) {
+                return await Markdown.render(content);
+            },
         },
         render() {
-            this.$nextTick(() => {
+            this.$nextTick(async () => {
                 this.close();
 
                 const error =  {
@@ -70,11 +71,11 @@
 
                 const children = [
                     h("a", {
-                        href: "https://kestra.io/slack",
+                        href: "https://kestra.io/slack?utm_source=app&utm_content=error",
                         class: "position-absolute slack-on-error el-button el-button--small is-text is-has-bg",
                         target: "_blank"
                     }, [h(Slack), h("span", {innerText: this.$t("slack support")})]),
-                    h("span", {innerHTML: this.text})
+                    h("span", {innerHTML: await this.toMarkdown(this.message.message || this.message.content.message)})
                 ];
 
                 if (this.items.length > 0) {
@@ -98,9 +99,8 @@
                 this.notifications = ElNotification({
                     title: this.title || "Error",
                     message: h("div",  children),
-                    position: 'top-right',
-                    offset: 65,
-                    type: "error",
+                    position: "bottom-right",
+                    type: this.message.variant,
                     duration: 0,
                     dangerouslyUseHTMLString: true,
                     customClass: "error-notification" + (children.length > 1 ? " large" : "")

@@ -8,8 +8,8 @@ import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -52,6 +52,11 @@ public class State {
         this.histories.add(new History(this.current, Instant.now()));
     }
 
+    public State(Type type, List<History> histories) {
+        this.current = type;
+        this.histories = histories;
+    }
+
     public static State of(Type state, List<History> histories) {
         State result = new State(state);
 
@@ -70,6 +75,13 @@ public class State {
         return new State(state, this);
     }
 
+    public State reset() {
+        return new State(
+            Type.CREATED,
+            List.of(this.histories.getFirst())
+        );
+    }
+
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     public Duration getDuration() {
         return Duration.between(
@@ -84,6 +96,7 @@ public class State {
     }
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @JsonInclude(JsonInclude.Include.NON_EMPTY) // otherwise empty optional will be included as null
     public Optional<Instant> getEndDate() {
         if (!this.isTerminated() && !this.isPaused()) {
             return Optional.empty();
@@ -106,6 +119,14 @@ public class State {
         }
 
         return this.histories.get(this.histories.size() - 1).getDate();
+    }
+
+    public Instant minDate() {
+        if (this.histories.size() == 0) {
+            return Instant.now();
+        }
+
+        return this.histories.get(0).getDate();
     }
 
     @JsonIgnore
@@ -141,8 +162,23 @@ public class State {
     }
 
     @JsonIgnore
+    public boolean isRetrying() {
+        return this.current.isRetrying();
+    }
+
+    @JsonIgnore
+    public boolean isSuccess() {
+        return this.current.isSuccess();
+    }
+
+    @JsonIgnore
     public boolean isRestartable() {
         return this.current.isFailed() || this.isPaused();
+    }
+
+    @JsonIgnore
+    public boolean isResumable() {
+        return this.current.isPaused() || this.current.isRetrying();
     }
 
 
@@ -156,10 +192,14 @@ public class State {
         SUCCESS,
         WARNING,
         FAILED,
-        KILLED;
+        KILLED,
+        CANCELLED,
+        QUEUED,
+        RETRYING,
+        RETRIED;
 
         public boolean isTerminated() {
-            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED;
+            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED || this == Type.CANCELLED || this == Type.RETRIED;
         }
 
         public boolean isCreated() {
@@ -177,6 +217,15 @@ public class State {
         public boolean isPaused() {
             return this == Type.PAUSED;
         }
+
+        public boolean isRetrying() {
+            return this == Type.RETRYING || this == Type.RETRIED;
+        }
+
+        public boolean isSuccess() {
+            return this == Type.SUCCESS;
+        }
+
     }
 
     @Value

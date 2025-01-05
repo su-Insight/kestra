@@ -2,8 +2,6 @@ package io.kestra.cli.commands.flows;
 
 import io.micronaut.configuration.picocli.PicocliRunner;
 import io.micronaut.context.ApplicationContext;
-import io.micronaut.context.env.Environment;
-import io.micronaut.runtime.server.EmbeddedServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -11,7 +9,6 @@ import java.io.PrintStream;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.StringContains.containsString;
 
 class FlowExpandCommandTest {
     @Test
@@ -19,10 +16,7 @@ class FlowExpandCommandTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         System.setOut(new PrintStream(out));
 
-        try (ApplicationContext ctx = ApplicationContext.run(Environment.CLI, Environment.TEST)) {
-            EmbeddedServer embeddedServer = ctx.getBean(EmbeddedServer.class);
-            embeddedServer.start();
-
+        try (ApplicationContext ctx = ApplicationContext.builder().deduceEnvironment(false).start()) {
             String[] args = {
                 "src/test/resources/helper/flow.yaml"
             };
@@ -36,10 +30,10 @@ class FlowExpandCommandTest {
                     "# The list of tasks\n" +
                     "tasks:\n" +
                     "- id: t1\n" +
-                    "  type: io.kestra.core.tasks.debugs.Return\n" +
+                    "  type: io.kestra.plugin.core.debug.Return\n" +
                     "  format: \"Lorem ipsum dolor sit amet\"\n" +
                     "- id: t2\n" +
-                    "  type: io.kestra.core.tasks.debugs.Return\n" +
+                    "  type: io.kestra.plugin.core.debug.Return\n" +
                     "  format: |\n" +
                     "    Lorem ipsum dolor sit amet\n" +
                     "    Lorem ipsum dolor sit amet\n"

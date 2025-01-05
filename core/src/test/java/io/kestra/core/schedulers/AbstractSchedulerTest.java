@@ -5,17 +5,14 @@ import io.kestra.core.models.Label;
 import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.ExecutionTrigger;
-import io.kestra.core.models.flows.Flow;
-import io.kestra.core.models.flows.Input;
-import io.kestra.core.models.flows.State;
-import io.kestra.core.models.flows.TaskDefault;
+import io.kestra.core.models.flows.*;
 import io.kestra.core.models.flows.input.StringInput;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.PollingTriggerInterface;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.plugin.core.debug.Return;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
@@ -27,10 +24,9 @@ import lombok.experimental.SuperBuilder;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
-@MicronautTest
+@MicronautTest(transactional = false, rebuildContext = true) // rebuild context to lower possible flaky tests
 abstract public class AbstractSchedulerTest {
     @Inject
     protected ApplicationContext applicationContext;
@@ -43,20 +39,20 @@ abstract public class AbstractSchedulerTest {
         return createFlow(triggers, null);
     }
 
-    protected static Flow createFlow(List<AbstractTrigger> triggers, List<TaskDefault> list) {
+    protected static Flow createFlow(List<AbstractTrigger> triggers, List<PluginDefault> list) {
         Flow.FlowBuilder<?, ?> flow = Flow.builder()
             .id(IdUtils.create())
             .namespace("io.kestra.unittest")
             .inputs(List.of(
                 StringInput.builder()
-                    .type(Input.Type.STRING)
-                    .name("testInputs")
+                    .type(Type.STRING)
+                    .id("testInputs")
                     .required(false)
                     .defaults("test")
                     .build(),
                 StringInput.builder()
-                    .type(Input.Type.STRING)
-                    .name("def")
+                    .type(Type.STRING)
+                    .id("def")
                     .required(false)
                     .defaults("awesome")
                     .build()
@@ -76,7 +72,7 @@ abstract public class AbstractSchedulerTest {
                 .build()));
 
         if (list != null) {
-            flow.taskDefaults(list);
+            flow.pluginDefaults(list);
         }
 
         return flow

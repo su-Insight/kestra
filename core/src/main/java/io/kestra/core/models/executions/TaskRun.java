@@ -1,27 +1,29 @@
 package io.kestra.core.models.executions;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.ToString;
-import lombok.With;
+import io.kestra.core.models.TenantInterface;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
+import io.kestra.core.models.tasks.retrys.AbstractRetry;
 import io.kestra.core.utils.IdUtils;
+import io.swagger.v3.oas.annotations.Hidden;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import lombok.*;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import javax.validation.constraints.NotNull;
 
 @ToString
 @EqualsAndHashCode
 @AllArgsConstructor
 @Getter
 @Builder(toBuilder = true)
-public class TaskRun {
+public class TaskRun implements TenantInterface {
+    @Hidden
+    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
     String tenantId;
 
     @NotNull
@@ -41,6 +43,7 @@ public class TaskRun {
 
     String parentTaskRunId;
 
+    @With
     String value;
 
     @With
@@ -52,11 +55,19 @@ public class TaskRun {
     @NotNull
     State state;
 
+    @With
+    Integer iteration;
+
     public void destroyOutputs() {
         // DANGER ZONE: this method is only used to deals with issues with messages too big that must be stripped down
         // to avoid crashing the platform. Don't use it for anything else.
         this.outputs = Collections.emptyMap();
         this.state = this.state.withState(State.Type.FAILED);
+    }
+
+    @Deprecated
+    public void setItems(String items) {
+        // no-op for backward compatibility
     }
 
     public TaskRun withState(State.Type state) {
@@ -71,7 +82,46 @@ public class TaskRun {
             this.value,
             this.attempts,
             this.outputs,
-            this.state.withState(state)
+            this.state.withState(state),
+            this.iteration
+        );
+    }
+
+    public TaskRun replaceState(State newState) {
+        return new TaskRun(
+            this.tenantId,
+            this.id,
+            this.executionId,
+            this.namespace,
+            this.flowId,
+            this.taskId,
+            this.parentTaskRunId,
+            this.value,
+            this.attempts,
+            this.outputs,
+            newState,
+            this.iteration
+        );
+    }
+
+    public TaskRun fail() {
+        var attempt = TaskRunAttempt.builder().state(new State(State.Type.FAILED)).build();
+        List<TaskRunAttempt> newAttempts = this.attempts == null ? new ArrayList<>(1) : this.attempts;
+        newAttempts.add(attempt);
+
+        return new TaskRun(
+            this.tenantId,
+            this.id,
+            this.executionId,
+            this.namespace,
+            this.flowId,
+            this.taskId,
+            this.parentTaskRunId,
+            this.value,
+            newAttempts,
+            this.outputs,
+            this.state.withState(State.Type.FAILED),
+            this.iteration
         );
     }
 
@@ -88,6 +138,7 @@ public class TaskRun {
             .attempts(this.getAttempts())
             .outputs(this.getOutputs())
             .state(state == null ? this.getState() : state)
+            .iteration(this.getIteration())
             .build();
     }
 
@@ -128,7 +179,7 @@ public class TaskRun {
     public TaskRun onRunningResend() {
         TaskRunBuilder taskRunBuilder = this.toBuilder();
 
-        if (taskRunBuilder.attempts == null || taskRunBuilder.attempts.size() == 0) {
+        if (taskRunBuilder.attempts == null || taskRunBuilder.attempts.isEmpty()) {
             taskRunBuilder.attempts = new ArrayList<>();
 
             taskRunBuilder.attempts.add(TaskRunAttempt.builder()
@@ -154,10 +205,9 @@ public class TaskRun {
     }
 
     public boolean isSame(TaskRun taskRun) {
-        return this.getId().equals(taskRun.getId()) && (
-            (this.getValue() == null && taskRun.getValue() == null) ||
-                (this.getValue() != null && this.getValue().equals(taskRun.getValue()))
-        );
+        return this.getId().equals(taskRun.getId()) &&
+            ((this.getValue() == null && taskRun.getValue() == null) || (this.getValue() != null && this.getValue().equals(taskRun.getValue()))) &&
+            ((this.getIteration() == null && taskRun.getIteration() == null) || (this.getIteration() != null && this.getIteration().equals(taskRun.getIteration()))) ;
     }
 
     public String toString(boolean pretty) {
@@ -172,7 +222,7 @@ public class TaskRun {
             ", parentTaskRunId=" + this.getParentTaskRunId() +
             ", state=" + this.getState().getCurrent().toString() +
             ", outputs=" + this.getOutputs() +
-            ", attemps=" + this.getAttempts() +
+            ", attempts=" + this.getAttempts() +
             ")";
     }
 
@@ -184,4 +234,69 @@ public class TaskRun {
             ", state=" + this.getState().getCurrent().toString() +
             ")";
     }
+
+    /**
+     * This method is used when the retry is apply on a task
+     * but the retry type is NEW_EXECUTION
+     *
+     * @param retry Contains the retry configuration
+     * @param execution Contains the attempt number and original creation date
+     * @return The next retry date, null if maxAttempt || maxDuration is reached
+     */
+    public Instant nextRetryDate(AbstractRetry retry, Execution execution) {
+        if (retry.getMaxAttempt() != null && execution.getMetadata().getAttemptNumber() >= retry.getMaxAttempt()) {
+
+            return null;
+        }
+        Instant base = this.lastAttempt().getState().maxDate();
+        Instant nextDate = retry.nextRetryDate(execution.getMetadata().getAttemptNumber(), base);
+        if (retry.getMaxDuration() != null && nextDate.isAfter(execution.getMetadata().getOriginalCreatedDate().plus(retry.getMaxDuration()))) {
+
+            return null;
+        }
+
+        return nextDate;
+    }
+
+    /**
+     * This method is used when the Retry definition comes from the flow
+     * @param retry The retry configuration
+     * @return The next retry date, null if maxAttempt || maxDuration is reached
+     */
+    public Instant nextRetryDate(AbstractRetry retry) {
+        if (this.attempts == null || this.attempts.isEmpty() || (retry.getMaxAttempt() != null && this.attemptNumber() >= retry.getMaxAttempt())) {
+
+            return null;
+        }
+        Instant base = this.lastAttempt().getState().maxDate();
+        Instant nextDate = retry.nextRetryDate(this.attempts.size(), base);
+        if (retry.getMaxDuration() != null && nextDate.isAfter(this.attempts.get(0).getState().minDate().plus(retry.getMaxDuration()))) {
+
+            return null;
+        }
+
+        return nextDate;
+    }
+
+    public boolean shouldBeRetried(AbstractRetry retry) {
+        if (retry == null) {
+            return false;
+        }
+        return this.nextRetryDate(retry) != null;
+    }
+
+    public TaskRun incrementIteration() {
+        int iteration = this.iteration == null ? 1 : this.iteration;
+        return this.toBuilder()
+            .iteration(iteration + 1)
+            .build();
+    }
+
+    public TaskRun resetAttempts() {
+        return this.toBuilder()
+            .state(new State(State.Type.CREATED, List.of(this.state.getHistories().getFirst())))
+            .attempts(null)
+            .build();
+    }
+
 }

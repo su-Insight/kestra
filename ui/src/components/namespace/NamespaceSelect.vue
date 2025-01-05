@@ -1,5 +1,6 @@
 <template>
     <el-select
+        class="fit-text"
         :model-value="value"
         @update:model-value="onInput"
         clearable
@@ -34,18 +35,22 @@
             allowCreate: {
                 type: Boolean,
                 default: false
+            },
+            isFilter: {
+                type: Boolean,
+                default: true
             }
         },
         emits: ["update:modelValue"],
         created() {
             this.$store
-                .dispatch("namespace/loadNamespaces", {dataType: this.dataType})
+                .dispatch("namespace/loadNamespacesForDatatype", {dataType: this.dataType})
                 .then(() => {
-                    this.groupedNamespaces = this.groupNamespaces(this.namespaces);
+                    this.groupedNamespaces = this.groupNamespaces(this.datatypeNamespaces);
                 });
         },
         computed: {
-            ...mapState("namespace", ["namespaces"])
+            ...mapState("namespace", ["datatypeNamespaces"])
         },
         data() {
             return {
@@ -78,7 +83,7 @@
                 });
 
                 // Remove duplicate namespaces ...
-                return _uniqBy(res,"code");
+                return _uniqBy(res,"code").filter(ns => namespaces.includes(ns.code) || this.isFilter);
             },
         }
     };

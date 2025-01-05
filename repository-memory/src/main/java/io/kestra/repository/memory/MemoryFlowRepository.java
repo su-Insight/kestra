@@ -1,17 +1,10 @@
 package io.kestra.repository.memory;
 
-import io.kestra.core.models.SearchResult;
-import io.kestra.core.models.flows.FlowWithSource;
-import io.kestra.core.models.validations.ManualConstraintViolation;
-import io.kestra.core.utils.IdUtils;
-import io.kestra.core.utils.ListUtils;
-import io.micronaut.context.event.ApplicationEventPublisher;
-import io.micronaut.core.value.ValueException;
-import io.micronaut.data.model.Pageable;
 import io.kestra.core.events.CrudEvent;
 import io.kestra.core.events.CrudEventType;
 import io.kestra.core.models.SearchResult;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.FlowForExecution;
 import io.kestra.core.models.flows.FlowWithSource;
 import io.kestra.core.models.triggers.Trigger;
 import io.kestra.core.models.validations.ManualConstraintViolation;
@@ -21,6 +14,7 @@ import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.ArrayListTotal;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.services.FlowService;
+import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.ListUtils;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import io.micronaut.core.value.ValueException;
@@ -28,12 +22,12 @@ import io.micronaut.data.model.Pageable;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
-import org.checkerframework.checker.units.qual.N;
 
 import org.apache.commons.lang3.NotImplementedException;
 
-import javax.annotation.Nullable;
-import javax.validation.ConstraintViolationException;
+import jakarta.annotation.Nullable;
+import jakarta.validation.ConstraintViolationException;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -85,6 +79,11 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
             );
     }
 
+    @Override
+    public Optional<Flow> findByIdWithoutAcl(String tenantId, String namespace, String id, Optional<Integer> revision) {
+        return findById(tenantId, namespace, id, revision, false);
+    }
+
     private Optional<String> findSourceById(String tenantId, String namespace, String id) {
         return this.flowSources.containsKey(flowId(tenantId, namespace, id)) ?
             Optional.of(this.flowSources.get(flowId(tenantId, namespace, id))) :
@@ -93,13 +92,22 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
 
     @Override
     public Optional<FlowWithSource> findByIdWithSource(String tenantId, String namespace, String id, Optional<Integer> revision, Boolean allowDeleted) {
-        Optional<Flow> flow = findById(tenantId, namespace, id, revision);
-        Optional<String> sourceCode = findSourceById(tenantId, namespace, id);
-        if (flow.isPresent() && sourceCode.isPresent()) {
-            return Optional.of(FlowWithSource.of(flow.get(), FlowService.cleanupSource(sourceCode.get())));
+        FlowWithSource[] revisions = findRevisions(tenantId, namespace, id)
+            .stream()
+            .filter(flow -> flow.getRevision().equals(revision.orElse(flow.getRevision())))
+            .toArray(FlowWithSource[]::new);
+        if (revisions.length == 0) {
+            return Optional.empty();
         }
 
-        return Optional.empty();
+        FlowWithSource lastRevision = revisions[revisions.length - 1];
+        if (!allowDeleted && lastRevision.isDeleted()) {
+            return Optional.empty();
+        }
+
+        Optional<String> sourceCode = findSourceById(tenantId, namespace, id);
+        return sourceCode.map(s -> lastRevision.toBuilder().source(FlowService.cleanupSource(s)).build());
+
     }
 
     @Override
@@ -112,6 +120,12 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
             .map(flow -> FlowWithSource.of(flow, flow.generateSource()))
             .sorted(Comparator.comparingInt(Flow::getRevision))
             .collect(Collectors.toList());
+    }
+
+    @Override
+    public Integer lastRevision(String tenantId, String namespace, String id) {
+        List<FlowWithSource> flowRevisions = findRevisions(tenantId, namespace, id);
+        return flowRevisions.isEmpty() ? null : flowRevisions.get(flowRevisions.size() - 1).getRevision();
     }
 
     @Override
@@ -134,6 +148,32 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
             .filter(flow -> flow.getNamespace().equals(namespace))
             .filter(flow -> (tenantId == null && flow.getTenantId() == null) || (tenantId != null && tenantId.equals(flow.getTenantId())))
             .sorted(Comparator.comparingInt(Flow::getRevision))
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Flow> findByNamespacePrefix(String tenantId, String namespacePrefix) {
+        return flows.values()
+            .stream()
+            .filter(flow -> flow.getNamespace().equals(namespacePrefix) || flow.getNamespace().startsWith(namespacePrefix + "."))
+            .filter(flow -> (tenantId == null && flow.getTenantId() == null) || (tenantId != null && tenantId.equals(flow.getTenantId())))
+            .sorted(Comparator.comparingInt(Flow::getRevision))
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<FlowForExecution> findByNamespaceExecutable(String tenantId, String namespace) {
+        return List.of();
+    }
+
+    @Override
+    public List<FlowWithSource> findByNamespaceWithSource(String tenantId, String namespace) {
+        return flows.values()
+            .stream()
+            .filter(flow -> flow.getNamespace().equals(namespace))
+            .filter(flow -> (tenantId == null && flow.getTenantId() == null) || (tenantId != null && tenantId.equals(flow.getTenantId())))
+            .sorted(Comparator.comparingInt(Flow::getRevision))
+            .map(flow -> FlowWithSource.of(flow, FlowService.cleanupSource(findSourceById(tenantId, namespace, flow.getId()).get())))
             .collect(Collectors.toList());
     }
 
@@ -169,7 +209,7 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
         //TODO Non used query, just returns all flow and filter by namespace if set
         return flows.values()
             .stream()
-            .filter(flow ->  namespace == null || flow.getNamespace().equals(namespace) || flow.getNamespace().startsWith(namespace + "."))
+            .filter(flow -> namespace == null || flow.getNamespace().equals(namespace) || flow.getNamespace().startsWith(namespace + "."))
             .filter(flow -> (tenantId == null && flow.getTenantId() == null) || (tenantId != null && tenantId.equals(flow.getTenantId())))
             .filter(flow -> labels == null || labels.isEmpty() || (flow.getLabels() != null && flow.getLabels().stream().anyMatch(label -> labels.containsKey(label.key()) && labels.get(label.key()).equals(label.value()))))
             .sorted(Comparator.comparingInt(Flow::getRevision))
@@ -207,7 +247,7 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
 
         // control if update is valid
         Optional<ConstraintViolationException> checkUpdate = previous.validateUpdate(flowWithDefaults);
-        if(checkUpdate.isPresent()){
+        if (checkUpdate.isPresent()) {
             throw checkUpdate.get();
         }
 
@@ -283,5 +323,10 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
         ArrayList<String> namespacesList = new ArrayList<>(namespaces);
         Collections.sort(namespacesList);
         return new ArrayList<>(namespacesList);
+    }
+
+    @Override
+    public List<String> findDistinctNamespaceExecutable(String tenantId) {
+        return List.of();
     }
 }

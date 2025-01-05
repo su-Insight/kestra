@@ -1,6 +1,6 @@
 package io.kestra.core.models.triggers.multipleflows;
 
-import io.kestra.core.models.conditions.types.MultipleCondition;
+import io.kestra.plugin.core.condition.MultipleCondition;
 import io.kestra.core.models.flows.Flow;
 
 import java.time.Duration;
@@ -13,7 +13,7 @@ import java.util.Optional;
 public interface MultipleConditionStorageInterface {
     Optional<MultipleConditionWindow> get(Flow flow, String conditionId);
 
-    List<MultipleConditionWindow> expired();
+    List<MultipleConditionWindow> expired(String tenantId);
 
     default MultipleConditionWindow getOrCreate(Flow flow, MultipleCondition multipleCondition) {
         ZonedDateTime now = ZonedDateTime.now()
@@ -41,6 +41,7 @@ public interface MultipleConditionStorageInterface {
             .orElseGet(() -> MultipleConditionWindow.builder()
                 .namespace(flow.getNamespace())
                 .flowId(flow.getId())
+                .tenantId(flow.getTenantId())
                 .conditionId(multipleCondition.getId())
                 .start(start)
                 .end(end)

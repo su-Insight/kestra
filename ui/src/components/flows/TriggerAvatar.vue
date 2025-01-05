@@ -1,22 +1,22 @@
 <template>
-    <div>
+    <div class="trigger">
         <span v-for="trigger in triggers" :key="uid(trigger)" :id="uid(trigger)">
             <template v-if="trigger.disabled === undefined || trigger.disabled === false">
                 <el-popover
                     placement="left"
-                    :persistent="false"
+                    :persistent="true"
                     :title="`${$t('trigger details')}: ${trigger ? trigger.id : ''}`"
                     width=""
                     transition=""
                     :hide-after="0"
                 >
                     <template #reference>
-                        <el-avatar shape="square" class="me-1" size="small" button>
-                            {{ name(trigger) }}
-                        </el-avatar>
+                        <el-button>
+                            <task-icon :only-icon="true" :cls="trigger?.type" :icons="icons" />
+                        </el-button>
                     </template>
                     <template #default>
-                        <vars :data="triggerData(trigger)" />
+                        <trigger-vars :data="trigger" :execution="execution" />
                     </template>
                 </el-popover>
             </template>
@@ -24,8 +24,9 @@
     </div>
 </template>
 <script>
-    import Markdown from "../../utils/markdown";
-    import Vars from "../executions/Vars.vue";
+    import TriggerVars from "./TriggerVars.vue";
+    import {mapState} from "vuex";
+    import TaskIcon from "@kestra-io/ui-libs/src/components/misc/TaskIcon.vue";
 
     export default {
         props: {
@@ -39,26 +40,21 @@
             },
         },
         components: {
-            Vars
+            TaskIcon,
+            TriggerVars
         },
         methods: {
             uid(trigger) {
                 return (this.flow ? this.flow.namespace + "-" + this.flow.id : this.execution.id) + "-" + trigger.id
             },
             name(trigger) {
-                let split = trigger.type.split(".");
+                let split = trigger?.type.split(".");
 
                 return split[split.length - 1].substr(0, 1).toUpperCase();
             },
-            triggerData(trigger) {
-                if (trigger.description) {
-                    return {...trigger, description: Markdown.render(trigger.description)}
-                }
-
-                return trigger
-            },
         },
         computed: {
+            ...mapState("plugin", ["icons"]),
             triggers() {
                 if (this.flow && this.flow.triggers) {
                     return this.flow.triggers
@@ -72,3 +68,34 @@
         }
     };
 </script>
+
+<style lang="scss" scoped>
+    .trigger {
+        max-width: 180px;
+        overflow-x: auto;
+
+        &::-webkit-scrollbar {
+            width: 2px;
+            height: 2px;
+        }
+
+        &::-webkit-scrollbar-track {
+            background: var(--card-bg);
+        }
+
+        &::-webkit-scrollbar-thumb {
+            background: var(--bs-primary);
+            border-radius: 0px;
+        }
+    }
+
+    .el-button {
+        display: inline-flex !important;
+        margin-right: calc(var(--spacer) / 4);
+    }
+
+    :deep(div.wrapper) {
+        width: 20px;
+        height: 20px;
+    }
+</style>

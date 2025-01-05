@@ -2,9 +2,9 @@ package io.kestra.core.validations;
 
 import io.kestra.core.models.tasks.WorkerGroup;
 import io.kestra.core.models.validations.ModelValidator;
-import io.kestra.core.tasks.flows.Pause;
-import io.kestra.core.tasks.flows.WorkingDirectory;
-import io.kestra.core.tasks.log.Log;
+import io.kestra.plugin.core.flow.Pause;
+import io.kestra.plugin.core.flow.WorkingDirectory;
+import io.kestra.plugin.core.log.Log;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
@@ -47,7 +47,7 @@ public class WorkingDirectoryTest {
             .build();
 
         assertThat(modelValidator.isValid(workingDirectory).isPresent(), is(true));
-        assertThat(modelValidator.isValid(workingDirectory).get().getMessage(), containsString("The tasks property cannot be empty"));
+        assertThat(modelValidator.isValid(workingDirectory).get().getMessage(), containsString("The 'tasks' property cannot be empty"));
 
         // flowable task
         workingDirectory = WorkingDirectory.builder()

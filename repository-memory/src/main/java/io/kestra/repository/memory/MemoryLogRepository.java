@@ -2,13 +2,15 @@ package io.kestra.repository.memory;
 
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
+import io.kestra.core.models.executions.statistics.LogStatistics;
 import io.kestra.core.repositories.ArrayListTotal;
 import io.kestra.core.repositories.LogRepositoryInterface;
+import io.kestra.core.utils.DateUtils;
 import io.micronaut.data.model.Pageable;
 import jakarta.inject.Singleton;
 import org.slf4j.event.Level;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,10 +36,15 @@ public class MemoryLogRepository implements LogRepositoryInterface {
     }
 
     @Override
+    public List<LogEntry> findByExecutionId(String tenantId, String namespace, String flowId, String executionId, Level level) {
+        return findByExecutionId(tenantId, executionId, level);
+    }
+
+    @Override
     public List<LogEntry> findByExecutionIdAndTaskId(String tenantId, String executionId, String taskId, Level minLevel) {
         return logs
             .stream()
-            .filter(logEntry -> logEntry.getExecutionId().equals(executionId) && logEntry.getTaskId().equals(taskId) && logEntry.getLevel().equals(minLevel))
+            .filter(logEntry -> logEntry.getExecutionId() != null && logEntry.getExecutionId().equals(executionId) && logEntry.getTaskId().equals(taskId) && logEntry.getLevel().equals(minLevel))
             .filter(logEntry -> (tenantId == null && logEntry.getTenantId() == null) || (tenantId != null && tenantId.equals(logEntry.getTenantId())))
             .collect(Collectors.toList());
     }
@@ -45,6 +52,11 @@ public class MemoryLogRepository implements LogRepositoryInterface {
     @Override
     public ArrayListTotal<LogEntry> findByExecutionIdAndTaskId(String tenantId, String executionId, String taskId, Level minLevel, Pageable pageable) {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public List<LogEntry> findByExecutionIdAndTaskId(String tenantId, String namespace, String flowId, String executionId, String taskId, Level level) {
+        return findByExecutionIdAndTaskId(tenantId, executionId, taskId, level);
     }
 
     @Override
@@ -82,6 +94,11 @@ public class MemoryLogRepository implements LogRepositoryInterface {
     }
 
     @Override
+    public List<LogStatistics> statistics(@io.micronaut.core.annotation.Nullable String query, @io.micronaut.core.annotation.Nullable String tenantId, @io.micronaut.core.annotation.Nullable String namespace, @io.micronaut.core.annotation.Nullable String flowId, @io.micronaut.core.annotation.Nullable Level minLevel, @io.micronaut.core.annotation.Nullable ZonedDateTime startDate, @io.micronaut.core.annotation.Nullable ZonedDateTime endDate, @io.micronaut.core.annotation.Nullable DateUtils.GroupType groupBy) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public LogEntry save(LogEntry log) {
         logs.add(log);
 
@@ -90,6 +107,11 @@ public class MemoryLogRepository implements LogRepositoryInterface {
 
     @Override
     public Integer purge(Execution execution) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void deleteByQuery(String tenantId, String executionId, String taskId, String taskRunId, Level minLevel, Integer attempt) {
         throw new UnsupportedOperationException();
     }
 }

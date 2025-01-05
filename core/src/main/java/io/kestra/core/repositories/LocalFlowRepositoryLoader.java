@@ -3,7 +3,7 @@ package io.kestra.core.repositories;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.validations.ModelValidator;
 import io.kestra.core.serializers.YamlFlowParser;
-import io.kestra.core.services.TaskDefaultService;
+import io.kestra.core.services.PluginDefaultService;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +19,8 @@ import java.nio.file.*;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import javax.validation.ConstraintViolationException;
+
+import jakarta.validation.ConstraintViolationException;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
 
@@ -37,7 +37,7 @@ public class LocalFlowRepositoryLoader {
     private ModelValidator modelValidator;
 
     @Inject
-    private TaskDefaultService taskDefaultService;
+    private PluginDefaultService pluginDefaultService;
 
     public void load(URL basePath) throws IOException, URISyntaxException {
         URI uri = basePath.toURI();
@@ -93,7 +93,7 @@ public class LocalFlowRepositoryLoader {
                     }
                 }
             } catch (ConstraintViolationException e) {
-                log.debug("Unable to create flow {}", file, e);
+                log.warn("Unable to create flow {}", file, e);
             }
         }
     }

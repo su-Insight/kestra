@@ -5,30 +5,37 @@ import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.hierarchies.*;
+import io.kestra.core.models.tasks.ExecutableTask;
 import io.kestra.core.models.tasks.FlowableTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
-import io.kestra.core.tasks.flows.Dag;
+import io.kestra.core.models.triggers.Trigger;
+import io.kestra.plugin.core.flow.Dag;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class GraphUtils {
     public static FlowGraph flowGraph(Flow flow, Execution execution) throws IllegalVariableEvaluationException {
-        return FlowGraph.of(GraphUtils.of(flow, execution));
+        return GraphUtils.flowGraph(flow, execution, null);
     }
 
-    public static GraphCluster of(GraphCluster graph, Flow flow, Execution execution) throws IllegalVariableEvaluationException {
+    public static FlowGraph flowGraph(Flow flow, Execution execution, List<Trigger> triggers) throws IllegalVariableEvaluationException {
+        return FlowGraph.of(GraphUtils.of(flow, execution, triggers));
+    }
+
+    public static GraphCluster of(GraphCluster graph, Flow flow, Execution execution, List<Trigger> triggers) throws IllegalVariableEvaluationException {
         if (graph == null) {
             graph = new GraphCluster();
         }
 
         if (flow.getTriggers() != null) {
-            GraphCluster triggers = GraphUtils.triggers(graph, flow.getTriggers());
-            graph.addEdge(triggers.getEnd(), graph.getRoot(), new Relation());
+            GraphCluster triggersClusters = GraphUtils.triggers(graph, flow.getTriggers(), triggers);
+            graph.addEdge(triggersClusters.getEnd(), graph.getRoot(), new Relation());
         }
 
         GraphUtils.sequential(
@@ -43,16 +50,29 @@ public class GraphUtils {
     }
 
     public static GraphCluster of(Flow flow, Execution execution) throws IllegalVariableEvaluationException {
-        return GraphUtils.of(new GraphCluster(), flow, execution);
+        return GraphUtils.of(flow, execution, null);
     }
 
-    public static GraphCluster triggers(GraphCluster graph, List<AbstractTrigger> triggers) throws IllegalVariableEvaluationException {
+    public static GraphCluster of(Flow flow, Execution execution, List<Trigger> triggers) throws IllegalVariableEvaluationException {
+        return GraphUtils.of(new GraphCluster(), flow, execution, triggers);
+    }
+
+    public static GraphCluster triggers(GraphCluster graph, List<AbstractTrigger> triggersDeclarations, List<Trigger> triggers) throws IllegalVariableEvaluationException {
         GraphCluster triggerCluster = new GraphCluster("Triggers");
 
         graph.addNode(triggerCluster);
 
-        triggers.forEach(trigger -> {
-            GraphTrigger triggerNode = new GraphTrigger(trigger);
+        Map<String, Trigger> triggersById = Optional.ofNullable(triggers)
+            .map(Collection::stream)
+            .map(s -> s.collect(Collectors.toMap(
+                Trigger::getTriggerId,
+                Function.identity(),
+                (a, b) -> a.getNamespace().length() <= b.getNamespace().length() ? a : b
+            )))
+            .orElse(Collections.emptyMap());
+
+        triggersDeclarations.forEach(trigger -> {
+            GraphTrigger triggerNode = new GraphTrigger(trigger, triggersById.get(trigger.getId()));
             triggerCluster.addNode(triggerNode);
             triggerCluster.addEdge(triggerCluster.getRoot(), triggerNode, new Relation());
             triggerCluster.addEdge(triggerNode, triggerCluster.getEnd(), new Relation());
@@ -263,14 +283,14 @@ public class GraphUtils {
                 );
 
                 if (execution != null && currentTaskRun != null) {
-                    parentValues = execution.findChildsValues(currentTaskRun, true);
+                    parentValues = execution.findParentsValues(currentTaskRun, true);
                 }
 
 
                 // detect kids
                 if (currentTask instanceof FlowableTask<?> flowableTask) {
                     currentGraph = flowableTask.tasksTree(execution, currentTaskRun, parentValues);
-                } else if (currentTask instanceof io.kestra.core.tasks.flows.Flow subflowTask) {
+                } else if (currentTask instanceof ExecutableTask<?> subflowTask) {
                     currentGraph = new SubflowGraphTask(subflowTask, currentTaskRun, parentValues, relationType);
                 } else {
                     currentGraph = new GraphTask(currentTask, currentTaskRun, parentValues, relationType);
@@ -366,7 +386,7 @@ public class GraphUtils {
                     );
 
                     if (execution != null && currentTaskRun != null) {
-                        parentValues = execution.findChildsValues(currentTaskRun, true);
+                        parentValues = execution.findParentsValues(currentTaskRun, true);
                     }
 
                     // detect kids
@@ -389,7 +409,7 @@ public class GraphUtils {
                     } else {
                         for (String dependsOn : currentTask.getDependsOn()) {
                             GraphTask previousNode = nodeTaskCreated.stream().filter(node -> node.getTask().getId().equals(dependsOn)).findFirst().orElse(null);
-                            if (previousNode != null && !previousNode.getTask().isFlowable()) {
+                            if (previousNode != null && !((Task) previousNode.getTask()).isFlowable()) {
                                 graph.addEdge(
                                     previousNode,
                                     toEdgeTarget(currentGraph),

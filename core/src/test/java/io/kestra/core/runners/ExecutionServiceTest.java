@@ -1,21 +1,19 @@
 package io.kestra.core.runners;
 
 import com.google.common.collect.ImmutableMap;
-import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.services.ExecutionService;
-import io.kestra.core.services.TaskDefaultService;
-import io.kestra.core.tasks.debugs.Return;
+import io.kestra.core.services.PluginDefaultService;
+import io.kestra.plugin.core.debug.Return;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 import org.junitpioneer.jupiter.RetryingTest;
 
 import java.util.List;
-import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -29,7 +27,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
     FlowRepositoryInterface flowRepository;
 
     @Inject
-    TaskDefaultService taskDefaultService;
+    PluginDefaultService pluginDefaultService;
 
     @Test
     void restartSimple() throws Exception {
@@ -67,7 +65,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
                     .build()
             ),
             JacksonMapper.ofYaml().writeValueAsString(flow),
-            taskDefaultService.injectDefaults(flow)
+            pluginDefaultService.injectDefaults(flow)
         );
 
 
@@ -128,7 +126,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
     @Test
     void replayFromBeginning() throws Exception {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(5));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
 
         Execution restart = executionService.replay(execution, null, null);
@@ -148,7 +146,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
     @Test
     void replaySimple() throws Exception {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(5));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
 
         Execution restart = executionService.replay(execution, execution.getTaskRunList().get(1).getId(), null);
@@ -255,10 +253,12 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
     @Test
     void markAsEachPara() throws Exception {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "each-parallel-nested");
+        Flow flow = flowRepository.findByExecution(execution);
+
         assertThat(execution.getTaskRunList(), hasSize(11));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
 
-        Execution restart = executionService.markAs(execution, execution.findTaskRunByTaskIdAndValue("2-1_seq", List.of("value 1")).getId(), State.Type.FAILED);
+        Execution restart = executionService.markAs(execution, flow, execution.findTaskRunByTaskIdAndValue("2-1_seq", List.of("value 1")).getId(), State.Type.FAILED);
 
         assertThat(restart.getState().getCurrent(), is(State.Type.RESTARTED));
         assertThat(restart.getState().getHistories(), hasSize(4));
@@ -268,7 +268,7 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
         assertThat(restart.findTaskRunByTaskIdAndValue("2-1_seq", List.of("value 1")).getState().getHistories(), hasSize(4));
         assertThat(restart.findTaskRunByTaskIdAndValue("2-1_seq", List.of("value 1")).getAttempts(), nullValue());
 
-        restart = executionService.markAs(execution, execution.findTaskRunByTaskIdAndValue("2-1-2_t2", List.of("value 1")).getId(), State.Type.FAILED);
+        restart = executionService.markAs(execution, flow, execution.findTaskRunByTaskIdAndValue("2-1-2_t2", List.of("value 1")).getId(), State.Type.FAILED);
 
         assertThat(restart.getState().getCurrent(), is(State.Type.RESTARTED));
         assertThat(restart.getState().getHistories(), hasSize(4));
@@ -281,31 +281,35 @@ class ExecutionServiceTest extends AbstractMemoryRunnerTest {
     }
 
     @Test
-    void resumePausedToRunning() throws TimeoutException, InternalException {
+    void resumePausedToRunning() throws Exception {
         Execution execution = runnerUtils.runOneUntilPaused(null, "io.kestra.tests", "pause");
+        Flow flow = flowRepository.findByExecution(execution);
+
         assertThat(execution.getTaskRunList(), hasSize(1));
         assertThat(execution.getState().getCurrent(), is(State.Type.PAUSED));
 
-        Execution resume = executionService.resume(execution, State.Type.RUNNING);
+        Execution resume = executionService.resume(execution, flow, State.Type.RUNNING);
 
-        assertThat(resume.getState().getCurrent(), is(State.Type.RUNNING));
+        assertThat(resume.getState().getCurrent(), is(State.Type.RESTARTED));
         assertThat(resume.getState().getHistories(), hasSize(4));
 
         IllegalArgumentException e = assertThrows(
             IllegalArgumentException.class,
-            () -> executionService.resume(resume, State.Type.RUNNING)
+            () -> executionService.resume(resume, flow, State.Type.RUNNING)
         );
     }
 
     @Test
-    void resumePausedToKilling() throws TimeoutException, InternalException {
+    void resumePausedToKilling() throws Exception {
         Execution execution = runnerUtils.runOneUntilPaused(null, "io.kestra.tests", "pause");
+        Flow flow = flowRepository.findByExecution(execution);
+
         assertThat(execution.getTaskRunList(), hasSize(1));
         assertThat(execution.getState().getCurrent(), is(State.Type.PAUSED));
 
-        Execution resume = executionService.resume(execution, State.Type.KILLING);
+        Execution resume = executionService.resume(execution, flow, State.Type.KILLING);
 
-        assertThat(resume.getState().getCurrent(), is(State.Type.KILLING));
+        assertThat(resume.getState().getCurrent(), is(State.Type.RESTARTED));
         assertThat(resume.getState().getHistories(), hasSize(4));
     }
 }

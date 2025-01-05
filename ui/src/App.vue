@@ -2,7 +2,7 @@
     <el-config-provider>
         <left-menu v-if="configs" @menu-collapse="onMenuCollapse" />
         <error-toast v-if="message" :no-auto-hide="true" :message="message" />
-        <main :class="menuCollapsed" v-if="loaded">
+        <main v-if="loaded">
             <router-view v-if="!error" />
             <template v-else>
                 <errors :code="error" />
@@ -17,25 +17,26 @@
 </script>
 
 <script>
+    import {ElMessageBox, ElSwitch} from "element-plus";
+    import {h, ref} from "vue";
     import LeftMenu from "override/components/LeftMenu.vue";
-    import TopNavBar from "./components/layout/TopNavBar.vue";
     import ErrorToast from "./components/ErrorToast.vue";
     import {mapGetters, mapState} from "vuex";
     import Utils from "./utils/utils";
-    import {pageFromRoute} from "./utils/eventsRouter";
     import VueTour from "./components/onboarding/VueTour.vue";
+    import posthog from "posthog-js";
 
     export default {
         name: "App",
         components: {
             LeftMenu,
-            TopNavBar,
             ErrorToast,
-            VueTour
+            VueTour,
         },
         data() {
             return {
                 menuCollapsed: "",
+                fullPage: false,
                 created: false,
                 loaded: false,
             };
@@ -46,16 +47,9 @@
             ...mapGetters("core", ["guidedProperties"]),
             ...mapState("flow", ["overallTotal"]),
             ...mapGetters("misc", ["configs"]),
-            displayNavBar() {
-                if (this.$router) {
-                    return this.$route.name !== "welcome";
-                }
-
-                return true;
-            },
             envName() {
                 return this.$store.getters["layout/envName"] || this.configs?.environment?.name;
-            }
+            },
         },
         async created() {
             if (this.created === false) {
@@ -64,10 +58,57 @@
                 this.initGuidedTour();
             }
             this.setTitleEnvSuffix();
+
+            if (this.configs) {
+                // save uptime before showing security advice.
+                if (localStorage.getItem("security.advice.uptime") === null) {
+                    localStorage.setItem("security.advice.uptime", `${new Date().getTime()}`);
+                }
+                // use local-storage for ease testing
+                if (localStorage.getItem("security.advice.expired") === null) {
+                    localStorage.setItem("security.advice.expired", "604800000");  // 7 days.
+                }
+
+                // only show security advice after expiration
+                const uptime = parseInt(localStorage.getItem("security.advice.uptime"));
+                const expired = parseInt(localStorage.getItem("security.advice.expired"));
+                const isSecurityAdviceShow = (localStorage.getItem("security.advice.show") || "true") === "true";
+
+                const isSecurityAdviceEnable = new Date().getTime() - uptime >= expired
+                if (!this.configs.isBasicAuthEnabled
+                    && isSecurityAdviceShow
+                    && isSecurityAdviceEnable) {
+                    const checked = ref(false);
+                    ElMessageBox({
+                        title: this.$t("security_advice.title"),
+                        message: () => {
+                            return h("div", null, [
+                                h("p", null, this.$t("security_advice.content")),
+                                h(ElSwitch, {
+                                    modelValue: checked.value,
+                                    "onUpdate:modelValue": (val) => {
+                                        checked.value = val
+                                        localStorage.setItem("security.advice.show", `${!val}`)
+                                    },
+                                    activeText: this.$t("security_advice.switch_text")
+                                }),
+                            ])
+                        },
+                        showCancelButton: true,
+                        confirmButtonText: this.$t("security_advice.enable"),
+                        cancelButtonText: this.$t("cancel"),
+                        center: false,
+                        showClose: false,
+                    }).then(() => {
+                        this.$router.push({path: "admin/stats"});
+                    });
+                }
+            }
         },
         methods: {
             onMenuCollapse(collapse) {
-                this.menuCollapsed = collapse ? "menu-collapsed" : "menu-not-collapsed";
+                document.getElementsByTagName("html")[0].classList.add(!collapse ? "menu-not-collapsed" : "menu-collapsed");
+                document.getElementsByTagName("html")[0].classList.remove(collapse ? "menu-not-collapsed" : "menu-collapsed");
             },
             displayApp() {
                 this.onMenuCollapse(localStorage.getItem("menuCollapsed") === "true");
@@ -91,22 +132,77 @@
 
                 this.$store.dispatch("plugin/icons")
                 const config = await this.$store.dispatch("misc/loadConfigs");
-                this.$store.dispatch("api/events", {
-                    type: "PAGE",
-                    page: pageFromRoute(this.$router.currentRoute.value)
-                });
 
                 this.$store.dispatch("api/loadFeeds", {
                     version: config.version,
                     iid: config.uuid,
                     uid: uid,
                 });
+
+                this.$store.dispatch("api/loadConfig")
+                    .then(apiConfig => {
+                        this.initStats(apiConfig, config, uid);
+                    })
+            },
+            initStats(apiConfig, config, uid) {
+                if (!this.configs || this.configs["isAnonymousUsageEnabled"] === false) {
+                    return;
+                }
+
+                posthog.init(
+                    apiConfig.posthog.token,
+                    {
+                        api_host: apiConfig.posthog.apiHost,
+                        ui_host: "https://eu.posthog.com",
+                        capture_pageview: false,
+                        autocapture: false,
+                    }
+                )
+
+                posthog.register_once(this.statsGlobalData(config, uid));
+
+                if (!posthog.get_property("__alias")) {
+                    posthog.alias(apiConfig.id);
+                }
+
+                // close survey on page change
+                let surveyVisible = false;
+                window.addEventListener("PHSurveyShown", () => {
+                    surveyVisible = true;
+                });
+
+                window.addEventListener("PHSurveyClosed", () => {
+                    surveyVisible = false;
+                })
+
+                window.addEventListener("KestraRouterAfterEach", () => {
+                    if (surveyVisible) {
+                        window.dispatchEvent(new Event("PHSurveyClosed"))
+                        surveyVisible = false;
+                    }
+                })
+            },
+            statsGlobalData(config, uid) {
+                return {
+                    from: "APP",
+                    iid: config.uuid,
+                    uid: uid,
+                    app: {
+                        version: config.version,
+                        type: "OSS"
+                    }
+                }
             },
             initGuidedTour() {
                 this.$store.dispatch("flow/findFlows", {size: 1})
                     .then(flows => {
                         if (flows.total === 0 && this.$route.name === "home") {
-                            this.$router.push({name: "welcome"});
+                            this.$router.push({
+                                name: "welcome",
+                                params: {
+                                    tenant: this.$route.params.tenant
+                                }
+                            });
                         }
                     });
             },
@@ -114,7 +210,12 @@
         watch: {
             $route(to) {
                 if (this.user && to.name === "home" && this.overallTotal === 0) {
-                    this.$router.push({name: "welcome"});
+                    this.$router.push({
+                        name: "welcome",
+                        params: {
+                            tenant: this.$route.params.tenant
+                        }
+                    });
                 }
             },
             envName() {
@@ -125,7 +226,7 @@
 </script>
 
 <style lang="scss">
-    @use "styles/vendor";
-    @use "styles/app";
+@use "styles/vendor";
+@use "styles/app";
 </style>
 

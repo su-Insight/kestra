@@ -4,12 +4,13 @@
             <el-col :span="12" class="crud-align">
                 <crud type="CREATE" permission="EXECUTION" :detail="{executionId: execution.id}" />
             </el-col>
-            <el-col :span="12" class="text-end">
-                <restart is-replay :execution="execution" @follow="forwardEvent('follow', $event)" />
-                <restart :execution="execution" @follow="forwardEvent('follow', $event)" />
+            <el-col :span="12" class="d-flex gap-2 justify-content-end">
+                <set-labels :execution="execution" />
+                <restart is-replay :execution="execution" class="ms-0" @follow="forwardEvent('follow', $event)" />
+                <restart :execution="execution" class="ms-0" @follow="forwardEvent('follow', $event)" />
                 <resume :execution="execution" />
-                <kill :execution="execution" />
-                <status :status="execution.state.current" />
+                <kill :execution="execution" class="ms-0" />
+                <status :status="execution.state.current" class="ms-0" />
             </el-col>
         </el-row>
 
@@ -46,18 +47,23 @@
         </el-table>
 
         <div v-if="execution.trigger" class="mt-4">
-            <h5>{{ $t('trigger') }}</h5>
-            <vars :execution="execution" :data="execution.trigger" />
+            <h5>{{ $t("trigger") }}</h5>
+            <vars :execution="execution" :data="triggerVariables" />
         </div>
 
         <div v-if="execution.inputs" class="mt-4">
-            <h5>{{ $t('inputs') }}</h5>
+            <h5>{{ $t("inputs") }}</h5>
             <vars :execution="execution" :data="inputs" />
         </div>
 
         <div v-if="execution.variables" class="mt-4">
-            <h5>{{ $t('variables') }}</h5>
+            <h5>{{ $t("variables") }}</h5>
             <vars :execution="execution" :data="execution.variables" />
+        </div>
+
+        <div v-if="execution.outputs" class="mt-4">
+            <h5>{{ $t("outputs") }}</h5>
+            <vars :execution="execution" :data="execution.outputs" />
         </div>
     </div>
 </template>
@@ -65,6 +71,7 @@
     import {mapState} from "vuex";
     import Status from "../Status.vue";
     import Vars from "./Vars.vue";
+    import SetLabels from "./SetLabels.vue";
     import Restart from "./Restart.vue";
     import Resume from "./Resume.vue";
     import Kill from "./Kill.vue";
@@ -79,6 +86,7 @@
         components: {
             Duration,
             Status,
+            SetLabels,
             Restart,
             Vars,
             Resume,
@@ -96,9 +104,7 @@
                 if (!this.execution || State.isRunning(this.execution.state.current)) {
                     return new Date().toISOString(true)
                 } else {
-                    return this.execution.state.histories[
-                        this.execution.state.histories.length - 1
-                    ].date;
+                    return this.execution.state.histories[this.execution.state.histories.length - 1].date;
                 }
             }
         },
@@ -113,7 +119,7 @@
             }
         },
         computed: {
-            ...mapState("execution", ["execution"]),
+            ...mapState("execution", ["flow", "execution"]),
             items() {
                 if (!this.execution) {
                     return []
@@ -121,7 +127,6 @@
                 const stepCount = this.execution.taskRunList
                     ? this.execution.taskRunList.length
                     : 0;
-
                 let ret = [
                     {key: this.$t("namespace"), value: this.execution.namespace},
                     {key: this.$t("flow"), value: this.execution.flowId},
@@ -133,7 +138,9 @@
                     {key: this.$t("created date"), value: this.execution.state.histories[0].date, date: true},
                     {key: this.$t("updated date"), value: this.stop(), date: true},
                     {key: this.$t("duration"), value: this.execution.state.histories, duration: true},
-                    {key: this.$t("steps"), value: stepCount}
+                    {key: this.$t("steps"), value: stepCount},
+                    {key: this.$t("attempt"), value: this.execution?.metadata?.attemptNumber},
+                    {key: this.$t("originalCreatedDate"), value: this.execution?.metadata?.originalCreatedDate, date: true},
                 ];
 
                 if (this.execution.parentId) {
@@ -163,14 +170,34 @@
                 return ret;
             },
             inputs() {
-                return toRaw(this.execution.inputs);
+                if (!this.flow) {
+                    return []
+                }
+
+                let inputs = toRaw(this.execution.inputs);
+                Object.keys(inputs).forEach(key => {
+                    (this.flow.inputs || []).forEach(input => {
+                        if (key === input.name && input.type === "SECRET") {
+                            inputs[key] = "******";
+                        }
+                    })
+                })
+                return inputs;
+            },
+            // This is used to display correctly trigger variables
+            triggerVariables() {
+                let trigger = this.execution.trigger
+                trigger["trigger"] = this.execution.trigger.variables
+                delete trigger["variables"]
+
+                return trigger
             }
         },
     };
 </script>
 <style scoped lang="scss">
-.crud-align {
-    display: flex;
-    align-items: center;
-}
+    .crud-align {
+        display: flex;
+        align-items: center;
+    }
 </style>
