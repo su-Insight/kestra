@@ -70,7 +70,7 @@
 
                 const children = [
                     h("a", {
-                        href: "https://kestra.io/slack",
+                        href: "https://kestra.io/slack?utm_source=app&utm_content=error",
                         class: "position-absolute slack-on-error el-button el-button--small is-text is-has-bg",
                         target: "_blank"
                     }, [h(Slack), h("span", {innerText: this.$t("slack support")})]),
@@ -98,9 +98,8 @@
                 this.notifications = ElNotification({
                     title: this.title || "Error",
                     message: h("div",  children),
-                    position: 'top-right',
-                    offset: 65,
-                    type: "error",
+                    position: "bottom-right",
+                    type: this.message.variant,
                     duration: 0,
                     dangerouslyUseHTMLString: true,
                     customClass: "error-notification" + (children.length > 1 ? " large" : "")

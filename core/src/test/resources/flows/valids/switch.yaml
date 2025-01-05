@@ -2,9 +2,9 @@ id: switch
 namespace: io.kestra.tests
 
 inputs:
-  - name: string
+  - id: string
     type: STRING
-  - name: def
+  - id: def
     type: STRING
     defaults: amazing
 
@@ -41,3 +41,8 @@ tasks:
       - id: default
         type: io.kestra.core.tasks.debugs.Return
         format: "{{task.id}} > {{ inputs.def }} > {{taskrun.startDate}}"
+
+triggers:
+  - id: schedule
+    type: io.kestra.core.models.triggers.types.Schedule
+    cron: "0 * * * *"

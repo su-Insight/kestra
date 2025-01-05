@@ -10,8 +10,7 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.conditions.Condition;
 import io.kestra.core.models.conditions.ConditionContext;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 @SuperBuilder
 @ToString
@@ -19,7 +18,8 @@ import javax.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Condition for a flow namespace"
+    title = "Condition for a flow namespace.",
+    description = "Use `io.kestra.core.models.conditions.types.ExecutionNamespaceCondition` instead."
 )
 @Plugin(
     examples = {
@@ -35,17 +35,18 @@ import javax.validation.constraints.NotNull;
         )
     }
 )
+@Deprecated
 public class FlowNamespaceCondition extends Condition {
     @NotNull
     @Schema(
-        title = "The namespace of the flow or the prefix if `prefix` is true"
+        title = "The namespace of the flow or the prefix if `prefix` is true."
     )
     @PluginProperty
     private String namespace;
 
     @Builder.Default
     @Schema(
-        title = "If we must look at the flow namespace by prefix (simple startWith case sensitive)"
+        title = "If we must look at the flow namespace by prefix (checked using startWith). The prefix is case sensitive."
     )
     @PluginProperty
     private final Boolean prefix = false;

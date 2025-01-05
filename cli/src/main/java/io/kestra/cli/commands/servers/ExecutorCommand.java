@@ -1,6 +1,7 @@
 package io.kestra.cli.commands.servers;
 
 import com.google.common.collect.ImmutableMap;
+import io.kestra.core.contexts.KestraContext;
 import io.kestra.core.models.ServerType;
 import io.kestra.core.runners.ExecutorInterface;
 import io.kestra.core.services.SkipExecutionService;
@@ -29,6 +30,9 @@ public class ExecutorCommand extends AbstractServerCommand {
     @CommandLine.Option(names = {"--skip-executions"}, split=",", description = "a list of execution identifiers to skip, separated by a coma; for troubleshooting purpose only")
     private List<String> skipExecutions = Collections.emptyList();
 
+    @CommandLine.Option(names = {"--skip-flows"}, split=",", description = "a list of flow identifiers (tenant|namespace|flowId) to skip, separated by a coma; for troubleshooting purpose only")
+    private List<String> skipFlows = Collections.emptyList();
+
     @SuppressWarnings("unused")
     public static Map<String, Object> propertiesOverrides() {
         return ImmutableMap.of(
@@ -39,15 +43,15 @@ public class ExecutorCommand extends AbstractServerCommand {
     @Override
     public Integer call() throws Exception {
         this.skipExecutionService.setSkipExecutions(skipExecutions);
+        this.skipExecutionService.setSkipFlows(skipFlows);
 
         super.call();
+        this.shutdownHook(() -> KestraContext.getContext().shutdown());
 
         ExecutorInterface executorService = applicationContext.getBean(ExecutorInterface.class);
         executorService.run();
 
         log.info("Executor started");
-
-        this.shutdownHook(executorService::close);
 
         Await.until(() -> !this.applicationContext.isRunning());
 

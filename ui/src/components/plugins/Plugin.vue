@@ -1,20 +1,18 @@
 <template>
-    <top-nav-bar :title="routeInfo.title" :breadcrumb="routeInfo.breadcrumb" />
-    <div class="mt-3">
+    <top-nav-bar :title="routeInfo.title" />
+    <section :class="pluginIsSelected ? 'mt-4': ''">
         <el-row :gutter="15">
-            <el-col :span="18" class="markdown" v-loading="isLoading">
-                <markdown v-if="plugin && $route.params.cls" :source="plugin.markdown" :permalink="true" />
-                <div v-else>
-                    <el-alert type="info" :closable="false" show-icon>
-                        {{ $t('plugins.please') }}
-                    </el-alert>
-                </div>
-            </el-col>
-            <el-col :span="6">
+            <el-col :span="4" v-if="pluginIsSelected">
                 <Toc @router-change="onRouterChange" v-if="plugins" :plugins="plugins" />
             </el-col>
+            <el-col :span="(pluginIsSelected) ? 18 : 24" class="markdown" v-loading="isLoading">
+                <markdown v-if="pluginIsSelected" :source="plugin.markdown" :permalink="true" />
+                <div v-else>
+                    <plugin-home v-if="plugins" :plugins="plugins" />
+                </div>
+            </el-col>
         </el-row>
-    </div>
+    </section>
 </template>
 
 <script>
@@ -23,10 +21,12 @@
     import Markdown from "../layout/Markdown.vue"
     import Toc from "./Toc.vue"
     import {mapState} from "vuex";
+    import PluginHome from "./PluginHome.vue";
 
     export default {
         mixins: [RouteContext],
         components: {
+            PluginHome,
             Markdown,
             Toc,
             TopNavBar
@@ -45,6 +45,9 @@
                         }
                     ]
                 }
+            },
+            pluginIsSelected() {
+                return this.plugin && this.$route.params.cls
             }
         },
         data() {
@@ -57,7 +60,7 @@
             this.loadPlugin()
         },
         watch: {
-            $route(newValue, oldValue) {
+            $route(newValue, _oldValue) {
                 if (newValue.name.startsWith("plugins/")) {
                     this.onRouterChange();
                 }
@@ -93,6 +96,9 @@
 </script>
 
 <style lang="scss">
+    section {
+        overflow-x: hidden;
+    }
     .markdown {
         h1 {
             font-size: calc(var(--font-size-base) * 2);

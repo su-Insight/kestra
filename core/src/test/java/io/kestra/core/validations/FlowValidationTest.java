@@ -8,7 +8,7 @@ import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 import java.io.File;
 import java.net.URL;
 import java.util.Optional;
@@ -30,7 +30,7 @@ class FlowValidationTest {
         Optional<ConstraintViolationException> validate = modelValidator.isValid(flow);
 
         assertThat(validate.isPresent(), is(true));
-        assertThat(validate.get().getMessage(), containsString(": Invalid Flow: Recursive call to flow [recursive-flow]"));
+        assertThat(validate.get().getMessage(), containsString(": Invalid Flow: Recursive call to flow [io.kestra.tests.recursive-flow]"));
     }
 
     private Flow parse(String path) {

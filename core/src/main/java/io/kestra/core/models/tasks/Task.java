@@ -13,13 +13,14 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
+import org.slf4j.event.Level;
 
 import java.time.Duration;
 import java.util.Optional;
-import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import static io.kestra.core.utils.Rethrow.throwFunction;
 
@@ -32,7 +33,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 abstract public class Task {
     @NotNull
     @NotBlank
-    @Pattern(regexp="[a-zA-Z0-9_-]+")
+    @Pattern(regexp="^[a-zA-Z0-9][a-zA-Z0-9_-]*")
     protected String id;
 
     @NotNull
@@ -52,6 +53,11 @@ abstract public class Task {
 
     @Valid
     private WorkerGroup workerGroup;
+
+    private Level logLevel;
+
+    @Builder.Default
+    private boolean allowFailure = false;
 
     public Optional<Task> findById(String id) {
         if (this.getId().equals(id)) {
