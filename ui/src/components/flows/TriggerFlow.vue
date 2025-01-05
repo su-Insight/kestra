@@ -1,8 +1,6 @@
 <template>
     <div class="trigger-flow-wrapper">
-        <el-button class="edit-flow-trigger-button" :icon="icon.Flash" :disabled="isDisabled()" :type="type" @click="onClick">
-            {{ $t('execute') }}
-        </el-button>
+        <el-button :icon="icon.Flash" :type="type" :disabled="isDisabled()" @click="onClick()">{{ $t("execute") }}</el-button>
         <el-dialog v-if="isOpen" v-model="isOpen" destroy-on-close :append-to-body="true">
             <template #header>
                 <span v-html="$t('execute the flow', {id: flowId})" />
@@ -22,12 +20,11 @@
 
     export default {
         components: {
-            FlowRun,
+            FlowRun
         },
         props: {
             flowId: {
-                type: String,
-                required: true
+                type: String
             },
             namespace: {
                 type: String,
@@ -50,16 +47,6 @@
                 }
             };
         },
-        mounted() {
-            if (!this.flow && this.flowId && this.namespace) {
-                this.$store
-                    .dispatch("flow/loadFlow", {
-                        id: this.flowId,
-                        namespace: this.namespace,
-                        allowDeleted: true
-                    });
-            }
-        },
         methods: {
             onClick() {
                 if (this.$tours["guidedTour"].isRunning.value && !this.guidedProperties.executeFlow) {
@@ -74,13 +61,20 @@
                     this.$tours["guidedTour"].nextStep();
                     return;
                 }
-                this.isOpen = !this.isOpen
+                this.isOpen = !this.isOpen;
             },
             closeModal() {
                 this.isOpen = false;
             },
             isDisabled() {
                 return this.disabled || this.flow?.deleted;
+            },
+            loadDefinition() {
+                this.$store.dispatch("flow/loadFlow", {
+                    id: this.flowId,
+                    namespace: this.namespace,
+                    allowDeleted: true
+                });
             }
         },
         computed: {
@@ -106,15 +100,13 @@
             },
             flowId: {
                 handler() {
-                    if ((!this.flow || this.flow.id !== this.flowId) && this.flowId && this.namespace) {
-                        this.$store
-                            .dispatch("flow/loadFlow", {
-                                id: this.flowId,
-                                namespace: this.namespace,
-                                allowDeleted: true
-                            });
+                    if (!this.flowId) {
+                        return;
                     }
-                }
+
+                    this.loadDefinition();
+                },
+                immediate: true
             }
         }
     };

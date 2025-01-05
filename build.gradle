@@ -12,7 +12,7 @@ plugins {
     id 'jacoco-report-aggregation'
 
     // helper
-    id "com.github.ben-manes.versions" version "0.49.0"
+    id "com.github.ben-manes.versions" version "0.50.0"
 
     // front
     id 'org.siouan.frontend-jdk11' version '8.0.0' apply false
@@ -191,6 +191,8 @@ subprojects {
         environment 'SECRET_MY_SECRET', "{\"secretKey\":\"secretValue\"}".bytes.encodeBase64().toString()
         environment 'SECRET_WEBHOOK_KEY', "secretKey".bytes.encodeBase64().toString()
         environment 'SECRET_NON_B64_SECRET', "some secret value"
+        environment 'KESTRA_TEST1', "true"
+        environment 'KESTRA_TEST2', "Pass by env"
     }
 
     testlogger {

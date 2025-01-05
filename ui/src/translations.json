@@ -25,6 +25,7 @@
     "save": "Save",
     "saved": "Successfully saved",
     "saved done": "<em>{name}</em> is successfully saved",
+    "multiple saved done": "{name} have been saved",
     "delete": "Delete",
     "deleted": "Successfully deleted",
     "deleted confirm": "<em>{name}</em> is successfully deleted!",
@@ -217,6 +218,8 @@
       "names": "Plugins",
       "please": "Please choose a task on the right to see its documentation"
     },
+    "last execution date": "Last execution date",
+    "last execution status": "Last status",
     "last X days count": "{count} in last {days} days",
     "date range count": "{count} between the {startDate} and the {endDate}",
     "date count": "{count} on the {date}",
@@ -242,6 +245,9 @@
     "Total": "Total",
     "sub flow": "Sub-flow",
     "execute": "Execute",
+    "execute flow behaviour": "Execute the flow",
+    "open in same tab": "In the same tab",
+    "open in new tab": "In a new tab",
     "execute the flow": "Execute the flow <code>{id}</code>",
     "execute flow now ?": "Do you want to execute this flow?",
     "Default namespace": "Default namespace",
@@ -512,7 +518,21 @@
     "port": "Port",
     "management port": "Management port",
     "file preview truncated": "Displayed content has been truncated",
-    "show": "Show"
+    "row count": "Row count",
+    "encoding": "Encoding",
+    "show": "Show",
+    "advanced configuration": "Advanced configuration",
+    "all executions": "All executions",
+    "trigger execution id": "Parent Id",
+    "namespace files": {
+      "import": {
+        "file": "Import from ZIP or add file(s)",
+        "folder": "Import from folder",
+        "success": "File(s) successfully imported",
+        "error": "Error(s) occurred while importing file(s)"
+      },
+      "export": "Export as ZIP file"
+    }
   },
   "fr": {
     "id": "Identifiant",
@@ -540,6 +560,7 @@
     "save": "Enregistrer",
     "saved": "Enregistrement réussi",
     "saved done": "<em>{name}</em> est enregistré avec succès",
+    "multiple saved done": "{name} ont été enregistré(e)s",
     "delete": "Effacer",
     "deleted": "Effacement réussi",
     "deleted confirm": "<em>{name}</em> est effacé !",
@@ -636,7 +657,7 @@
     "prefill inputs": "Pré-remplir",
     "current": "actuel",
     "change status": "Changer le statut",
-    "change status done": "Le statut de la tâche a était mis à jour",
+    "change status done": "Le statut de la tâche a été mis à jour",
     "change status confirm": "Êtes-vous sur de vouloir changer le statut de la tâche <code>{task}</code> pour l'exécution <code>{id}</code> ?",
     "change status hint": {
       "WARNING": [
@@ -734,6 +755,8 @@
       "please": "Veuillez choisir une tache sur la droite afin de voir sa documentation"
     },
     "last X days count": "{count} lors des {days} derniers jours",
+    "last execution date": "Dernière execution",
+    "last execution status": "Dernier statut",
     "date range count": "{count} entre le {startDate} et le {endDate}",
     "date count": "{count} le {date}",
     "revisions": "Révisions",
@@ -758,6 +781,9 @@
     "Total": "Total",
     "sub flow": "Sous-flow",
     "execute": "Exécuter",
+    "execute flow behaviour": "Exécuter le flow",
+    "open in same tab": "Dans le même onglet",
+    "open in new tab": "Dans un nouvel onglet",
     "execute the flow": "Exécuter le flow <code>{id}</code>",
     "execute flow now ?": "Voulez-vous exécuter ce flow ?",
     "Default namespace": "Espace de nom par défaut",
@@ -1017,7 +1043,21 @@
     "port": "Port",
     "management port": "Port de gestion",
     "file preview truncated": "Displayed content has been truncated",
-    "show": "Voir"
+    "show": "Afficher",
+    "advanced configuration": "Configuration avancée",
+    "row count": "Nombre de lignes",
+    "encoding": "Encodage",
+    "all executions": "Toutes les exécutions",
+    "trigger execution id": "Id parent",
+    "namespace files": {
+      "import": {
+        "file": "Importer depuis un ZIP ou ajouter des fichiers",
+        "folder": "Importer depuis un dossier",
+        "success": "Fichier(s) importé(s) avec succès",
+        "error": "Une erreur est survenue lors de l'importation"
+      },
+      "export": "Export as ZIP file"
+    }
   }
 }
 

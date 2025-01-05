@@ -91,7 +91,6 @@ import java.util.Optional;
 )
 public class EachParallel extends Parallel implements FlowableTask<VoidOutput> {
     @NotNull
-    @NotBlank
     @Builder.Default
     @Schema(
         title = "Number of concurrent parallel tasks",
@@ -101,11 +100,10 @@ public class EachParallel extends Parallel implements FlowableTask<VoidOutput> {
     private final Integer concurrent = 0;
 
     @NotNull
-    @NotBlank
     @PluginProperty(dynamic = true)
     @Schema(
         title = "The list of values for this task",
-        description = "The value car be passed as a String, a list of String, or a list of objects",
+        description = "The value can be passed as a String, a list of String, or a list of objects",
         anyOf = {String.class, Object[].class}
     )
     private Object value;
@@ -134,7 +132,7 @@ public class EachParallel extends Parallel implements FlowableTask<VoidOutput> {
     public Optional<State.Type> resolveState(RunContext runContext, Execution execution, TaskRun parentTaskRun) throws IllegalVariableEvaluationException {
         List<ResolvedTask> childTasks = this.childTasks(runContext, parentTaskRun);
 
-        if (childTasks.size() == 0) {
+        if (childTasks.isEmpty()) {
             return Optional.of(State.Type.SUCCESS);
         }
 
@@ -143,7 +141,8 @@ public class EachParallel extends Parallel implements FlowableTask<VoidOutput> {
             childTasks,
             FlowableUtils.resolveTasks(this.getErrors(), parentTaskRun),
             parentTaskRun,
-            runContext
+            runContext,
+            this.isAllowFailure()
         );
     }
 

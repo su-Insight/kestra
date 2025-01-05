@@ -4,16 +4,21 @@ import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.metrics.MetricRegistry;
 import io.kestra.core.models.executions.Execution;
+import io.kestra.core.models.executions.ExecutionKilled;
 import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.executions.TaskRun;
+import io.kestra.core.models.executions.TaskRunAttempt;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.models.tasks.ExecutableTask;
+import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.multipleflows.MultipleConditionStorageInterface;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.runners.*;
 import io.kestra.core.services.*;
+import io.kestra.core.tasks.flows.ForEachItem;
 import io.kestra.core.tasks.flows.Template;
 import io.kestra.core.utils.Either;
 import io.micronaut.context.ApplicationContext;
@@ -25,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,7 +45,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class MemoryExecutor implements ExecutorInterface {
     private static final ConcurrentHashMap<String, ExecutionState> EXECUTIONS = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, WorkerTaskExecution> WORKERTASKEXECUTIONS_WATCHER = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, WorkerTaskExecution<?>> WORKERTASKEXECUTIONS_WATCHER = new ConcurrentHashMap<>();
     private List<Flow> allFlows;
     private final ScheduledExecutorService schedulerDelay = Executors.newSingleThreadScheduledExecutor();
 
@@ -64,9 +70,6 @@ public class MemoryExecutor implements ExecutorInterface {
     @Inject
     @Named(QueueFactoryInterface.WORKERTASKLOG_NAMED)
     private QueueInterface<LogEntry> logQueue;
-
-    @Inject
-    private FlowService flowService;
 
     @Inject
     private TaskDefaultService taskDefaultService;
@@ -98,6 +101,10 @@ public class MemoryExecutor implements ExecutorInterface {
     @Inject
     private AbstractFlowTriggerService flowTriggerService;
 
+    @Inject
+    @Named(QueueFactoryInterface.KILL_NAMED)
+    protected QueueInterface<ExecutionKilled> killQueue;
+
     private final MultipleConditionStorageInterface multipleConditionStorage = new MemoryMultipleConditionStorage();
 
     @Override
@@ -109,6 +116,7 @@ public class MemoryExecutor implements ExecutorInterface {
 
         this.executionQueue.receive(MemoryExecutor.class, this::executionQueue);
         this.workerTaskResultQueue.receive(MemoryExecutor.class, this::workerTaskResultQueue);
+        this.killQueue.receive(MemoryExecutor.class, this::killQueue);
     }
 
     private void executionQueue(Either<Execution, DeserializationException> either) {
@@ -123,7 +131,7 @@ public class MemoryExecutor implements ExecutorInterface {
             return;
         }
 
-        if (message.getTaskRunList() == null || message.getTaskRunList().size() == 0 || message.getState().isCreated()) {
+        if (message.getTaskRunList() == null || message.getTaskRunList().isEmpty() || message.getState().isCreated()) {
             this.handleExecution(saveExecution(message));
         }
     }
@@ -228,12 +236,17 @@ public class MemoryExecutor implements ExecutorInterface {
             }
 
 
-            if (executor.getWorkerTaskExecutions().size() > 0) {
+            if (!executor.getWorkerTaskExecutions().isEmpty()) {
                 executor.getWorkerTaskExecutions()
                     .forEach(workerTaskExecution -> {
                         WORKERTASKEXECUTIONS_WATCHER.put(workerTaskExecution.getExecution().getId(), workerTaskExecution);
 
                         executionQueue.emit(workerTaskExecution.getExecution());
+
+                        // send a running worker task result to track running vs created status
+                        if (workerTaskExecution.getTask().waitForExecution()) {
+                            sendWorkerTaskResultForWorkerTaskExecution(execution, workerTaskExecution, workerTaskExecution.getTaskRun());
+                        }
                     });
             }
 
@@ -250,21 +263,45 @@ public class MemoryExecutor implements ExecutorInterface {
 
             // worker task execution
             if (conditionService.isTerminatedWithListeners(flow, execution) && WORKERTASKEXECUTIONS_WATCHER.containsKey(execution.getId())) {
-                WorkerTaskExecution workerTaskExecution = WORKERTASKEXECUTIONS_WATCHER.get(execution.getId());
+                WorkerTaskExecution<?> workerTaskExecution = WORKERTASKEXECUTIONS_WATCHER.get(execution.getId());
 
                 // If we didn't wait for the flow execution, the worker task execution has already been created by the Executor service.
-                if (workerTaskExecution.getTask().getWait()) {
-                    Flow workerTaskFlow = this.flowRepository.findByExecution(execution);
-
-                    WorkerTaskResult workerTaskResult = workerTaskExecution
-                        .getTask()
-                        .createWorkerTaskResult(runContextFactory, workerTaskExecution, workerTaskFlow, execution);
-
-                    this.workerTaskResultQueue.emit(workerTaskResult);
+                if (workerTaskExecution.getTask().waitForExecution()) {
+                    sendWorkerTaskResultForWorkerTaskExecution(execution, workerTaskExecution, workerTaskExecution.getTaskRun().withState(execution.getState().getCurrent()));
                 }
 
                 WORKERTASKEXECUTIONS_WATCHER.remove(execution.getId());
             }
+        }
+    }
+
+    private void sendWorkerTaskResultForWorkerTaskExecution(Execution execution, WorkerTaskExecution<?> workerTaskExecution, TaskRun taskRun) {
+        try {
+            Flow workerTaskFlow = this.flowRepository.findByExecution(execution);
+
+            ExecutableTask<?> executableTask = workerTaskExecution.getTask();
+
+            RunContext runContext = runContextFactory.of(
+                workerTaskFlow,
+                workerTaskExecution.getTask(),
+                execution,
+                workerTaskExecution.getTaskRun()
+            );
+
+            Optional<WorkerTaskResult> maybeWorkerTaskResult = executableTask
+                .createWorkerTaskResult(runContext, taskRun, workerTaskFlow, execution);
+
+            maybeWorkerTaskResult.ifPresent(workerTaskResult -> this.workerTaskResultQueue.emit(workerTaskResult));
+        } catch (Exception e) {
+            log.error("Unable to create the Worker Task Result", e);
+            // we send a fail worker task result to end the flow
+            this.workerTaskResultQueue.emit(
+                WorkerTaskResult.builder()
+                    .taskRun(taskRun.withState(State.Type.FAILED).withAttempts(
+                        Collections.singletonList(TaskRunAttempt.builder().state(new State().withState(State.Type.FAILED)).build())
+                    ))
+                    .build()
+            );
         }
     }
 
@@ -346,7 +383,7 @@ public class MemoryExecutor implements ExecutorInterface {
 
                 if (executionState.execution.hasTaskRunJoinable(message.getTaskRun())) {
                     try {
-                        return executionState.from(message, this.executorService, this.flowRepository);
+                        return executionState.from(message, this.executorService, this.executionService, this.flowRepository);
                     } catch (InternalException e) {
                         return new ExecutionState(executionState, executionState.execution.failedExecutionFromExecutor(e).getExecution());
                     }
@@ -395,6 +432,40 @@ public class MemoryExecutor implements ExecutorInterface {
             });
     }
 
+    private void killQueue(Either<ExecutionKilled, DeserializationException> either) {
+        if (either.isRight()) {
+            log.error("Unable to deserialize a killed execution: {}", either.getRight().getMessage());
+            return;
+        }
+
+        ExecutionKilled message = either.getLeft();
+        if (skipExecutionService.skipExecution(message.getExecutionId())) {
+            log.warn("Skipping execution {}", message.getExecutionId());
+            return;
+        }
+
+
+        synchronized (this) {
+            if (log.isDebugEnabled()) {
+                executorService.log(log, true, message);
+            }
+
+            // save WorkerTaskResult on current QueuedExecution
+            EXECUTIONS.compute(message.getExecutionId(), (s, executionState) -> {
+                if (executionState == null) {
+                    throw new IllegalStateException("Execution state don't exist for " + s + ", receive " + message);
+                }
+
+                return executionState.from(executionService.kill(executionState.execution));
+            });
+
+            Flow flow = this.flowRepository.findByExecution(EXECUTIONS.get(message.getExecutionId()).execution);
+            flow = transform(flow, EXECUTIONS.get(message.getExecutionId()).execution);
+
+            this.toExecution(new Executor(EXECUTIONS.get(message.getExecutionId()).execution, null).withFlow(flow));
+        }
+    }
+
 
     private static class ExecutionState {
         private final Execution execution;
@@ -440,17 +511,35 @@ public class MemoryExecutor implements ExecutorInterface {
             return new ExecutionState(this, newExecution);
         }
 
-        public ExecutionState from(WorkerTaskResult workerTaskResult, ExecutorService executorService, FlowRepositoryInterface flowRepository) throws InternalException {
+        public ExecutionState from(WorkerTaskResult workerTaskResult, ExecutorService executorService, ExecutionService executionService, FlowRepositoryInterface flowRepository) throws InternalException {
+            Flow flow = flowRepository.findByExecution(this.execution);
+
+            // iterative tasks
+            Task task = flow.findTaskByTaskId(workerTaskResult.getTaskRun().getTaskId());
+            TaskRun taskRun;
+            if (task instanceof ForEachItem forEachItem) {
+                taskRun = ExecutableUtils.manageIterations(workerTaskResult.getTaskRun(), this.execution, forEachItem.getTransmitFailed(), forEachItem.isAllowFailure());
+            } else {
+                taskRun = workerTaskResult.getTaskRun();
+            }
+
             this.taskRuns.compute(
-                taskRunKey(workerTaskResult.getTaskRun()),
-                (key, taskRun) -> workerTaskResult.getTaskRun()
+                taskRunKey(taskRun),
+                (key, value) -> taskRun
             );
 
+            // dynamic tasks
             Execution execution = executorService.addDynamicTaskRun(
                 this.execution,
-                flowRepository.findByExecution(this.execution),
+                flow,
                 workerTaskResult
             );
+
+            // If the worker task result is killed, we must check if it has a parents to also kill them if not already done.
+            // Running flowable tasks that have child tasks running in the worker will be killed thanks to that.
+            if (taskRun.getState().getCurrent() == State.Type.KILLED && taskRun.getParentTaskRunId() != null) {
+                execution = executionService.killParentTaskruns(taskRun, execution);
+            }
 
             if (execution != null) {
                 return new ExecutionState(this, execution);
