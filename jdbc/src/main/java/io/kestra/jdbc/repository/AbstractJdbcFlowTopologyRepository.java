@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Singleton
 public abstract class AbstractJdbcFlowTopologyRepository extends AbstractJdbcRepository implements FlowTopologyRepositoryInterface, JdbcIndexerInterface<FlowTopology> {
     protected final io.kestra.jdbc.AbstractJdbcRepository<FlowTopology> jdbcRepository;
 
@@ -110,7 +109,7 @@ public abstract class AbstractJdbcFlowTopologyRepository extends AbstractJdbcRep
                                 .set(AbstractJdbcRepository.field("key"), this.jdbcRepository.key(flowTopology))
                                 .set(this.jdbcRepository.persistFields(flowTopology))
                             )
-                            .collect(Collectors.toList())
+                            .toList()
                         )
                         .execute();
                 }

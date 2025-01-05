@@ -9,14 +9,10 @@ import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.repositories.LocalFlowRepositoryLoader;
 import io.kestra.core.runners.*;
-import io.kestra.core.tasks.flows.EachSequentialTest;
-import io.kestra.core.tasks.flows.FlowCaseTest;
-import io.kestra.core.tasks.flows.ForEachItemCaseTest;
-import io.kestra.core.tasks.flows.PauseTest;
-import io.kestra.core.tasks.flows.WorkingDirectoryTest;
 import io.kestra.core.utils.TestsUtils;
 import io.kestra.jdbc.JdbcTestUtils;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.plugin.core.flow.*;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.junit.jupiter.api.BeforeAll;
@@ -32,9 +28,8 @@ import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.hamcrest.Matchers.is;
 
-@MicronautTest(transactional = false)
+@KestraTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // must be per-class to allow calling once init() which took a lot of time
 public abstract class JdbcRunnerTest {
     @Inject
@@ -63,7 +58,7 @@ public abstract class JdbcRunnerTest {
     private MultipleConditionTriggerCaseTest multipleConditionTriggerCaseTest;
 
     @Inject
-    private TaskDefaultsCaseTest taskDefaultsCaseTest;
+    private PluginDefaultsCaseTest pluginDefaultsCaseTest;
 
     @Inject
     private FlowCaseTest flowCaseTest;
@@ -79,6 +74,9 @@ public abstract class JdbcRunnerTest {
 
     @Inject
     private ForEachItemCaseTest forEachItemCaseTest;
+
+    @Inject
+    private WaitForCaseTest waitForTestCaseTest;
 
     @Inject
     private FlowConcurrencyCaseTest flowConcurrencyCaseTest;
@@ -99,7 +97,7 @@ public abstract class JdbcRunnerTest {
 
         assertThat(execution.getTaskRunList(), hasSize(13));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
-        assertThat((String) execution.findTaskRunsByTaskId("t2").get(0).getOutputs().get("value"), containsString("value1"));
+        assertThat((String) execution.findTaskRunsByTaskId("t2").getFirst().getOutputs().get("value"), containsString("value1"));
     }
 
     @Test
@@ -195,6 +193,11 @@ public abstract class JdbcRunnerTest {
         multipleConditionTriggerCaseTest.trigger();
     }
 
+    @Test
+    void multipleConditionTriggerFailed() throws Exception {
+        multipleConditionTriggerCaseTest.failed();
+    }
+
     @RetryingTest(5)
     void eachWithNull() throws Exception {
         EachSequentialTest.eachNullTest(runnerUtils, logsQueue);
@@ -202,8 +205,8 @@ public abstract class JdbcRunnerTest {
 
     @Test
     void taskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/task-defaults.yaml")));
-        taskDefaultsCaseTest.taskDefaults();
+        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/plugin-defaults.yaml")));
+        pluginDefaultsCaseTest.taskDefaults();
     }
 
     @RetryingTest(5)
@@ -260,7 +263,7 @@ public abstract class JdbcRunnerTest {
     void executionDate() throws TimeoutException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "execution-start-date", null, null, Duration.ofSeconds(60));
 
-        assertThat((String) execution.getTaskRunList().get(0).getOutputs().get("value"), matchesPattern("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
+        assertThat((String) execution.getTaskRunList().getFirst().getOutputs().get("value"), matchesPattern("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
     }
 
     @Test
@@ -268,12 +271,12 @@ public abstract class JdbcRunnerTest {
         skipExecutionCaseTest.skipExecution();
     }
 
-    @RetryingTest(5)
+    @Test
     void forEachItem() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
         forEachItemCaseTest.forEachItem();
     }
 
-    @RetryingTest(5)
+    @Test
     void forEachItemNoWait() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
         forEachItemCaseTest.forEachItemNoWait();
     }
@@ -283,7 +286,7 @@ public abstract class JdbcRunnerTest {
         forEachItemCaseTest.forEachItemFailed();
     }
 
-    @RetryingTest(5)
+    @Test
     void forEachItemSubflowOutputs() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
         forEachItemCaseTest.forEachItemWithSubflowOutputs();
     }
@@ -318,7 +321,45 @@ public abstract class JdbcRunnerTest {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "executable-fail");
 
         assertThat(execution.getTaskRunList().size(), is(1));
-        assertThat(execution.getTaskRunList().get(0).getState().getCurrent(), is(State.Type.FAILED));
+        assertThat(execution.getTaskRunList().getFirst().getState().getCurrent(), is(State.Type.FAILED));
         assertThat(execution.getState().getCurrent(), is(State.Type.FAILED));
+    }
+
+    @Test
+    void dynamicTask() throws TimeoutException {
+        Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "dynamic-task");
+
+        assertThat(execution.getTaskRunList().size(), is(2));
+        assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+    }
+
+    @Test
+    void waitFor() throws TimeoutException {
+        waitForTestCaseTest.waitfor();
+    }
+
+    @Test
+    void waitforMaxIterations() throws TimeoutException {
+        waitForTestCaseTest.waitforMaxIterations();
+    }
+
+    @Test
+    void waitforMaxDuration() throws TimeoutException {
+        waitForTestCaseTest.waitforMaxDuration();
+    }
+
+    @Test
+    void waitforNoSuccess() throws TimeoutException {
+        waitForTestCaseTest.waitforNoSuccess();
+    }
+
+    @Test
+    void waitforMultipleTasks() throws TimeoutException {
+        waitForTestCaseTest.waitforMultipleTasks();
+    }
+
+    @Test
+    void waitforMultipleTasksFailed() throws TimeoutException {
+        waitForTestCaseTest.waitforMultipleTasksFailed();
     }
 }

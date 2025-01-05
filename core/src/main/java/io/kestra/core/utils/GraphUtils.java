@@ -10,7 +10,7 @@ import io.kestra.core.models.tasks.FlowableTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.Trigger;
-import io.kestra.core.tasks.flows.Dag;
+import io.kestra.plugin.core.flow.Dag;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 
@@ -86,7 +86,7 @@ public class GraphUtils {
             .stream()
             .flatMap(t -> t instanceof GraphCluster ? nodes((GraphCluster) t).stream() : Stream.of(t))
             .distinct()
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static List<Triple<AbstractGraph, AbstractGraph, Relation>> rawEdges(GraphCluster graphCluster) {
@@ -98,14 +98,14 @@ public class GraphUtils {
                     .stream()
                     .flatMap(t -> t instanceof GraphCluster ? rawEdges((GraphCluster) t).stream() : Stream.of())
             )
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static List<FlowGraph.Edge> edges(GraphCluster graphCluster) {
         return rawEdges(graphCluster)
             .stream()
             .map(r -> new FlowGraph.Edge(r.getLeft().getUid(), r.getMiddle().getUid(), r.getRight()))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static List<Pair<GraphCluster, List<String>>> clusters(GraphCluster graphCluster, List<String> parents) {
@@ -125,7 +125,7 @@ public class GraphUtils {
 
                 return Stream.of();
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static Set<AbstractGraph> successors(GraphCluster graphCluster, List<String> taskRunIds) {
@@ -136,7 +136,7 @@ public class GraphUtils {
             .stream()
             .filter(task -> task instanceof AbstractGraphTask)
             .filter(task -> ((AbstractGraphTask) task).getTaskRun() != null && taskRunIds.contains(((AbstractGraphTask) task).getTaskRun().getId()))
-            .collect(Collectors.toList());
+            .toList();
 
         Set<String> edgeUuid = selectedTaskRuns
             .stream()
@@ -158,7 +158,7 @@ public class GraphUtils {
                 Stream.of(edge),
                 recursiveEdge(edges, edge.getTarget()).stream()
             ))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static void sequential(
@@ -283,7 +283,7 @@ public class GraphUtils {
                 );
 
                 if (execution != null && currentTaskRun != null) {
-                    parentValues = execution.findChildsValues(currentTaskRun, true);
+                    parentValues = execution.findParentsValues(currentTaskRun, true);
                 }
 
 
@@ -386,7 +386,7 @@ public class GraphUtils {
                     );
 
                     if (execution != null && currentTaskRun != null) {
-                        parentValues = execution.findChildsValues(currentTaskRun, true);
+                        parentValues = execution.findParentsValues(currentTaskRun, true);
                     }
 
                     // detect kids
@@ -409,7 +409,7 @@ public class GraphUtils {
                     } else {
                         for (String dependsOn : currentTask.getDependsOn()) {
                             GraphTask previousNode = nodeTaskCreated.stream().filter(node -> node.getTask().getId().equals(dependsOn)).findFirst().orElse(null);
-                            if (previousNode != null && !previousNode.getTask().isFlowable()) {
+                            if (previousNode != null && !((Task) previousNode.getTask()).isFlowable()) {
                                 graph.addEdge(
                                     previousNode,
                                     toEdgeTarget(currentGraph),
@@ -470,6 +470,6 @@ public class GraphUtils {
         return taskRuns
             .stream()
             .filter(taskRun -> parent == null || (taskRun.getParentTaskRunId().equals(parent.getId())))
-            .collect(Collectors.toList());
+            .toList();
     }
 }

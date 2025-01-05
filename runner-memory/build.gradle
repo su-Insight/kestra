@@ -1,8 +1,11 @@
-dependencies {
-    implementation project(":core")
+configurations {
+    implementation.extendsFrom(micronaut)
+}
 
-    testImplementation project(':core').sourceSets.test.output
-    testImplementation project(':repository-memory')
-    testImplementation project(':storage-local')
-    testImplementation project(':runner-memory')
+dependencies {
+    testImplementation project(":core")
+    api project(":repository-memory")
+
+
+    testImplementation project(':tests')
 }

@@ -24,9 +24,9 @@ public class SchedulerEndpoint {
 
     @Read
     public SchedulerEndpointResult running() {
-        Map<String, AbstractScheduler.FlowWithPollingTriggerNextDate> schedulableNextDate = scheduler.getSchedulableNextDate();
+        Map<String, AbstractScheduler.FlowWithWorkerTriggerNextDate> schedulableNextDate = scheduler.getSchedulableNextDate();
 
-        List<SchedulerEndpointSchedule> result = scheduler.getSchedulable()
+        List<SchedulerEndpointSchedule> result = scheduler.schedulerTriggers()
             .stream()
             .map(flowWithTrigger -> {
                 String uid = Trigger.uid(flowWithTrigger.getFlow(), flowWithTrigger.getAbstractTrigger());
@@ -39,7 +39,7 @@ public class SchedulerEndpoint {
                     schedulableNextDate.containsKey(uid) ? schedulableNextDate.get(uid).getNext() : null
                 );
             })
-            .collect(Collectors.toList());
+            .toList();
 
         return SchedulerEndpointResult.builder()
             .schedulableCount(result.size())

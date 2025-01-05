@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * Interface for Kestra's Service
  */
-public interface Service {
+public interface Service extends AutoCloseable {
 
     /**
      * Gets the unique identifier for this service.
@@ -62,6 +62,13 @@ public interface Service {
     }
 
     /**
+     * Closes this service.
+     */
+    @Override
+    default void close() {
+    }
+
+    /**
      * Supported service types.
      */
     enum ServiceType {
@@ -85,7 +92,7 @@ public interface Service {
      *                        |                      |
      *                        v                      |
      *                 +--------------+              |
-     *         +<----- | Running (1)  | ------------>+
+     *         +&lt;----- | Running (1)  | ------------>+
      *         |       +------+-------+              |
      *    +----+----+         |                      |
      *    | Error(2)|         |                      |

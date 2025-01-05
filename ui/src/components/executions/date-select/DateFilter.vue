@@ -15,23 +15,24 @@
         v-if="selectedFilterType === filterType.ABSOLUTE"
         :start-date="startDate"
         :end-date="endDate"
-        @update:model-value="onAbsFilterChange($event)"
+        @update:model-value="onAbsFilterChange"
+        class="w-auto"
     />
-    <relative-date-select
+    <time-select
         v-if="selectedFilterType === filterType.RELATIVE"
         :time-range="timeRange"
-        @update:model-value="onRelFilterChange($event)"
+        @update:model-value="onRelFilterChange"
     />
 </template>
 
 <script>
     import DateRange from "../../layout/DateRange.vue";
-    import RelativeDateSelect from "./RelativeDateSelect.vue";
+    import TimeSelect from "./TimeSelect.vue";
 
     export default {
         components: {
             DateRange,
-            RelativeDateSelect
+            TimeSelect
         },
         emits: [
             "update:isRelative",
@@ -65,7 +66,11 @@
         },
         methods: {
             onSelectedFilterType() {
-                this.$emit("update:isRelative", this.selectedFilterType === this.filterType.RELATIVE);
+                const relativeFilterSelected = this.selectedFilterType === this.filterType.RELATIVE;
+
+                this.$emit("update:isRelative", relativeFilterSelected);
+
+                this.tryOverrideAbsFilter(relativeFilterSelected);
             },
             onAbsFilterChange(event) {
                 const filter = {
@@ -85,6 +90,12 @@
             },
             updateFilter(filter) {
                 this.$emit("update:filterValue", filter);
+            },
+            tryOverrideAbsFilter(relativeFilterSelected) {
+                if (relativeFilterSelected && (this.$route.query.startDate || this.$route.query.endDate)) {
+                    const forcedDefaultRelativeFilter = {timeRange: undefined};
+                    this.onRelFilterChange(forcedDefaultRelativeFilter);
+                }
             }
         }
     }

@@ -4,13 +4,17 @@ import io.micronaut.context.event.ApplicationEvent;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 
+import java.io.Serial;
 import java.util.Map;
 import java.util.Objects;
 
 /**
  * Event fired when a Service's state is changing.
  */
+@SuppressWarnings("serial")
 public final class ServiceStateChangeEvent extends ApplicationEvent {
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
      * Opaque map of properties associated to a service.

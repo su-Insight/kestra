@@ -6,7 +6,6 @@ import io.kestra.core.server.Service;
 import io.kestra.core.server.ServiceInstance;
 import io.kestra.core.server.ServiceStateTransition;
 import io.micronaut.data.model.Pageable;
-import jakarta.inject.Singleton;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -22,19 +21,20 @@ import org.jooq.TransactionalRunnable;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.jooq.impl.DSL.using;
 
-@Singleton
 @Getter
 @Slf4j
 public abstract class AbstractJdbcServiceInstanceRepository extends AbstractJdbcRepository implements ServiceInstanceRepositoryInterface {
 
     private static final Field<Object> STATE = field("state");
-    private static final Field<Object> TYPE = field("type");
+    private static final Field<Object> TYPE = field("service_type");
     private static final Field<Object> VALUE = field("value");
     private static final Field<Instant> UPDATED_AT = field("updated_at", Instant.class);
     private static final Field<Instant> CREATED_AT = field("created_at", Instant.class);
@@ -92,6 +92,23 @@ public abstract class AbstractJdbcServiceInstanceRepository extends AbstractJdbc
     public List<ServiceInstance> findAllInstancesInStates(final Set<Service.ServiceState> states) {
         return this.jdbcRepository.getDslContextWrapper()
             .transactionResult(configuration -> findAllInstancesInStates(configuration, states, false));
+    }
+
+    /**
+     * {@inheritDoc}
+     **/
+    @Override
+    public List<ServiceInstance> findAllInstancesBetween(final Service.ServiceType type, final Instant from, final Instant to) {
+        return jdbcRepository.getDslContextWrapper().transactionResult(configuration -> {
+            SelectConditionStep<Record1<Object>> query = using(configuration)
+                .select(VALUE)
+                .from(table())
+                .where(TYPE.eq(type.name()))
+                .and(CREATED_AT.lt(to))
+                .and(UPDATED_AT.ge(from));
+
+            return this.jdbcRepository.fetch(query);
+        });
     }
 
     public List<ServiceInstance> findAllInstancesInStates(final Configuration configuration,
@@ -221,10 +238,10 @@ public abstract class AbstractJdbcServiceInstanceRepository extends AbstractJdbc
                 DSLContext context = using(configuration);
                 SelectConditionStep<Record1<Object>> select = context.select(VALUE).from(table()).where("1=1");
                 if (states != null && !states.isEmpty()) {
-                    select = select.and(STATE.in(states.stream().map(Enum::name).collect(Collectors.toList())));
+                    select = select.and(STATE.in(states.stream().map(Enum::name).toList()));
                 }
                 if (types != null && !types.isEmpty()) {
-                    select = select.and(TYPE.in(types.stream().map(Enum::name).collect(Collectors.toList())));
+                    select = select.and(TYPE.in(types.stream().map(Enum::name).toList()));
                 }
                 return this.jdbcRepository.fetchPage(context, select, pageable);
             });
@@ -296,5 +313,16 @@ public abstract class AbstractJdbcServiceInstanceRepository extends AbstractJdbc
 
     private Table<Record> table() {
         return this.jdbcRepository.getTable();
+    }
+
+    /** {@inheritDoc} **/
+    @Override
+    public Function<String, String> sortMapping() {
+        Map<String, String> mapper = Map.of(
+            "createdAt", CREATED_AT.getName(),
+            "updatedAt", UPDATED_AT.getName(),
+            "serviceId", SERVICE_ID.getName()
+        );
+        return mapper::get;
     }
 }

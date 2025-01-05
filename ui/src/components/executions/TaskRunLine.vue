@@ -12,7 +12,7 @@
             class="task-id flex-grow-1"
             :id="`attempt-${selectedAttemptNumberByTaskRunId[currentTaskRun.id]}-${currentTaskRun.id}`"
         >
-            <el-tooltip :persistent="false" transition="" :hide-after="0">
+            <el-tooltip :persistent="false" transition="" :hide-after="0" effect="light">
                 <template #content>
                     {{ $t("from") }} :
                     {{ $filters.date(selectedAttempt(currentTaskRun).state.startDate) }}
@@ -97,6 +97,7 @@
                         @follow="forwardEvent('follow', $event)"
                     />
                     <task-edit
+                        v-if="canReadFlow"
                         :read-only="true"
                         component="el-dropdown-item"
                         :task-id="currentTaskRun.taskId"
@@ -158,6 +159,8 @@
     import Duration from "../layout/Duration.vue";
     import Utils from "../../utils/utils";
     import Delete from "vue-material-design-icons/Delete.vue";
+    import permission from "../../models/permission";
+    import action from "../../models/action";
 
     export default {
         components: {
@@ -221,6 +224,7 @@
                 return Download
             },
             ...mapState("plugin", ["icons"]),
+            ...mapState("auth", ["user"]),
             SECTIONS() {
                 return SECTIONS
             },
@@ -236,6 +240,9 @@
                     .map((logLine, index) => ({...logLine, index}));
 
                 return _groupBy(indexedLogs, indexedLog => this.attemptUid(indexedLog.taskRunId, indexedLog.attemptNumber));
+            },
+            canReadFlow() {
+                return this.user.isAllowed(permission.FLOW, action.READ, this.$route.params.namespace)
             }
         },
         methods: {
@@ -291,7 +298,7 @@
                 return this.shouldDisplayProgressBar(taskRun) || this.shouldDisplayLogs(taskRun.id)
             },
             shouldDisplayProgressBar(taskRun) {
-                return this.taskType(taskRun) === "io.kestra.core.tasks.flows.ForEachItem$ForEachItemExecutable"
+                return this.taskType(taskRun) === "io.kestra.plugin.core.flow.ForEachItem$ForEachItemExecutable" || this.taskType(taskRun) === "io.kestra.core.tasks.flows.ForEachItem$ForEachItemExecutable"
             },
             shouldDisplayLogs(taskRunId) {
                 return this.logsWithIndexByAttemptUid[this.attemptUid(taskRunId, this.selectedAttemptNumberByTaskRunId[taskRunId])]

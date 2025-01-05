@@ -25,13 +25,17 @@ public class GraphService {
     @Inject
     private TriggerRepositoryInterface triggerRepository;
     @Inject
-    private TaskDefaultService taskDefaultService;
+    private PluginDefaultService pluginDefaultService;
 
     public FlowGraph flowGraph(Flow flow, List<String> expandedSubflows) throws IllegalVariableEvaluationException {
         return this.flowGraph(flow, expandedSubflows, null);
     }
 
     public FlowGraph flowGraph(Flow flow, List<String> expandedSubflows, Execution execution) throws IllegalVariableEvaluationException {
+        return FlowGraph.of(this.of(flow, Optional.ofNullable(expandedSubflows).orElse(Collections.emptyList()), new HashMap<>(), execution));
+    }
+
+    public FlowGraph executionGraph(Flow flow, List<String> expandedSubflows, Execution execution) throws IllegalVariableEvaluationException {
         return FlowGraph.of(this.of(flow, Optional.ofNullable(expandedSubflows).orElse(Collections.emptyList()), new HashMap<>(), execution));
     }
 
@@ -49,7 +53,7 @@ public class GraphService {
 
     public GraphCluster of(GraphCluster baseGraph, Flow flow, List<String> expandedSubflows, Map<String, Flow> flowByUid, Execution execution) throws IllegalVariableEvaluationException {
         String tenantId = flow.getTenantId();
-        flow = taskDefaultService.injectDefaults(flow);
+        flow = pluginDefaultService.injectDefaults(flow);
         List<Trigger> triggers = null;
         if (flow.getTriggers() != null) {
             triggers = triggerRepository.find(Pageable.UNPAGED, null, tenantId, flow.getNamespace(), flow.getId());
@@ -75,7 +79,7 @@ public class GraphService {
                 SubflowGraphTask subflowGraphTask = parentWithSubflowGraphTask.getValue();
                 Flow subflow = flowByUid.computeIfAbsent(
                     subflowGraphTask.getExecutableTask().subflowId().flowUid(),
-                    uid -> flowRepository.findById(
+                    uid -> flowRepository.findByIdWithoutAcl(
                         tenantId,
                         subflowGraphTask.getExecutableTask().subflowId().namespace(),
                         subflowGraphTask.getExecutableTask().subflowId().flowId(),
@@ -86,7 +90,7 @@ public class GraphService {
                             + " for task " + subflowGraphTask.getTask().getId()
                     ))
                 );
-                subflow = taskDefaultService.injectDefaults(subflow);
+                subflow = pluginDefaultService.injectDefaults(subflow);
 
                 return new TaskToClusterReplacer(
                     parentWithSubflowGraphTask.getKey(),

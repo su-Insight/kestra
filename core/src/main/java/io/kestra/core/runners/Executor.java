@@ -3,6 +3,7 @@ package io.kestra.core.runners;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.ExecutionKilled;
+import io.kestra.core.models.executions.ExecutionKilledExecution;
 import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithException;
@@ -35,13 +36,24 @@ public class Executor {
     private ExecutionResumed joinedExecutionResumed;
 
     /**
+     * The sequence id should be incremented each time the execution is persisted after mutation.
+     */
+    private long seqId = 0L;
+
+    /**
      * List of {@link ExecutionKilled} to be propagated part of the execution.
      */
-    private List<ExecutionKilled> executionKilled;
+    private List<ExecutionKilledExecution> executionKilled;
 
     public Executor(Execution execution, Long offset) {
         this.execution = execution;
         this.offset = offset;
+    }
+
+    public Executor(Execution execution, Long offset, long seqId) {
+        this.execution = execution;
+        this.offset = offset;
+        this.seqId = seqId;
     }
 
     public Executor(WorkerTaskResult workerTaskResult) {
@@ -56,7 +68,7 @@ public class Executor {
         this.joinedExecutionResumed = executionResumed;
     }
 
-    public Executor(List<ExecutionKilled> executionKilled) {
+    public Executor(List<ExecutionKilledExecution> executionKilled) {
         this.executionKilled = executionKilled;
     }
 
@@ -139,7 +151,7 @@ public class Executor {
         return this;
     }
 
-    public Executor withExecutionKilled(final List<ExecutionKilled> executionKilled) {
+    public Executor withExecutionKilled(final List<ExecutionKilledExecution> executionKilled) {
         this.executionKilled = executionKilled;
         return this;
     }
@@ -147,7 +159,18 @@ public class Executor {
     public Executor serialize() {
         return new Executor(
             this.execution,
-            this.offset
+            this.offset,
+            this.seqId
         );
+    }
+
+    /**
+     * Increments and returns the execution sequence id.
+     *
+     * @return the sequence id.
+     */
+    public long incrementAndGetSeqId() {
+        this.seqId++;
+        return seqId;
     }
 }

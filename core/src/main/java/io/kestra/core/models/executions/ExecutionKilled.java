@@ -1,12 +1,13 @@
 package io.kestra.core.models.executions;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.kestra.core.models.TenantInterface;
-import lombok.Builder;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.ToString;
-import lombok.Value;
-
-import jakarta.validation.constraints.NotNull;
+import lombok.experimental.SuperBuilder;
 
 /**
  * The Kestra event for killing an execution. A {@link ExecutionKilled} can be in two states:
@@ -24,11 +25,20 @@ import jakarta.validation.constraints.NotNull;
  *  COMPLETED state, i.e., the Executor will never wait for Workers to process an executed {@link ExecutionKilled}
  *  before considering an execution to be KILLED.
  */
-@Value
-@Builder
+@Getter
+@SuperBuilder
 @EqualsAndHashCode
 @ToString
-public class ExecutionKilled implements TenantInterface {
+@NoArgsConstructor
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", visible = true, include = JsonTypeInfo.As.EXISTING_PROPERTY)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = ExecutionKilledExecution.class, name = "execution"),
+    @JsonSubTypes.Type(value = ExecutionKilledTrigger.class, name = "trigger"),
+})
+abstract public class ExecutionKilled implements TenantInterface {
+    abstract public String getType();
+
+    abstract public String uid();
 
     public enum State {
         REQUESTED,
@@ -41,18 +51,7 @@ public class ExecutionKilled implements TenantInterface {
     State state;
 
     /**
-     * The execution to be killed.
-     */
-    @NotNull
-    String executionId;
-
-    /**
-     * Specifies whether killing the execution, also kill all sub-flow executions.
-     */
-    Boolean isOnKillCascade;
-
-    /**
      * The tenant attached to the execution.
      */
-    String tenantId;
+    protected String tenantId;
 }
