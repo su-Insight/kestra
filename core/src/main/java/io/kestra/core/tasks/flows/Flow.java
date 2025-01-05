@@ -43,7 +43,7 @@ import java.util.*;
         )
     }
 )
-public class Flow extends Task implements ExecutableTask {
+public class Flow extends Task implements ExecutableTask<Flow.Output> {
     @NotNull
     @Schema(
         title = "The namespace of the subflow to be executed"
@@ -137,18 +137,22 @@ public class Flow extends Task implements ExecutableTask {
             this,
             currentTaskRun,
             inputs,
-            labels
+            labels,
+            null
         ));
     }
 
     @Override
     public Optional<WorkerTaskResult> createWorkerTaskResult(
         RunContext runContext,
-        WorkerTaskExecution<?> workerTaskExecution,
+        TaskRun taskRun,
         io.kestra.core.models.flows.Flow flow,
         Execution execution
     ) {
-        TaskRun taskRun = workerTaskExecution.getTaskRun();
+        // we only create a worker task result when the taskrun is terminated
+        if (!taskRun.getState().isTerminated()) {
+            return Optional.empty();
+        }
 
         Output.OutputBuilder builder = Output.builder()
             .executionId(execution.getId())
@@ -171,7 +175,7 @@ public class Flow extends Task implements ExecutableTask {
 
         taskRun = taskRun.withOutputs(builder.build().toMap());
 
-        taskRun = taskRun.withState(ExecutableUtils.guessState(execution, this.transmitFailed));
+        taskRun = taskRun.withState(ExecutableUtils.guessState(execution, this.transmitFailed, State.Type.SUCCESS));
 
         return Optional.of(ExecutableUtils.workerTaskResult(taskRun));
     }

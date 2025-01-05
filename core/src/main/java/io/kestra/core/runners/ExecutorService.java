@@ -605,7 +605,7 @@ public class ExecutorService {
                     return false;
                 }
 
-                var executableTask = (Task & ExecutableTask) workerTask.getTask();
+                var executableTask = (Task & ExecutableTask<?>) workerTask.getTask();
                 try {
                     // mark taskrun as running to avoid multiple try for failed
                     TaskRun executableTaskRun = executor.getExecution()
@@ -636,10 +636,11 @@ public class ExecutorService {
                     else {
                         executions.addAll(workerTaskExecutions);
                         if (!executableTask.waitForExecution()) {
+                            // send immediately all workerTaskResult to ends the executable task
                             for (WorkerTaskExecution<?> workerTaskExecution : workerTaskExecutions) {
                                 Optional<WorkerTaskResult> workerTaskResult = executableTask.createWorkerTaskResult(
                                     runContext,
-                                    workerTaskExecution,
+                                    workerTaskExecution.getTaskRun().withState(State.Type.SUCCESS),
                                     executor.getFlow(),
                                     workerTaskExecution.getExecution()
                                 );

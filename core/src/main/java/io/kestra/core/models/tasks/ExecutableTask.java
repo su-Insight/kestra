@@ -15,7 +15,7 @@ import java.util.Optional;
 /**
  * Interface for tasks that generates subflow execution(s). Those tasks are handled in the Executor.
  */
-public interface ExecutableTask {
+public interface ExecutableTask<T extends Output>{
     /**
      * Creates a list of WorkerTaskExecution for this task definition.
      * Each WorkerTaskExecution will generate a subflow execution.
@@ -29,7 +29,7 @@ public interface ExecutableTask {
      * Creates a WorkerTaskResult for a given WorkerTaskExecution
      */
     Optional<WorkerTaskResult> createWorkerTaskResult(RunContext runContext,
-                                                      WorkerTaskExecution<?> workerTaskExecution,
+                                                      TaskRun taskRun,
                                                       Flow flow,
                                                       Execution execution);
 
