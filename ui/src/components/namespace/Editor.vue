@@ -7,6 +7,7 @@
                 :value="namespace"
                 @update:model-value="namespaceUpdate"
                 allow-create
+                :is-filter="false"
             />
             <trigger-flow
                 :disabled="!flow"
@@ -40,11 +41,14 @@
     import RouteContext from "../../mixins/routeContext";
     import RestoreUrl from "../../mixins/restoreUrl";
     import {apiUrl} from "override/utils/route";
+    import {mapState} from "vuex";
+    import {storageKeys} from "../../utils/constants";
 
     export default {
         mixins: [RouteContext, RestoreUrl],
         methods: {
             namespaceUpdate(namespace) {
+                localStorage.setItem(storageKeys.LATEST_NAMESPACE, namespace);
                 this.$router.push({
                     params: {
                         namespace
@@ -65,19 +69,16 @@
                 tabsNotSaved: []
             }
         },
-        created() {
-            const namespace = localStorage.getItem("defaultNamespace");
-            if (namespace) {
-                this.namespaceUpdate(namespace);
-            }
-        },
         mounted() {
             window.addEventListener("message", (event) => {
                 const message = event.data;
                 if (message.type === "kestra.tabFileChanged") {
-                    const path = `/${this.namespace}/_flows/`;
-                    if (message.filePath.path.startsWith(path)) {
-                        this.flow = message.filePath.path.split(path)[1].replace(".yml", "");
+                    const flowsFolderPath = `/${this.namespace}/_flows/`;
+                    const filePath = message.filePath.path;
+                    if (filePath.startsWith(flowsFolderPath)) {
+                        const fileName = filePath.split(flowsFolderPath)[1];
+                        // trim the eventual extension
+                        this.flow = fileName.split(".")[0];
                     } else {
                         this.flow = null;
                     }
@@ -85,8 +86,19 @@
                     this.handleTabsDirty(message.tabs);
                 }
             });
+
+            // Setup namespace
+            const namespace = localStorage.getItem(storageKeys.LATEST_NAMESPACE) ? localStorage.getItem(storageKeys.LATEST_NAMESPACE) : localStorage.getItem(storageKeys.DEFAULT_NAMESPACE);
+            if (namespace) {
+                this.namespaceUpdate(namespace);
+            } else if (this.namespaces?.length > 0) {
+                this.namespaceUpdate(this.namespaces[0]);
+            } else if (localStorage.getItem("tourDoneOrSkip") !== "true") {
+                this.$router.push({name: "flows/create"});
+            }
         },
         computed: {
+            ...mapState("namespace", ["namespaces"]),
             routeInfo() {
                 return {
                     title: this.$t("editor")

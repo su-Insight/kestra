@@ -38,10 +38,9 @@ import javax.validation.constraints.Pattern;
 public abstract class Input<T> {
     @NotNull
     @NotBlank
-    @Pattern(regexp="[.a-zA-Z0-9_-]+")
+    @Pattern(regexp="^[a-zA-Z0-9][.a-zA-Z0-9_-]*")
     String name;
 
-    @NotBlank
     @NotNull
     @Valid
     Type type;

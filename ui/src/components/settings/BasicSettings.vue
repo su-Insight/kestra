@@ -126,6 +126,16 @@
                     show-alpha
                 />
             </el-form-item>
+            <el-form-item :label="$t('execute flow behaviour')">
+                <el-select :model-value="executeFlowBehaviour" @update:model-value="onExecuteFlowBehaviourChange">
+                    <el-option
+                        v-for="item in Object.values(executeFlowBehaviours)"
+                        :key="item"
+                        :label="$t(`open in ${item}`)"
+                        :value="item"
+                    />
+                </el-select>
+            </el-form-item>
             <slot name="form-items"/>
         </el-form>
     </div>
@@ -133,6 +143,7 @@
 
 <script setup>
     import Download from "vue-material-design-icons/Download.vue";
+    import {executeFlowBehaviours} from "../../utils/constants";
 </script>
 
 <script>
@@ -144,7 +155,7 @@
     import {mapGetters, mapState, useStore} from "vuex";
     import permission from "../../models/permission";
     import action from "../../models/action";
-    import {logDisplayTypes} from "../../utils/constants";
+    import {logDisplayTypes, storageKeys} from "../../utils/constants";
 
     export const DATE_FORMAT_STORAGE_KEY = "dateFormat";
     export const TIMEZONE_STORAGE_KEY = "timezone";
@@ -177,6 +188,7 @@
                 logDisplay: undefined,
                 editorFontSize: undefined,
                 editorFontFamily: undefined,
+                executeFlowBehaviour: undefined,
                 now: this.$moment(),
                 envName: undefined,
                 envColor: undefined
@@ -198,6 +210,7 @@
             this.logDisplay = localStorage.getItem("logDisplay") || logDisplayTypes.DEFAULT;
             this.editorFontSize = localStorage.getItem("editorFontSize") || 12;
             this.editorFontFamily = localStorage.getItem("editorFontFamily") || "'Source Code Pro', monospace";
+            this.executeFlowBehaviour = localStorage.getItem("executeFlowBehaviour") || "same tab";
             this.envName = store.getters["layout/envName"] || this.configs?.environment?.name;
             this.envColor = store.getters["layout/envColor"] || this.configs?.environment?.color;
         },
@@ -210,7 +223,7 @@
                 } else {
                     localStorage.removeItem("defaultNamespace")
                 }
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onLevelChange(value) {
                 this.defaultLogLevel = value;
@@ -220,39 +233,39 @@
                 } else {
                     localStorage.removeItem("defaultLogLevel")
                 }
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onLang(value) {
                 localStorage.setItem("lang", value);
                 this.$moment.locale(value);
                 this.$i18n.locale = value;
                 this.lang = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onTheme(value) {
                 Utils.switchTheme(value)
                 this.theme = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onDateFormat(value) {
                 localStorage.setItem(DATE_FORMAT_STORAGE_KEY, value);
                 this.dateFormat = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onTimezone(value) {
                 localStorage.setItem(TIMEZONE_STORAGE_KEY, value);
                 this.timezone = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onEditorTheme(value) {
                 localStorage.setItem("editorTheme", value);
                 this.editorTheme = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onAutofoldTextEditor(value) {
                 localStorage.setItem("autofoldTextEditor", value);
                 this.autofoldTextEditor = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             exportFlows() {
                 return this.$store
@@ -271,31 +284,38 @@
             onLogDisplayChange(value) {
                 localStorage.setItem("logDisplay", value);
                 this.logDisplay = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onFontSize(value) {
                 localStorage.setItem("editorFontSize", value);
                 this.editorFontSize = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onFontFamily(value) {
                 localStorage.setItem("editorFontFamily", value);
                 this.editorFontFamily = value;
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onEnvNameChange(value) {
                 if (value !== this.configs?.environment?.name) {
                     this.$store.commit("layout/setEnvName", value);
                 }
 
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             },
             onEnvColorChange(value) {
                 if (value !== this.configs?.environment?.color) {
                     this.$store.commit("layout/setEnvColor", value);
                 }
 
-                this.$toast().saved();
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
+            },
+            onExecuteFlowBehaviourChange(value) {
+                this.executeFlowBehaviour = value;
+
+                localStorage.setItem(storageKeys.EXECUTE_FLOW_BEHAVIOUR, value);
+
+                this.$toast().saved(this.$t("settings"), undefined, {multiple: true});
             }
         },
         computed: {

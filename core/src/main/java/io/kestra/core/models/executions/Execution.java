@@ -10,8 +10,10 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Streams;
 import io.kestra.core.models.Label;
+import io.kestra.core.models.TenantInterface;
 import io.kestra.core.serializers.ListOrMapOfLabelDeserializer;
 import io.kestra.core.serializers.ListOrMapOfLabelSerializer;
+import io.swagger.v3.oas.annotations.Hidden;
 import lombok.Builder;
 import lombok.Value;
 import lombok.With;
@@ -32,12 +34,15 @@ import java.util.stream.Stream;
 import java.util.zip.CRC32;
 import io.micronaut.core.annotation.Nullable;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 
 @Value
 @Builder(toBuilder = true)
 @Slf4j
-public class Execution implements DeletedInterface {
+public class Execution implements DeletedInterface, TenantInterface {
     @With
+    @Hidden
+    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
     String tenantId;
 
     @NotNull
@@ -408,12 +413,12 @@ public class Execution implements DeletedInterface {
     }
 
     public State.Type guessFinalState(Flow flow) {
-        return this.guessFinalState(ResolvedTask.of(flow.getTasks()), null);
+        return this.guessFinalState(ResolvedTask.of(flow.getTasks()), null, false);
     }
 
-    public State.Type guessFinalState(List<ResolvedTask> currentTasks, TaskRun parentTaskRun) {
+    public State.Type guessFinalState(List<ResolvedTask> currentTasks, TaskRun parentTaskRun, boolean allowFailure) {
         List<TaskRun> taskRuns = this.findTaskRunByTasks(currentTasks, parentTaskRun);
-        return this
+        var state = this
             .findLastByState(taskRuns, State.Type.KILLED)
             .map(taskRun -> taskRun.getState().getCurrent())
             .or(() -> this
@@ -429,6 +434,11 @@ public class Execution implements DeletedInterface {
                 .map(taskRun -> taskRun.getState().getCurrent())
             )
             .orElse(State.Type.SUCCESS);
+
+        if (state == State.Type.FAILED && allowFailure) {
+            return State.Type.WARNING;
+        }
+        return state;
     }
 
     @JsonIgnore
@@ -691,7 +701,7 @@ public class Execution implements DeletedInterface {
      * @return List of parent {@link TaskRun}
      */
     public List<TaskRun> findChilds(TaskRun taskRun) {
-        if (taskRun.getParentTaskRunId() == null) {
+        if (taskRun.getParentTaskRunId() == null || this.taskRunList == null) {
             return new ArrayList<>();
         }
 

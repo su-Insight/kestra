@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.*;
 
 @Property(name = "kestra.tasks.tmp-dir.path", value = "/tmp/sub/dir/tmp/")
@@ -58,7 +59,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
 
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(4));
 
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(0).getId()));
         assertThat(matchingLog, notNullValue());
@@ -74,6 +75,9 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(matchingLog, notNullValue());
         assertThat(matchingLog.getLevel(), is(Level.ERROR));
         assertThat(matchingLog.getMessage(), is("third logs"));
+
+        matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(3).getId()));
+        assertThat(matchingLog, nullValue());
     }
 
     @Test
@@ -109,7 +113,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
     void variables() throws TimeoutException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "return");
 
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(4));
 
         assertThat(
             ZonedDateTime.from(ZonedDateTime.parse((String) execution.getTaskRunList().get(0).getOutputs().get("value"))),
@@ -117,6 +121,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         );
         assertThat(execution.getTaskRunList().get(1).getOutputs().get("value"), is("task-id"));
         assertThat(execution.getTaskRunList().get(2).getOutputs().get("value"), is("return"));
+        assertThat((String) execution.getTaskRunList().get(3).getOutputs().get("value"), containsString("toto"));
     }
 
     @Test
@@ -146,12 +151,6 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
         URI uri = runContext.putTempFile(path.toFile());
         assertThat(storageInterface.size(null, uri), is(size + 1));
-    }
-
-    @Test
-    void invalidTaskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/invalid-task-defaults.yaml")));
-        taskDefaultsCaseTest.invalidTaskDefaults();
     }
 
     @Test

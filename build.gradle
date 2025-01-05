@@ -76,7 +76,7 @@ allprojects {
 
             // ugly bug on google cloud plugins
             force("com.google.protobuf:protobuf-java:3.23.3")
-            force("com.google.protobuf:protobuf-java-util:3.23.3")
+            force("com.google.protobuf:protobuf-java-util:3.25.1")
 
             // ugly bug for elastic plugins
             force("org.apache.httpcomponents:httpclient:4.5.13")
@@ -191,6 +191,8 @@ subprojects {
         environment 'SECRET_MY_SECRET', "{\"secretKey\":\"secretValue\"}".bytes.encodeBase64().toString()
         environment 'SECRET_WEBHOOK_KEY', "secretKey".bytes.encodeBase64().toString()
         environment 'SECRET_NON_B64_SECRET', "some secret value"
+        environment 'KESTRA_TEST1', "true"
+        environment 'KESTRA_TEST2', "Pass by env"
     }
 
     testlogger {
