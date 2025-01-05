@@ -10,10 +10,14 @@ import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.metrics.MetricRegistry;
 import io.kestra.core.models.Label;
 import io.kestra.core.models.executions.*;
+import io.kestra.core.models.tasks.Output;
+import io.kestra.core.models.executions.*;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.PollingTriggerInterface;
+import io.kestra.core.models.triggers.RealtimeTriggerInterface;
 import io.kestra.core.models.triggers.TriggerContext;
+import io.kestra.core.models.triggers.WorkerTriggerInterface;
 import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
@@ -38,8 +42,10 @@ import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.event.Level;
+import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -171,19 +177,32 @@ public class Worker implements Service, Runnable, AutoCloseable {
             if (executionKilled == null || !executionKilled.isLeft()) {
                 return;
             }
+
             ExecutionKilled.State state = executionKilled.getLeft().getState();
+
             if (state != null && state != ExecutionKilled.State.EXECUTED) {
                 return;
             }
-            // @FIXME: the hashset will never expire killed execution
-            killedExecution.add(executionKilled.getLeft().getExecutionId());
+
             synchronized (this) {
-                workerThreadReferences
-                    .stream()
-                    .filter(workerThread -> workerThread instanceof WorkerTaskThread)
-                    .map(workerThread -> (WorkerTaskThread) workerThread)
-                    .filter(workerThread -> executionKilled.getLeft().getExecutionId().equals(workerThread.getWorkerTask().getTaskRun().getExecutionId()))
-                    .forEach(AbstractWorkerThread::kill);
+                if (executionKilled.getLeft() instanceof ExecutionKilledExecution executionKilledExecution) {
+                    // @FIXME: the hashset will never expire killed execution
+                    killedExecution.add(executionKilledExecution.getExecutionId());
+
+                    workerThreadReferences
+                        .stream()
+                        .filter(workerThread -> workerThread instanceof WorkerTaskThread)
+                        .map(workerThread -> (WorkerTaskThread) workerThread)
+                        .filter(workerThread -> executionKilledExecution.isEqual(workerThread.getWorkerTask()))
+                        .forEach(AbstractWorkerThread::kill);
+                } else if (executionKilled.getLeft() instanceof ExecutionKilledTrigger executionKilledTrigger) {
+                    workerThreadReferences
+                        .stream()
+                        .filter(workerThread -> workerThread instanceof AbstractWorkerTriggerThread)
+                        .map(workerThread -> (AbstractWorkerTriggerThread) workerThread)
+                        .filter(workerThread -> executionKilledTrigger.isEqual(workerThread.getWorkerTrigger().getTriggerContext()))
+                        .forEach(abstractWorkerTriggerThread -> abstractWorkerTriggerThread.kill());
+                }
             }
         });
 
@@ -357,19 +376,34 @@ public class Worker implements Service, Runnable, AutoCloseable {
                     this.evaluateTriggerRunningCount.get(workerTrigger.getTriggerContext().uid()).addAndGet(1);
 
                     try {
+                        RunContext runContext = this.initRunContextForTrigger(workerTrigger);
+
                         if (workerTrigger.getTrigger() instanceof PollingTriggerInterface pollingTrigger) {
-                            RunContext runContext = this.initRunContextForTrigger(workerTrigger);
-
                             WorkerTriggerThread workerThread = new WorkerTriggerThread(workerTrigger, pollingTrigger);
-
                             io.kestra.core.models.flows.State.Type state = runThread(workerThread, runContext.logger());
+
+                            if (workerThread.getException() != null || !state.equals(SUCCESS)) {
+                                this.handleTriggerError(workerTrigger, workerThread.getException());
+                            }
 
                             if (!state.equals(FAILED)) {
                                 this.publishTriggerExecution(workerTrigger, workerThread.getEvaluate());
-                            } else {
+                            }
+                        } else if (workerTrigger.getTrigger() instanceof RealtimeTriggerInterface streamingTrigger) {
+                            WorkerTriggerRealtimeThread workerThread = new WorkerTriggerRealtimeThread(
+                                workerTrigger,
+                                streamingTrigger,
+                                throwable -> this.handleTriggerError(workerTrigger, throwable),
+                                execution -> this.publishTriggerExecution(workerTrigger, Optional.of(execution))
+                            );
+                            io.kestra.core.models.flows.State.Type state = runThread(workerThread, runContext.logger());
+
+                            if (workerThread.getException() != null || !state.equals(SUCCESS)) {
                                 this.handleTriggerError(workerTrigger, workerThread.getException());
                             }
                         }
+                    } catch (Exception e) {
+                        this.handleTriggerError(workerTrigger, e);
                     } finally {
                         workerTrigger.getConditionContext().getRunContext().cleanup();
                     }
@@ -522,7 +556,7 @@ public class Worker implements Service, Runnable, AutoCloseable {
             workerTrigger.getTriggerContext(),
             logger,
             Level.WARN,
-            "[date: {}] Evaluate Failed with error '{}'",
+            "[date: {}] Worker Evaluate Failed with error '{}'",
             workerTrigger.getTriggerContext().getDate(),
             e != null ? e.getMessage() : "null",
             e
@@ -731,7 +765,7 @@ public class Worker implements Service, Runnable, AutoCloseable {
             .map(throwFunction(workerThread -> {
                 if (workerThread instanceof WorkerTaskThread workerTaskThread) {
                     return workerTaskThread.workerTask;
-                } else if (workerThread instanceof WorkerTriggerThread workerTriggerThread) {
+                } else if (workerThread instanceof AbstractWorkerTriggerThread workerTriggerThread) {
                     return workerTriggerThread.workerTrigger;
                 } else {
                     throw new Exception("Invalid thread type: '" + workerThread.getClass().getName() + "'");
