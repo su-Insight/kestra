@@ -4,12 +4,6 @@
 
     // Icons
     import ContentSave from "vue-material-design-icons/ContentSave.vue";
-    import LightningBolt from "vue-material-design-icons/LightningBolt.vue";
-    import FileEdit from "vue-material-design-icons/FileEdit.vue";
-    import Exclamation from "vue-material-design-icons/Exclamation.vue";
-    import DotsVertical from "vue-material-design-icons/DotsVertical.vue";
-    import ContentCopy from "vue-material-design-icons/ContentCopy.vue";
-    import Delete from "vue-material-design-icons/Delete.vue";
 
     import ValidationError from "../flows/ValidationError.vue";
     import Blueprints from "override/components/flows/blueprints/Blueprints.vue";
@@ -28,6 +22,7 @@
     import {editorViewTypes} from "../../utils/constants";
     import Utils from "@kestra-io/ui-libs/src/utils/Utils";
     import {apiUrl} from "override/utils/route";
+    import EditorButtons from "./EditorButtons.vue";
 
     const store = useStore();
     const router = getCurrentInstance().appContext.config.globalProperties.$router;
@@ -81,27 +76,63 @@
         },
         guidedProperties: {
             type: Object,
-            default: {
-                tourStarted: false
+            default: () => {
+                return {tourStarted: false};
             }
         },
-        flowError: {
-            type: String,
-            default: undefined
-        },
-        flowDeprecations: {
-            type: Array,
+        flowValidation: {
+            type: Object,
             default: undefined
         },
         expandedSubflows: {
             type: Array,
-            default: []
+            default: () => []
+        },
+        nextRevision: {
+            type: Number,
+            default: 1
         }
     })
 
+    const flowErrors = computed(() => {
+        const flowExistsError = props.flowValidation?.outdated && props.isCreating
+            ? [outdatedMessage.value]
+            : [];
+
+        const constraintsError = props.flowValidation?.constraints?.split(/, ?/) ?? [];
+
+        const errors = [
+            ...flowExistsError,
+            ...constraintsError
+        ];
+
+        return errors.length === 0 ? undefined : errors;
+    })
+
+    const baseOutdatedTranslationKey = computed(() => {
+        const createOrUpdateKey = props.isCreating ? "create" : "update";
+        return "outdated revision save confirmation." + createOrUpdateKey;
+    })
+
+    const outdatedMessage = computed(() => {
+        return `${t(baseOutdatedTranslationKey.value + ".description")} ${t(baseOutdatedTranslationKey.value + ".details")}`
+    })
+
     const flowWarnings = computed(() => {
-        const warnings = props.flowDeprecations?.map(f => `${f} is deprecated.`);
-        return warnings?.length > 0 ? warnings : undefined;
+        const outdatedWarning = props.flowValidation?.outdated && !props.isCreating
+            ? [outdatedMessage.value]
+            : [];
+
+        const deprecationWarnings = props.flowValidation?.deprecationPaths
+            ?.map(f => `${f} ${t("is deprecated")}.`)
+            ?? [];
+
+        const warnings = [
+            ...outdatedWarning,
+            ...deprecationWarnings
+        ];
+
+        return warnings.length === 0 ? undefined : warnings;
     })
 
     const loadViewType = () => {
@@ -149,6 +180,7 @@
     const user = store.getters["auth/user"];
     const routeParams = router.currentRoute.value.params;
     const blueprintsLoaded = ref(false);
+    const confirmOutdatedSaveDialog = ref(false);
 
     const persistViewType = (value) => {
         viewType.value = value;
@@ -167,6 +199,10 @@
         taskError.value = store.getters["flow/taskError"];
     });
 
+    const taskErrors = computed(() => {
+        return taskError.value?.split(/, ?/);
+    })
+
     watch(() => props.expandedSubflows, (_, oldValue) => {
         fetchGraph().catch(() => {
             emit("expand-subflow", oldValue);
@@ -177,6 +213,10 @@
         const flow = source ? source : flowYaml.value
         return flow ? YamlUtils.flowHaveTasks(flow) : false;
     }
+
+    const yamlWithNextRevision = computed(() => {
+        return `revision: ${props.nextRevision}\n${flowYaml.value}`;
+    })
 
     const initYamlSource = async () => {
         flowYaml.value = props.flow.source;
@@ -202,7 +242,7 @@
         }
 
         // validate flow on first load
-        store.dispatch("flow/validateFlow", {flow: flowYaml.value})
+        store.dispatch("flow/validateFlow", {flow: yamlWithNextRevision.value})
             .then(value => {
                 if(validationDomElement.value) {
                     validationDomElement.value.onResize(editorDomElement.value.$el.offsetWidth);
@@ -323,21 +363,25 @@
         haveChange.value = false;
     }
 
-    const singleErrorToast = (title, message, detailedError) => {
+    const errorsToast = (title, message, errors) => {
         store.dispatch("core/showMessage", {
             title: title,
             message: message,
             content: {
                 _embedded: {
-                    errors: [{message: detailedError}]
+                    errors: errors.map(error => {
+                        return {
+                            message: error
+                        }
+                    })
                 }
             },
             variant: "error"
         });
     }
 
-    const saveAsDraft = (errorMessage) => {
-        singleErrorToast(t("save draft.message"), t("invalid flow"), errorMessage);
+    const saveAsDraft = (errors) => {
+        errorsToast(t("save draft.message"), t("invalid flow"), errors);
         persistEditorContent(false);
     }
 
@@ -361,7 +405,7 @@
         haveChange.value = true;
         store.dispatch("core/isUnsaved", true);
         clearTimeout(timer.value)
-        return store.dispatch("flow/validateFlow", {flow: event})
+        return store.dispatch("flow/validateFlow", {flow: yamlWithNextRevision.value})
             .then(value => {
                 if (flowHaveTasks() && [editorViewTypes.TOPOLOGY, editorViewTypes.SOURCE_TOPOLOGY].includes(viewType.value)) {
                     generateGraph()
@@ -480,10 +524,61 @@
         }
     }
 
+    const saveWithoutRevisionGuard = async () => {
+        let flowParsed;
+        try {
+            flowParsed = YamlUtils.parse(flowYaml.value);
+        } catch (e) {
+            console.log("Error while parsing flow : ", e);
+        }
+        if (flowErrors.value) {
+            saveAsDraft(flowErrors.value);
+            return;
+        }
+
+        if (props.isCreating) {
+            await store.dispatch("flow/createFlow", {flow: flowYaml.value})
+                .then((response) => {
+                    toast.saved(response.id);
+                    store.dispatch("core/isUnsaved", false);
+                    router.push({
+                        name: "flows/update",
+                        params: {
+                            id: flowParsed.id,
+                            namespace: flowParsed.namespace,
+                            tab: "editor",
+                            tenant: routeParams.tenant
+                        }
+                    });
+                })
+        } else {
+            if (routeParams.id !== flowParsed.id || routeParams.namespace !== flowParsed.namespace) {
+                store.dispatch("core/showMessage", {
+                    variant: "error",
+                    title: t("can not save"),
+                    message: t("namespace and id readonly"),
+                })
+                flowYaml.value = YamlUtils.replaceIdAndNamespace(flowYaml.value, routeParams.id, routeParams.namespace);
+                return;
+            }
+            await store.dispatch("flow/saveFlow", {flow: flowYaml.value})
+                .then((response) => {
+                    toast.saved(response.id);
+                    store.dispatch("core/isUnsaved", false);
+                })
+        }
+
+        haveChange.value = false;
+        await store.dispatch("flow/validateFlow", {flow: yamlWithNextRevision.value})
+    }
+
     const save = (e) => {
+        if (!haveChange.value) {
+            return;
+        }
         if (e) {
             if (e.type === "keydown") {
-                if (!(e.keyCode === 83 && e.ctrlKey) || !haveChange.value) {
+                if (!(e.keyCode === 83 && e.ctrlKey)) {
                     return;
                 }
                 e.preventDefault();
@@ -503,45 +598,11 @@
         }
 
         onEdit(flowYaml.value).then(validation => {
-            let flowParsed;
-            try {
-                flowParsed = YamlUtils.parse(flowYaml.value);
-            } catch (e) {
-                console.log("Error while parsing flow : ", e);
-            }
-            if (validation[0].constraints) {
-                saveAsDraft(validation[0].constraints);
+            if (validation.outdated && !props.isCreating) {
+                confirmOutdatedSaveDialog.value = true;
                 return;
             }
-
-            if (props.isCreating) {
-                store.dispatch("flow/createFlow", {flow: flowYaml.value})
-                    .then((response) => {
-                        toast.saved(response.id);
-                        store.dispatch("core/isUnsaved", false);
-                        router.push({
-                            name: "flows/update",
-                            params: {id: flowParsed.id, namespace: flowParsed.namespace, tab: "editor"}
-                        });
-                    })
-            } else {
-                if (routeParams.id !== flowParsed.id || routeParams.namespace !== flowParsed.namespace) {
-                    store.dispatch("core/showMessage", {
-                        variant: "error",
-                        title: t("can not save"),
-                        message: t("namespace and id readonly"),
-                    })
-                    flowYaml.value = YamlUtils.replaceIdAndNamespace(flowYaml.value, routeParams.id, routeParams.namespace);
-                    return;
-                }
-                store.dispatch("flow/saveFlow", {flow: flowYaml.value})
-                    .then((response) => {
-                        toast.saved(response.id);
-                        store.dispatch("core/isUnsaved", false);
-                    })
-            }
-
-            haveChange.value = false;
+            saveWithoutRevisionGuard();
         })
     };
 
@@ -554,7 +615,7 @@
             user.isAllowed(
                 permission.FLOW,
                 action.DELETE,
-                namespace
+                props.namespace
             )
         );
     }
@@ -593,7 +654,10 @@
                             .dispatch("flow/deleteFlow", metadata)
                             .then(() => {
                                 return router.push({
-                                    name: "flows/list"
+                                    name: "flows/list",
+                                    params: {
+                                        tenant: routeParams.tenant
+                                    }
                                 });
                             })
                             .then(() => {
@@ -668,89 +732,38 @@
             @update:model-value="editorUpdate($event)"
             @cursor="updatePluginDocumentation($event)"
             :creating="isCreating"
-            @restartGuidedTour="() => persistViewType(editorViewTypes.SOURCE)"
+            @restart-guided-tour="() => persistViewType(editorViewTypes.SOURCE)"
             :read-only="isReadOnly"
         >
             <template #extends-navbar>
-                <ValidationError ref="validationDomElement" tooltip-placement="bottom-start" size="small" class="ms-2" :error="flowError" :warnings="flowWarnings" />
+                <ValidationError ref="validationDomElement" tooltip-placement="bottom-start" size="small" class="ms-2" :errors="flowErrors" :warnings="flowWarnings" />
             </template>
             <template #buttons>
-                <ul>
-                    <li v-if="isAllowedEdit || canDelete">
-                        <el-dropdown>
-                            <el-button type="default" :disabled="isReadOnly">
-                                <DotsVertical title="" />
-                                {{ $t("actions") }}
-                            </el-button>
-                            <template #dropdown>
-                                <el-dropdown-menu class="m-dropdown-menu">
-                                    <el-dropdown-item
-                                        v-if="!props.isCreating && canDelete"
-                                        :icon="Delete"
-                                        size="large"
-                                        @click="deleteFlow"
-                                    >
-                                        {{ $t("delete") }}
-                                    </el-dropdown-item>
-
-                                    <el-dropdown-item
-                                        v-if="!props.isCreating"
-                                        :icon="ContentCopy"
-                                        size="large"
-                                        @click="() => router.push({name: 'flows/create', query: {copy: true}})"
-                                    >
-                                        {{ $t("copy") }}
-                                    </el-dropdown-item>
-                                    <el-dropdown-item
-                                        v-if="isAllowedEdit"
-                                        :icon="Exclamation"
-                                        size="large"
-                                        @click="isNewErrorOpen = true;"
-                                        :disabled="!flowHaveTasks()"
-                                    >
-                                        {{ $t("add global error handler") }}
-                                    </el-dropdown-item>
-                                    <el-dropdown-item
-                                        v-if="isAllowedEdit"
-                                        :icon="LightningBolt"
-                                        size="large"
-                                        @click="isNewTriggerOpen = true;"
-                                        :disabled="!flowHaveTasks()"
-                                    >
-                                        {{ $t("add trigger") }}
-                                    </el-dropdown-item>
-                                    <el-dropdown-item
-                                        v-if="isAllowedEdit"
-                                        :icon="FileEdit"
-                                        size="large"
-                                        @click="isEditMetadataOpen = true;"
-                                    >
-                                        {{ $t("edit metadata") }}
-                                    </el-dropdown-item>
-                                </el-dropdown-menu>
-                            </template>
-                        </el-dropdown>
-                    </li>
-                    <li>
-                        <el-button
-                            :icon="ContentSave"
-                            @click="save"
-                            v-if="isAllowedEdit"
-                            :type="flowError ? 'danger' : 'primary'"
-                            :disabled="!haveChange && !isCreating"
-                            class="edit-flow-save-button"
-                        >
-                            {{ $t("save") }}
-                        </el-button>
-                    </li>
-                </ul>
+                <EditorButtons
+                    v-if="![editorViewTypes.TOPOLOGY, editorViewTypes.SOURCE_TOPOLOGY].includes(viewType)"
+                    :is-creating="props.isCreating"
+                    :is-read-only="props.isReadOnly"
+                    :can-delete="canDelete()"
+                    :is-allowed-edit="isAllowedEdit()"
+                    :have-change="haveChange"
+                    :flow-have-tasks="flowHaveTasks()"
+                    :errors="flowErrors"
+                    :warnings="flowWarnings"
+                    @delete-flow="deleteFlow"
+                    @save="save"
+                    @copy="() => router.push({name: 'flows/create', query: {copy: true}, params: {tenant: routeParams.tenant}})"
+                    @open-new-error="isNewErrorOpen = true;"
+                    @open-new-trigger="isNewTriggerOpen = true;"
+                    @open-edit-metadata="isEditMetadataOpen = true;"
+                />
             </template>
         </editor>
         <div class="slider" @mousedown="dragEditor" v-if="combinedEditor" />
         <Blueprints v-if="viewType === 'source-blueprints' || blueprintsLoaded" @loaded="blueprintsLoaded = true" :class="{'d-none': viewType !== editorViewTypes.SOURCE_BLUEPRINTS}" embed class="combined-right-view enhance-readability" />
         <div
             class="topology-display"
-            :class="viewType === editorViewTypes.SOURCE_TOPOLOGY ? 'combined-right-view' : viewType === editorViewTypes.TOPOLOGY ? 'vueflow': 'hide-view'"
+            v-if="viewType === editorViewTypes.SOURCE_TOPOLOGY || viewType === editorViewTypes.TOPOLOGY"
+            :class="viewType === editorViewTypes.SOURCE_TOPOLOGY ? 'combined-right-view' : 'vueflow'"
         >
             <LowCodeEditor
                 v-if="flowGraph"
@@ -771,11 +784,11 @@
                 :expanded-subflows="props.expandedSubflows"
             >
                 <template #top-bar v-if="viewType === editorViewTypes.TOPOLOGY">
-                    <ValidationError tooltip-placement="bottom-start" size="small" class="ms-2" :error="flowError" :warnings="flowWarnings" />
+                    <ValidationError tooltip-placement="bottom-start" size="small" class="ms-2" :errors="flowErrors" :warnings="flowWarnings" />
                 </template>
             </LowCodeEditor>
             <el-alert v-else type="warning" :closable="false">
-                {{ $t("unable to generate graph")}}
+                {{ $t("unable to generate graph") }}
             </el-alert>
         </div>
         <PluginDocumentation
@@ -797,8 +810,8 @@
                 />
             </el-form>
             <template #footer>
-                <ValidationError :error="taskError" />
-                <el-button :icon="ContentSave" @click="onSaveNewError()" type="primary" :disabled="taskError">
+                <ValidationError :errors="taskErrors" />
+                <el-button :icon="ContentSave" @click="onSaveNewError()" type="primary" :disabled="taskErrors">
                     {{ $t("save") }}
                 </el-button>
             </template>
@@ -818,8 +831,8 @@
                 />
             </el-form>
             <template #footer>
-                <ValidationError :error="taskError" />
-                <el-button :icon="ContentSave" @click="onSaveNewTrigger()" type="primary" :disabled="taskError">
+                <ValidationError :errors="taskErrors" />
+                <el-button :icon="ContentSave" @click="onSaveNewTrigger()" type="primary" :disabled="taskErrors">
                     {{ $t("save") }}
                 </el-button>
             </template>
@@ -859,7 +872,41 @@
             class="to-topology-button"
             @switch-view="switchViewType"
         />
+        <EditorButtons
+            v-if="[editorViewTypes.TOPOLOGY, editorViewTypes.SOURCE_TOPOLOGY].includes(viewType)"
+            :is-creating="props.isCreating"
+            :is-read-only="props.isReadOnly"
+            :can-delete="canDelete()"
+            :is-allowed-edit="isAllowedEdit()"
+            :have-change="haveChange"
+            :flow-have-tasks="flowHaveTasks()"
+            :errors="flowErrors"
+            :warnings="flowWarnings"
+            @delete-flow="deleteFlow"
+            @save="save"
+            @copy="() => router.push({name: 'flows/create', query: {copy: true}, params: {tenant: routeParams.tenant}})"
+            @open-new-error="isNewErrorOpen = true;"
+            @open-new-trigger="isNewTriggerOpen = true;"
+            @open-edit-metadata="isEditMetadataOpen = true;"
+        />
     </el-card>
+    <el-dialog v-if="confirmOutdatedSaveDialog" v-model="confirmOutdatedSaveDialog" destroy-on-close :append-to-body="true">
+        <template #header>
+            <h5>{{ $t(`${baseOutdatedTranslationKey}.title`) }}</h5>
+        </template>
+        {{ $t(`${baseOutdatedTranslationKey}.description`) }} {{ $t(`${baseOutdatedTranslationKey}.details`) }}
+        <template #footer>
+            <el-button @click="confirmOutdatedSaveDialog = false">
+                {{ $t('cancel') }}
+            </el-button>
+            <el-button
+                type="warning"
+                @click="saveWithoutRevisionGuard(); confirmOutdatedSaveDialog = false"
+            >
+                {{ $t('ok') }}
+            </el-button>
+        </template>
+    </el-dialog>
 </template>
 
 <style lang="scss" scoped>
@@ -877,6 +924,13 @@
         position: absolute;
         top: 30px;
         right: 45px;
+    }
+
+    .to-action-button {
+        position: absolute;
+        bottom: 30px;
+        right: 45px;
+        display: flex;
     }
 
     .editor-combined {

@@ -8,7 +8,6 @@ import io.kestra.core.models.executions.statistics.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.utils.DateUtils;
 import io.micronaut.data.model.Pageable;
-import io.reactivex.Flowable;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
@@ -18,8 +17,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
-import javax.annotation.Nullable;
-import javax.validation.constraints.NotNull;
+import jakarta.annotation.Nullable;
+import jakarta.validation.constraints.NotNull;
+import reactor.core.publisher.Flux;
 
 public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Execution> {
     Boolean isTaskRunEnabled();
@@ -37,10 +37,11 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> state,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId
     );
 
-    Flowable<Execution> find(
+    Flux<Execution> find(
         @Nullable String query,
         @Nullable String tenantId,
         @Nullable String namespace,
@@ -48,7 +49,8 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> state,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId
     );
 
     ArrayListTotal<TaskRun> findTaskRun(
@@ -60,7 +62,8 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime startDate,
         @Nullable ZonedDateTime endDate,
         @Nullable List<State.Type> states,
-        @Nullable Map<String, String> labels
+        @Nullable Map<String, String> labels,
+        @Nullable String triggerExecutionId
     );
 
     Execution delete(Execution execution);
@@ -68,6 +71,16 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
     Integer purge(Execution execution);
 
     Integer maxTaskRunSetting();
+
+    List<DailyExecutionStatistics> dailyStatisticsForAllTenants(
+        @Nullable String query,
+        @Nullable String namespace,
+        @Nullable String flowId,
+        @Nullable ZonedDateTime startDate,
+        @Nullable ZonedDateTime endDate,
+        @Nullable DateUtils.GroupType groupBy,
+        boolean isTaskRun
+    );
 
     List<DailyExecutionStatistics> dailyStatistics(
         @Nullable String query,
@@ -78,6 +91,11 @@ public interface ExecutionRepositoryInterface extends SaveRepositoryInterface<Ex
         @Nullable ZonedDateTime endDate,
         @Nullable DateUtils.GroupType groupBy,
         boolean isTaskRun
+    );
+
+    List<Execution> lastExecutions(
+        @Nullable String tenantId,
+        @Nullable List<FlowFilter> flows
     );
 
     Map<String, Map<String, List<DailyExecutionStatistics>>> dailyGroupByFlowStatistics(

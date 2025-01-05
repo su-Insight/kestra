@@ -21,10 +21,25 @@
     "Default page": "Default page",
     "confirmation": "Confirmation",
     "delete confirm": "Are you sure to delete <code>{name}</code>?",
+    "outdated revision save confirmation": {
+      "confirm": "Do you want to overwrite it?",
+      "update": {
+        "title": "Outdated revision",
+        "description": "The revision you are editing is outdated.",
+        "details": "Check the Revisions tab for more details about the latest version."
+      },
+      "create": {
+        "title": "Flow already exists",
+        "description": "A Flow with the same id / namespace already exists.",
+        "details": "Check the Flows menu for more details about the existing flow."
+      }
+    },
+    "is deprecated": "is deprecated",
     "success": "Success",
     "save": "Save",
     "saved": "Successfully saved",
     "saved done": "<em>{name}</em> is successfully saved",
+    "multiple saved done": "{name} have been saved",
     "delete": "Delete",
     "deleted": "Successfully deleted",
     "deleted confirm": "<em>{name}</em> is successfully deleted!",
@@ -47,7 +62,7 @@
     "queued duration": "Queued duration",
     "choose file": "Choose a file or drop it here...",
     "launch execution": "Execute",
-    "warning flow with triggers": "This flow contains triggers and a manual execution will fail if this flow depends on triggers variables.",
+    "warning flow with triggers": "This flow contains triggers and a manual execution will fail if this flow depends on trigger expressions.",
     "triggered": "Execution trigger",
     "triggered done": "Execution <em>{name}</em> is successfully triggered",
     "topology": "Topology",
@@ -122,26 +137,26 @@
     "current": "current",
     "change status": "Change status",
     "change status done": "Task status has been updated",
-    "change status confirm": "Are you sure to change status on task <code>{task}</code> for execution <code>{id}</code>?",
+    "change status confirm": "Are you sure to change the status on task <code>{task}</code> for execution <code>{id}</code>?",
     "change status hint": {
       "WARNING": [
         "The flow will be marked as WARNING.",
-        "The next tasks will be execute.",
-        "The error tasks will be execute."
+        "The next tasks will be executed.",
+        "The error tasks will be executed."
       ],
       "FAILED": [
         "The flow will be marked as FAILED.",
-        "No other task will be execute.",
-        "The error tasks will be execute."
+        "No other task will be executed.",
+        "The error tasks will be executed."
       ],
       "SUCCESS": [
-        "The flow will restart as this task was success.",
-        "All the blocked tasks will be execute.",
-        "The flow will be on SUCCESS if all the tasks are also SUCCESS."
+        "The flow will restart as this task was successful.",
+        "All the blocked tasks will be executed.",
+        "The flow will be in a SUCCESS state if all task runs are successful."
       ],
       "RUNNING": [
         "The flow will restart and will execute all next tasks.",
-        "All the blocked tasks will be execute."
+        "All blocked tasks will be executed."
       ]
     },
     "mark as": "Mark as <code>{status}</code>",
@@ -157,8 +172,8 @@
     "outputs": "Outputs",
     "output": "Output",
     "eval": {
-      "title": "Eval expression",
-      "tooltip": "You need to choose a task to eval an expression."
+      "title": "Render expression",
+      "tooltip": "You need to choose a task to render an expression from."
     },
     "attempt": "Attempt",
     "toggle output display": "Toggle output display",
@@ -170,7 +185,7 @@
     "parent execution": "Parent execution",
     "original execution": "Original execution",
     "automatic refresh": "Automatic refresh",
-    "toggle periodic refresh each 10 seconds": "Toggle periodic refresh each 10 seconds",
+    "toggle periodic refresh each 10 seconds": "Toggle periodic refresh every 10 seconds",
     "trigger refresh": "Trigger refresh",
     "topology-graph": {
       "graph-orientation": "Graph orientation",
@@ -182,11 +197,22 @@
     "show task logs": "Show task logs",
     "show task outputs": "Show task outputs",
     "show task source": "Show task source",
-    "display output for specific task": "Display output for specific task",
-    "display metric for specific task": "Display metric for specific task",
-    "display direct sub tasks count": "Display direct sub tasks count",
+    "display output for specific task": "Display output for a specific task",
+    "display metric for specific task": "Display metric for a specific task",
+    "display direct sub tasks count": "Display direct subtask count",
     "stream": "Stream",
     "execution statistics": "Execution statistics",
+    "stats": "Stats",
+    "your usage": "Your usage",
+    "namespaces": "Namespaces",
+    "tasks": "Tasks",
+    "executions duration (in minutes)": "Total executions duration (in minutes)",
+    "last 48 hours": "last 48 hours",
+    "configure basic auth": "Configure Basic Authentication",
+    "email": "Email",
+    "password": "Password",
+    "confirm password": "Confirm password",
+    "passwords do not match": "Passwords do not match",
     "avg duration": "Avg. execution duration",
     "neutral trend": "Stable",
     "up trend": "Increasing",
@@ -217,6 +243,8 @@
       "names": "Plugins",
       "please": "Please choose a task on the right to see its documentation"
     },
+    "last execution date": "Last execution date",
+    "last execution status": "Last status",
     "last X days count": "{count} in last {days} days",
     "date range count": "{count} between the {startDate} and the {endDate}",
     "date count": "{count} on the {date}",
@@ -228,8 +256,8 @@
     "template": "Template",
     "template creation": "Template creation",
     "templates": "Templates",
-    "templates deprecated": "Templates are deprecated. Please use subflows instead of templates. See the <a href=\"https://kestra.io/docs/migrations/templates\" target=\"_blank\">Migrations section</a> explaining how you can migrate from templates to subflows.",
-    "no result": "No results for current selection",
+    "templates deprecated": "Templates are deprecated. Please use subflows instead. See the <a href=\"https://kestra.io/docs/migrations/templates\" target=\"_blank\">Migrations section</a> explaining how you can migrate from templates to subflows.",
+    "no result": "No results for the current selection",
     "trigger": "Trigger",
     "triggers": "Triggers",
     "trigger details": "Trigger details",
@@ -240,8 +268,11 @@
     "Unfold content lines": "Unfold multiline strings",
     "Max displayable": "Max displayable",
     "Total": "Total",
-    "sub flow": "Sub-flow",
+    "sub flow": "Subflow",
     "execute": "Execute",
+    "execute flow behaviour": "Execute the flow",
+    "open in same tab": "In the same tab",
+    "open in new tab": "In a new tab",
     "execute the flow": "Execute the flow <code>{id}</code>",
     "execute flow now ?": "Do you want to execute this flow?",
     "Default namespace": "Default namespace",
@@ -271,7 +302,7 @@
     "feeds": {
       "title": "What's new at Kestra"
     },
-    "delete execution running": "<div class=\"alert alert-warning mt-2 mb-0\">This execution is still running, deleting it will not stopped this one.<br />You need to kill it if you want to stop it!</div>",
+    "delete execution running": "<div class=\"alert alert-warning mt-2 mb-0\">This execution is still running, deleting it will not stop it.<br />You need to kill the execution to stop it.</div>",
     "restore": "Restore",
     "restore confirm": "Are you sure to restore the revision <code>{revision}</code>?",
     "bulk delete": "Are you sure you want to delete <code>{executionCount}</code> execution(s)?",
@@ -292,7 +323,7 @@
       "namespacesErrorExecutions": "Executions errors per namespace",
       "failedExecutions": "Failed executions",
       "errorLogs": "Errors logs",
-      "no executions": "Ready to see your Kestra flow in action?"
+      "no executions": "Ready to see your flow in action?"
     },
     "executions restarted": "<code>{executionCount}</code> executions(s) restarted",
     "executions killed": "<code>{executionCount}</code> executions(s) killed",
@@ -326,7 +357,7 @@
     "dependencies": "Dependencies",
     "see dependencies": "See dependencies",
     "dependencies missing acls": "No permissions on this flow",
-    "dependencies delete flow": "This flow has dependencies. Deleting it will prevent theses dependencies to be executed!<br /><br /> Here is the list of concerned flows:",
+    "dependencies delete flow": "This flow has dependencies. Deleting it will prevent their dependencies to be executed.<br /><br /> Here is the list of affected flows:",
     "expand dependencies": "Expand dependencies",
     "reset": "Restart",
     "Reset guided tour": "Restart Guided Tour",
@@ -387,7 +418,7 @@
     "onboarding-flow": {
       "onboardComment1": "Flow declaration with a mandatory unique ID, a namespace, and an optional description.",
       "onboardComment2": "Flow ID must be unique within a namespace.",
-      "inputs": "Flow inputs: each input has a name, a type, and an optional default value.",
+      "inputs": "Flow inputs: each input has an id, a type, and an optional default value.",
       "inputsDetails1": "We define one input of name 'user' with a default value 'Kestra user'",
       "tasks1": "List of tasks that will be executed one after the other.",
       "tasks2": "Each task must have an identifier unique for the flow and a type.",
@@ -503,16 +534,30 @@
     "date format": "Date format",
     "timezone": "Timezone",
     "add task": "Add a task",
-    "unable to generate graph": "An issue occurred while generating the graph which prevent the topology to be displayed.",
+    "unable to generate graph": "An issue occurred while generating the graph which prevents the topology to be displayed.",
     "attempts": "Attempt(s)",
-    "flow deleted, you can restore it": "Flow has been deleted and this is a read-only view, but you can still restore it.",
+    "flow deleted, you can restore it": "The flow has been deleted and this is a read-only view. You can still restore it.",
     "workers": "Workers",
     "worker group": "Worker Group",
     "hostname": "Hostname",
     "port": "Port",
     "management port": "Management port",
     "file preview truncated": "Displayed content has been truncated",
-    "show": "Show"
+    "row count": "Row count",
+    "encoding": "Encoding",
+    "show": "Show",
+    "advanced configuration": "Advanced configuration",
+    "all executions": "All executions",
+    "trigger execution id": "Parent Id",
+    "namespace files": {
+      "import": {
+        "file": "Import from ZIP or add file(s)",
+        "folder": "Import from folder",
+        "success": "File(s) successfully imported",
+        "error": "Error(s) occurred while importing the file(s)"
+      },
+      "export": "Export as a ZIP file"
+    }
   },
   "fr": {
     "id": "Identifiant",
@@ -536,10 +581,24 @@
     "Default page": "Page par défaut",
     "confirmation": "Confirmation",
     "delete confirm": "Êtes-vous sur de vouloir effacer <code>{name}</code> ?",
+    "outdated revision save confirmation": {
+        "confirm": "Êtes-vous sûr de vouloir l'écraser ?",
+        "update": {
+          "title": "Révision dépassée",
+          "description": "Une révision plus récente du Flow existe.",
+          "details": "Regardez l'onglet Révisions pour plus de détails sur la dernière version."
+        },
+        "create": {
+          "description": "Un Flow avec le même id / namespace existe déjà.",
+          "details": "Regardez le menu Flows pour plus de détails sur le Flow existant."
+        }
+    },
+    "is deprecated": "est déprécié(e)",
     "success": "Succès",
     "save": "Enregistrer",
     "saved": "Enregistrement réussi",
     "saved done": "<em>{name}</em> est enregistré avec succès",
+    "multiple saved done": "{name} ont été enregistré(e)s",
     "delete": "Effacer",
     "deleted": "Effacement réussi",
     "deleted confirm": "<em>{name}</em> est effacé !",
@@ -595,7 +654,7 @@
     "from": "De",
     "to": "à",
     "steps": "étapes",
-    "state": "état",
+    "state": "État",
     "search term in message": "Chercher dans le message",
     "search": "Chercher",
     "search blueprint": "Chercher un blueprint",
@@ -636,7 +695,7 @@
     "prefill inputs": "Pré-remplir",
     "current": "actuel",
     "change status": "Changer le statut",
-    "change status done": "Le statut de la tâche a était mis à jour",
+    "change status done": "Le statut de la tâche a été mis à jour",
     "change status confirm": "Êtes-vous sur de vouloir changer le statut de la tâche <code>{task}</code> pour l'exécution <code>{id}</code> ?",
     "change status hint": {
       "WARNING": [
@@ -698,11 +757,22 @@
     "show task outputs": "Afficher les outputs de la tâche",
     "show task source": "Afficher le code source de la tâche",
     "specific task": "Specific task",
-    "display output for specific task": "Afficher les output pour cette tâche",
+    "display output for specific task": "Afficher les sorties pour cette tâche",
     "display metric for specific task": "Afficher les mesures pour cette tâche",
     "display direct sub tasks count": "Display les sous tâches directes",
     "stream": "Flow",
     "execution statistics": "Statistiques d'exécution ",
+    "stats": "Stats",
+    "your usage": "Votre utilisation",
+    "namespaces": "Espaces de nom",
+    "tasks": "Tâches",
+    "executions duration (in minutes)": "Durée totale d'exécutions (en minutes)",
+    "last 48 hours": "dernières 48 heures",
+    "configure basic auth": "Configurer l'authentification basique",
+    "email": "Email",
+    "password": "Mot de passe",
+    "confirm password": "Confirmer le mot de passe",
+    "passwords do not match": "Les mots de passe ne correspondent pas",
     "avg duration": "Durée moyenne d'exécution",
     "neutral trend": "Stable",
     "up trend": "En augmentation",
@@ -734,6 +804,8 @@
       "please": "Veuillez choisir une tache sur la droite afin de voir sa documentation"
     },
     "last X days count": "{count} lors des {days} derniers jours",
+    "last execution date": "Dernière execution",
+    "last execution status": "Dernier statut",
     "date range count": "{count} entre le {startDate} et le {endDate}",
     "date count": "{count} le {date}",
     "revisions": "Révisions",
@@ -758,6 +830,9 @@
     "Total": "Total",
     "sub flow": "Sous-flow",
     "execute": "Exécuter",
+    "execute flow behaviour": "Exécuter le flow",
+    "open in same tab": "Dans le même onglet",
+    "open in new tab": "Dans un nouvel onglet",
     "execute the flow": "Exécuter le flow <code>{id}</code>",
     "execute flow now ?": "Voulez-vous exécuter ce flow ?",
     "Default namespace": "Espace de nom par défaut",
@@ -831,6 +906,8 @@
     "import": "Importer",
     "disable": "Désactiver",
     "enable": "Activer",
+    "environment name setting": "Nom de l'environnement",
+    "environment color setting": "Couleur de l'environnement",
     "template delete": "Êtes vous sûr de vouloir supprimer <code>{templateCount}</code> template(s)?",
     "flow delete": "Êtes vous sûr de vouloir supprimer <code>{flowCount}</code> flow(s)?",
     "templates deleted": "<code>{count}</code> Template(s) supprimé(s)",
@@ -895,7 +972,7 @@
     "onboarding-flow": {
       "onboardComment1": "Déclaration d'un flow avec un identifiant unique et un namespace obligatoire, ainsi qu'une description facultative.",
       "onboardComment2": "Les identifiants d'un flow sont uniques à l'intérieur d'un namespace.",
-      "inputs": "Flow inputs: chaque entrée possède un nom, un type et une valeur par défaut facultative.",
+      "inputs": "Flow inputs: chaque entrée possède un id, un type et une valeur par défaut facultative.",
       "inputsDetails1": "Nous définissons une entrée de nom 'csvUrl' avec comme valeur par défaut l'URL du fichier de données de test.",
       "inputsDetails2": "Ces données de test proviennent du portail France Open Data et contiennent des consommations d'électricité en français au format CSV.",
       "tasks1": "Liste de tâches qui seront exécutées les unes après les autres.",
@@ -1017,7 +1094,21 @@
     "port": "Port",
     "management port": "Port de gestion",
     "file preview truncated": "Displayed content has been truncated",
-    "show": "Voir"
+    "show": "Afficher",
+    "advanced configuration": "Configuration avancée",
+    "row count": "Nombre de lignes",
+    "encoding": "Encodage",
+    "all executions": "Toutes les exécutions",
+    "trigger execution id": "Id parent",
+    "namespace files": {
+      "import": {
+        "file": "Importer depuis un ZIP ou ajouter des fichiers",
+        "folder": "Importer depuis un dossier",
+        "success": "Fichier(s) importé(s) avec succès",
+        "error": "Une erreur est survenue lors de l'importation"
+      },
+      "export": "Export as ZIP file"
+    }
   }
 }
 

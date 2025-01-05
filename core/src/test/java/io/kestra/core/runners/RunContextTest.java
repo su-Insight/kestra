@@ -1,5 +1,6 @@
 package io.kestra.core.runners;
 
+import io.kestra.core.crypto.CryptoService;
 import io.kestra.core.metrics.MetricRegistry;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
@@ -21,6 +22,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
@@ -31,8 +33,10 @@ import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Property(name = "kestra.tasks.tmp-dir.path", value = "/tmp/sub/dir/tmp/")
+@Property(name = "kestra.crypto.secret-key", value = "I6EGNzRESu3X3pKZidrqCGOHQFUFC0yK")
 class RunContextTest extends AbstractMemoryRunnerTest {
     @Inject
     @Named(QueueFactoryInterface.WORKERTASKLOG_NAMED)
@@ -50,6 +54,9 @@ class RunContextTest extends AbstractMemoryRunnerTest {
     @Inject
     MetricRegistry metricRegistry;
 
+    @Inject
+    CryptoService cryptoService;
+
     @Test
     void logs() throws TimeoutException {
         List<LogEntry> logs = new CopyOnWriteArrayList<>();
@@ -58,7 +65,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
 
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(5));
 
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(0).getId()));
         assertThat(matchingLog, notNullValue());
@@ -74,6 +81,9 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(matchingLog, notNullValue());
         assertThat(matchingLog.getLevel(), is(Level.ERROR));
         assertThat(matchingLog.getMessage(), is("third logs"));
+
+        matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(3).getId()));
+        assertThat(matchingLog, nullValue());
     }
 
     @Test
@@ -145,13 +155,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         p.destroy();
 
         URI uri = runContext.putTempFile(path.toFile());
-        assertThat(storageInterface.size(null, uri), is(size + 1));
-    }
-
-    @Test
-    void invalidTaskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/invalid-task-defaults.yaml")));
-        taskDefaultsCaseTest.invalidTaskDefaults();
+        assertThat(storageInterface.getAttributes(null, uri).getSize(), is(size + 1));
     }
 
     @Test
@@ -189,5 +193,37 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(runContext.fileExtension(""), nullValue());
         assertThat(runContext.fileExtension("/file/hello"), nullValue());
         assertThat(runContext.fileExtension("/file/hello.txt"), is(".txt"));
+    }
+
+    @Test
+    void resolve() {
+        RunContext runContext = runContextFactory.of();
+        String baseDir = runContext.tempDir().toString();
+
+        Path path = runContext.resolve(Path.of("file.txt"));
+        assertThat(path.toString(), is(baseDir + "/file.txt"));
+
+        path = runContext.resolve(Path.of("subdir/file.txt"));
+        assertThat(path.toString(), is(baseDir + "/subdir/file.txt"));
+
+        path = runContext.resolve(null);
+        assertThat(path.toString(), is(baseDir));
+
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("/etc/passwd")));
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("../../etc/passwd")));
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("subdir/../../../etc/passwd")));
+    }
+
+    @Test
+    void encrypt() throws GeneralSecurityException {
+        // given
+        RunContext runContext = runContextFactory.of();
+        String plainText = "toto";
+
+        String encrypted = runContext.encrypt(plainText);
+        String decrypted = cryptoService.decrypt(encrypted);
+
+        assertThat(encrypted, not(plainText));
+        assertThat(decrypted, is(plainText));
     }
 }
