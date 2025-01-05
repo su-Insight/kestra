@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
@@ -55,6 +56,8 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         .put("validatedFloat", "0.42")
         .put("validatedTime", "11:27:49")
         .put("secret", "secret")
+        .put("array", """
+            ["s1", "s2", "s3"]""")
         .build();
 
     @Inject
@@ -128,10 +131,13 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         assertThat(typeds.get("validatedFloat"), is(0.42F));
         assertThat(typeds.get("validatedTime"), is(LocalTime.parse("11:27:49")));
         assertThat(typeds.get("secret"), not("secret")); // secret inputs are encrypted
+        assertThat(typeds.get("array"), instanceOf(List.class));
+        assertThat((List<String>)typeds.get("array"), hasSize(3));
+        assertThat((List<String>)typeds.get("array"), contains("s1", "s2", "s3"));
     }
 
     @Test
-    void allValidTypedInputs() throws URISyntaxException, IOException {
+    void allValidTypedInputs() {
         Map<String, Object> typeds = typedInputs(inputs);
         typeds.put("int", 42);
         typeds.put("float", 42.42F);
@@ -154,7 +160,7 @@ public class InputsTest extends AbstractMemoryRunnerTest {
             (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, inputs)
         );
 
-        assertThat(execution.getTaskRunList(), hasSize(6));
+        assertThat(execution.getTaskRunList(), hasSize(13));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
         assertThat(
             (String) execution.findTaskRunsByTaskId("file").get(0).getOutputs().get("value"),
@@ -164,6 +170,11 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         assertThat(
             (String) execution.findTaskRunsByTaskId("secret").get(0).getOutputs().get("value"),
             is("secret")
+        );
+        // null inputs are serialized
+        assertThat(
+            (String) execution.findTaskRunsByTaskId("optional").get(0).getOutputs().get("value"),
+            emptyString()
         );
     }
 
@@ -315,5 +326,37 @@ public class InputsTest extends AbstractMemoryRunnerTest {
         });
 
         assertThat(e.getMessage(), is("Invalid input 'INVALID', it must match the values '[ENUM_VALUE, OTHER_ONE]'"));
+    }
+
+    @Test
+    void inputEmptyJson() {
+        HashMap<String, Object> map = new HashMap<>(inputs);
+        map.put("json", "{}");
+
+        Map<String, Object> typeds = typedInputs(map);
+
+        assertThat(typeds.get("json"), instanceOf(Map.class));
+        assertThat(((Map<?, ?>) typeds.get("json")).size(), is(0));
+    }
+
+    @Test
+    void inputEmptyJsonFlow() throws TimeoutException {
+        HashMap<String, Object> map = new HashMap<>(inputs);
+        map.put("json", "{}");
+
+        Execution execution = runnerUtils.runOne(
+            null,
+            "io.kestra.tests",
+            "inputs",
+            null,
+            (flow, execution1) -> runnerUtils.typedInputs(flow, execution1, map)
+        );
+
+        assertThat(execution.getTaskRunList(), hasSize(13));
+        assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+
+        assertThat(execution.getInputs().get("json"), instanceOf(Map.class));
+        assertThat(((Map<?, ?>) execution.getInputs().get("json")).size(), is(0));
+        assertThat((String) execution.findTaskRunsByTaskId("jsonOutput").get(0).getOutputs().get("value"), is("{}"));
     }
 }

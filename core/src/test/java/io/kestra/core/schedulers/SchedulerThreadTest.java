@@ -3,12 +3,13 @@ package io.kestra.core.schedulers;
 import io.kestra.core.models.Label;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.PluginDefault;
 import io.kestra.core.models.flows.State;
-import io.kestra.core.models.flows.TaskDefault;
 import io.kestra.core.models.tasks.WorkerGroup;
 import io.kestra.core.runners.FlowListeners;
 import io.kestra.core.runners.TestMethodScopedWorker;
 import io.kestra.core.runners.Worker;
+import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -43,7 +44,7 @@ public class SchedulerThreadTest extends AbstractSchedulerTest {
             .build();
 
         return createFlow(Collections.singletonList(schedule), List.of(
-            TaskDefault.builder()
+            PluginDefault.builder()
                 .type(UnitTest.class.getName())
                 .values(Map.of("defaultInjected", "done"))
                 .build()
@@ -84,7 +85,7 @@ public class SchedulerThreadTest extends AbstractSchedulerTest {
                 flowListenersServiceSpy,
                 triggerState
             );
-            Worker worker = new TestMethodScopedWorker(applicationContext, 8, null);
+            Worker worker = applicationContext.createBean(TestMethodScopedWorker.class, IdUtils.create(), 8, null)
         ) {
             // start the worker as it execute polling triggers
             worker.run();

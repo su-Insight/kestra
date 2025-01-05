@@ -69,6 +69,7 @@
     <div v-bind="$attrs" v-loading="isLoading">
         <el-card>
             <el-tooltip
+                effect="light"
                 placement="bottom"
                 :persistent="false"
                 :hide-after="0"
@@ -144,7 +145,7 @@
                 };
             },
             options() {
-                const darken = this.theme === "light" ? cssVariable("--bs-gray-400") : cssVariable("--bs-gray-600");
+                const darken = this.theme === "light" ? cssVariable("--bs-gray-700") : cssVariable("--bs-gray-800");
                 const lighten = this.theme === "light" ? cssVariable("--bs-gray-200") : cssVariable("--bs-gray-400");
 
                 return defaultConfig({

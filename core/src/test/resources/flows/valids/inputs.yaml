@@ -92,23 +92,43 @@ inputs:
   required: false
 - name: secret
   type: SECRET
+- name: array
+  type: ARRAY
+  itemType: STRING
 
 tasks:
 - id: string
-  type: io.kestra.core.tasks.debugs.Return
+  type: io.kestra.plugin.core.debug.Return
   format: "{{inputs.string}}"
+- id: optional
+  type: io.kestra.plugin.core.debug.Return
+  format: "{{inputs.optional}}"
 - id: int
-  type: io.kestra.core.tasks.debugs.Return
+  type: io.kestra.plugin.core.debug.Return
   format: "{{inputs.int}}"
 - id: float
-  type: io.kestra.core.tasks.debugs.Return
+  type: io.kestra.plugin.core.debug.Return
   format: "{{inputs.float}}"
 - id: instant
-  type: io.kestra.core.tasks.debugs.Return
+  type: io.kestra.plugin.core.debug.Return
   format: "{{inputs.instant}}"
 - id: file
-  type: io.kestra.core.tasks.debugs.Return
+  type: io.kestra.plugin.core.debug.Return
   format: "{{inputs.file}}"
 - id: secret
-  type: io.kestra.core.tasks.debugs.Return
+  type: io.kestra.plugin.core.debug.Return
   format: "{{inputs.secret}}"
+- id: array
+  type: io.kestra.plugin.core.flow.EachSequential
+  value: "{{inputs.array}}"
+  tasks:
+    - id: log
+      type: io.kestra.plugin.core.debug.Return
+      format: "{{taskrun.value}}"
+
+- id: json
+  type: io.kestra.plugin.core.debug.Return
+  format: "{{inputs.json}}"
+- id: jsonOutput
+  type: io.kestra.plugin.core.debug.Return
+  format: "{{outputs.json.value}}"

@@ -2,6 +2,7 @@ package io.kestra.core.services;
 
 import io.kestra.core.models.ServerType;
 import io.kestra.core.models.collectors.*;
+import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.repositories.ExecutionRepositoryInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.serializers.JacksonMapper;
@@ -50,6 +51,9 @@ public class CollectorService {
     @Inject
     protected VersionProvider versionProvider;
 
+    @Inject
+    protected PluginRegistry pluginRegistry;
+
     @Nullable
     @Value("${kestra.server-type}")
     protected ServerType serverType;
@@ -78,29 +82,29 @@ public class CollectorService {
                 .startTime(Instant.ofEpochMilli(ManagementFactory.getRuntimeMXBean().getStartTime()))
                 .host(HostUsage.of())
                 .configurations(ConfigurationUsage.of(applicationContext))
-                .plugins(PluginUsage.of(applicationContext))
+                .plugins(PluginUsage.of(pluginRegistry))
                 .build();
         }
 
         return defaultUsage;
     }
 
-    public Usage metrics() {
-        Usage.UsageBuilder<?, ?> builder = defaultUsage().toBuilder()
+    public Usage metrics(boolean details) {
+        Usage.UsageBuilder<?, ?> builder = defaultUsage()
+            .toBuilder()
             .uuid(IdUtils.create());
 
-        if (serverType == ServerType.EXECUTOR || serverType == ServerType.STANDALONE) {
-            builder
+        if (details) {
+            builder = builder
                 .flows(FlowUsage.of(flowRepository))
                 .executions(ExecutionUsage.of(executionRepository));
         }
-
         return builder.build();
     }
 
     public void report() {
         try {
-            Usage metrics = this.metrics();
+            Usage metrics = this.metrics(serverType == ServerType.EXECUTOR || serverType == ServerType.STANDALONE);
             MutableHttpRequest<Usage> post = this.request(metrics);
 
             if (log.isTraceEnabled()) {

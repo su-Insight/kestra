@@ -22,13 +22,12 @@
                         @update:model-value="onNamespaceSelect"
                     />
                 </el-form-item>
-                <el-form-item
-                    class="date-range"
-                >
+                <el-form-item>
                     <date-range
                         :start-date="startDate"
                         :end-date="endDate"
                         @update:model-value="onDateChange($event)"
+                        class="w-auto"
                     />
                 </el-form-item>
             </collapse>
@@ -105,7 +104,7 @@
             </el-row>
         </div>
         <div v-else-if="dailyReady">
-            <el-card class="pb-3">
+            <el-card class="pb-3 mb-4">
                 <el-row justify="center">
                     <span class="new-execution-img" />
                 </el-row>
