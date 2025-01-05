@@ -214,8 +214,10 @@ public abstract class StorageTestSuite {
         );
         path.forEach(throwConsumer(s -> putFile(tenantId, s)));
 
-        List<FileAttributes> list = storageInterface.list(tenantId, new URI("/" + prefix + "/storage"));
+        List<FileAttributes> list = storageInterface.list(tenantId, null);
+        assertThat(list.stream().map(FileAttributes::getFileName).toList(), hasItem(prefix));
 
+        list = storageInterface.list(tenantId, new URI("/" + prefix + "/storage"));
         assertThat(list.stream().map(FileAttributes::getFileName).toList(), containsInAnyOrder("root.yml", "level1", "another"));
     }
     //endregion
@@ -741,6 +743,17 @@ public abstract class StorageTestSuite {
         assertThat(attr.getFileName(), is("level1"));
         assertThat(attr.getType(), is(FileAttributes.FileType.Directory));
         assertThat(attr.getLastModifiedTime(), notNullValue());
+    }
+
+    @Test
+    void createDirectoryShouldBeRecursive() throws IOException {
+        String prefix = IdUtils.create();
+        storageInterface.createDirectory(null, URI.create("/" + prefix + "/first/second/third"));
+
+        List<FileAttributes> list = storageInterface.list(null, URI.create("/" + prefix));
+        assertThat(list, contains(
+            hasProperty("fileName", is("first"))
+        ));
     }
     //endregion
 

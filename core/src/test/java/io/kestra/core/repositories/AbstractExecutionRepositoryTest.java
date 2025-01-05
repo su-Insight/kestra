@@ -10,6 +10,7 @@ import io.kestra.core.models.executions.statistics.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.tasks.ResolvedTask;
 import io.kestra.core.tasks.debugs.Return;
+import io.kestra.core.utils.IdUtils;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.data.model.Sort;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
@@ -17,7 +18,9 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -93,14 +96,17 @@ public abstract class AbstractExecutionRepositoryTest {
         return finalState;
     }
 
-
     protected void inject() {
-        executionRepository.save(builder(State.Type.RUNNING, null).labels(List.of(new Label("key", "value"))).build());
+        inject(null);
+    }
+
+    protected void inject(String parentId) {
+        executionRepository.save(builder(State.Type.RUNNING, null).labels(List.of(new Label("key", "value"))).parentId(parentId).build());
         for (int i = 1; i < 28; i++) {
             executionRepository.save(builder(
                 i < 5 ? State.Type.RUNNING : (i < 8 ? State.Type.FAILED : State.Type.SUCCESS),
                 i < 15 ? null : "second"
-            ).build());
+            ).parentId(parentId).build());
         }
     }
 
@@ -108,26 +114,42 @@ public abstract class AbstractExecutionRepositoryTest {
     protected void find() {
         inject();
 
-        ArrayListTotal<Execution> executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null);
+        ArrayListTotal<Execution> executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null, null);
         assertThat(executions.getTotal(), is(28L));
         assertThat(executions.size(), is(10));
 
-        executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, List.of(State.Type.RUNNING, State.Type.FAILED), null);
+        executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, List.of(State.Type.RUNNING, State.Type.FAILED), null, null);
         assertThat(executions.getTotal(), is(8L));
 
-        executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, Map.of("key", "value"));
+        executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, Map.of("key", "value"), null);
         assertThat(executions.getTotal(), is(1L));
+    }
+
+    @Test
+    protected void findParentId() {
+        String parentId = IdUtils.create();
+
+        inject(parentId);
+        inject();
+
+        ArrayListTotal<Execution> executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null, parentId);
+        assertThat(executions.getTotal(), is(28L));
+        assertThat(executions.size(), is(10));
+        assertThat(executions.get(0).getParentId(), is(parentId));
+
+        executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, null, null, null);
+        assertThat(executions.getTotal(), is(56L));
     }
 
     @Test
     protected void findWithSort() {
         inject();
 
-        ArrayListTotal<Execution> executions = executionRepository.find(Pageable.from(1, 10, Sort.of(Sort.Order.desc("id"))),  null, null, null, null, null, null, null, null);
+        ArrayListTotal<Execution> executions = executionRepository.find(Pageable.from(1, 10, Sort.of(Sort.Order.desc("id"))),  null, null, null, null, null, null, null, null, null);
         assertThat(executions.getTotal(), is(28L));
         assertThat(executions.size(), is(10));
 
-        executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, List.of(State.Type.RUNNING, State.Type.FAILED), null);
+        executions = executionRepository.find(Pageable.from(1, 10),  null, null, null, null, null, null, List.of(State.Type.RUNNING, State.Type.FAILED), null, null);
         assertThat(executions.getTotal(), is(8L));
     }
 
@@ -135,11 +157,11 @@ public abstract class AbstractExecutionRepositoryTest {
     protected void findTaskRun() {
         inject();
 
-        ArrayListTotal<TaskRun> taskRuns = executionRepository.findTaskRun(Pageable.from(1, 10), null, null, null, null, null, null, null, null);
+        ArrayListTotal<TaskRun> taskRuns = executionRepository.findTaskRun(Pageable.from(1, 10), null, null, null, null, null, null, null, null, null);
         assertThat(taskRuns.getTotal(), is(71L));
         assertThat(taskRuns.size(), is(10));
 
-        taskRuns = executionRepository.findTaskRun(Pageable.from(1, 10), null, null, null, null, null, null, null, Map.of("key", "value"));
+        taskRuns = executionRepository.findTaskRun(Pageable.from(1, 10), null, null, null, null, null, null, null, Map.of("key", "value"), null);
         assertThat(taskRuns.getTotal(), is(1L));
         assertThat(taskRuns.size(), is(1));
     }
@@ -223,14 +245,14 @@ public abstract class AbstractExecutionRepositoryTest {
         DailyExecutionStatistics second = result.get("io.kestra.unittest").get("second").get(10);
 
         assertThat(full.getDuration().getAvg().toMillis(), greaterThan(0L));
-        assertThat(full.getExecutionCounts().size(), is(9));
+        assertThat(full.getExecutionCounts().size(), is(11));
         assertThat(full.getExecutionCounts().get(State.Type.FAILED), is(3L));
         assertThat(full.getExecutionCounts().get(State.Type.RUNNING), is(5L));
         assertThat(full.getExecutionCounts().get(State.Type.SUCCESS), is(7L));
         assertThat(full.getExecutionCounts().get(State.Type.CREATED), is(0L));
 
         assertThat(second.getDuration().getAvg().toMillis(), greaterThan(0L));
-        assertThat(second.getExecutionCounts().size(), is(9));
+        assertThat(second.getExecutionCounts().size(), is(11));
         assertThat(second.getExecutionCounts().get(State.Type.SUCCESS), is(13L));
         assertThat(second.getExecutionCounts().get(State.Type.CREATED), is(0L));
 
@@ -249,7 +271,7 @@ public abstract class AbstractExecutionRepositoryTest {
         assertThat(result.get("io.kestra.unittest").size(), is(1));
         full = result.get("io.kestra.unittest").get("*").get(10);
         assertThat(full.getDuration().getAvg().toMillis(), greaterThan(0L));
-        assertThat(full.getExecutionCounts().size(), is(9));
+        assertThat(full.getExecutionCounts().size(), is(11));
         assertThat(full.getExecutionCounts().get(State.Type.FAILED), is(3L));
         assertThat(full.getExecutionCounts().get(State.Type.RUNNING), is(5L));
         assertThat(full.getExecutionCounts().get(State.Type.SUCCESS), is(20L));
@@ -269,6 +291,55 @@ public abstract class AbstractExecutionRepositoryTest {
         assertThat(result.size(), is(1));
         assertThat(result.get("io.kestra.unittest").size(), is(1));
         assertThat(result.get("io.kestra.unittest").get(FLOW).size(), is(11));
+    }
+
+    @Test
+    protected void lastExecutions() throws InterruptedException {
+
+        Instant executionNow = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+
+        Execution executionOld = builder(State.Type.SUCCESS, FLOW)
+            .state(State.of(
+                State.Type.SUCCESS,
+                List.of(new State.History(
+                    State.Type.SUCCESS,
+                    executionNow.minus(1, ChronoUnit.DAYS)
+                )))
+            ).build();
+
+        Execution executionFailed = builder(State.Type.FAILED, FLOW)
+            .state(State.of(
+                State.Type.FAILED,
+                List.of(new State.History(
+                    State.Type.FAILED,
+                    executionNow.minus(1, ChronoUnit.HOURS)
+                )))
+            ).build();
+
+        Execution executionRunning = builder(State.Type.RUNNING, FLOW)
+            .state(State.of(
+                State.Type.RUNNING,
+                List.of(new State.History(State.Type.RUNNING, executionNow)))
+            ).build();
+
+        executionRepository.save(executionOld);
+        executionRepository.save(executionFailed);
+        executionRepository.save(executionRunning);
+
+        // mysql need some time ...
+        Thread.sleep(500);
+
+        List<Execution> result = executionRepository.lastExecutions(
+                null,
+                List.of(
+                    ExecutionRepositoryInterface.FlowFilter.builder()
+                        .id(FLOW)
+                        .namespace(NAMESPACE).build()
+                )
+        );
+
+        assertThat(result.size(), is(1));
+        assertThat(result.get(0).getState(), is(executionFailed.getState()));
     }
 
     @Test
@@ -295,7 +366,7 @@ public abstract class AbstractExecutionRepositoryTest {
         );
 
         assertThat(result.size(), is(11));
-        assertThat(result.get(10).getExecutionCounts().size(), is(9));
+        assertThat(result.get(10).getExecutionCounts().size(), is(11));
         assertThat(result.get(10).getDuration().getAvg().toMillis(), greaterThan(0L));
 
         assertThat(result.get(10).getExecutionCounts().get(State.Type.FAILED), is(3L));
@@ -324,7 +395,7 @@ public abstract class AbstractExecutionRepositoryTest {
         );
 
         assertThat(result.size(), is(11));
-        assertThat(result.get(10).getExecutionCounts().size(), is(9));
+        assertThat(result.get(10).getExecutionCounts().size(), is(11));
         assertThat(result.get(10).getDuration().getAvg().toMillis(), greaterThan(0L));
 
         assertThat(result.get(10).getExecutionCounts().get(State.Type.FAILED), is(3L * 2));
@@ -348,20 +419,35 @@ public abstract class AbstractExecutionRepositoryTest {
         List<ExecutionCount> result = executionRepository.executionCounts(
             null,
             List.of(
-                new io.kestra.core.models.executions.statistics.Flow(NAMESPACE, "first"),
-                new io.kestra.core.models.executions.statistics.Flow(NAMESPACE, "second"),
-                new io.kestra.core.models.executions.statistics.Flow(NAMESPACE, "third"),
+                new Flow(NAMESPACE, "first"),
+                new Flow(NAMESPACE, "second"),
+                new Flow(NAMESPACE, "third"),
                 new Flow(NAMESPACE, "missing")
             ),
             null,
             ZonedDateTime.now().minusDays(10),
             ZonedDateTime.now()
         );
-
         assertThat(result.size(), is(4));
         assertThat(result.stream().filter(executionCount -> executionCount.getFlowId().equals("first")).findFirst().get().getCount(), is(2L));
         assertThat(result.stream().filter(executionCount -> executionCount.getFlowId().equals("second")).findFirst().get().getCount(), is(3L));
         assertThat(result.stream().filter(executionCount -> executionCount.getFlowId().equals("third")).findFirst().get().getCount(), is(9L));
         assertThat(result.stream().filter(executionCount -> executionCount.getFlowId().equals("missing")).findFirst().get().getCount(), is(0L));
+
+        result = executionRepository.executionCounts(
+            null,
+            List.of(
+                new Flow(NAMESPACE, "first"),
+                new Flow(NAMESPACE, "second"),
+                new Flow(NAMESPACE, "third")
+            ),
+            List.of(State.Type.SUCCESS),
+            null,
+            null
+        );
+        assertThat(result.size(), is(3));
+        assertThat(result.stream().filter(executionCount -> executionCount.getFlowId().equals("first")).findFirst().get().getCount(), is(2L));
+        assertThat(result.stream().filter(executionCount -> executionCount.getFlowId().equals("second")).findFirst().get().getCount(), is(3L));
+        assertThat(result.stream().filter(executionCount -> executionCount.getFlowId().equals("third")).findFirst().get().getCount(), is(9L));
     }
 }

@@ -51,20 +51,14 @@ public interface StorageInterface {
     }
 
     /**
-     * @param uri
-     * @return
-     * @throws IOException
-     * @deprecated Use {@link #getAttributes(URI)} instead of individual call for every attribute
+     * @deprecated Use {@link #getAttributes(String, URI)}} instead of individual call for every attribute
      */
     @Deprecated
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
     Long size(String tenantId, URI uri) throws IOException;
 
     /**
-     * @param uri
-     * @return
-     * @throws IOException
-     * @deprecated Use {@link #getAttributes(URI)} instead of individual call for every attribute
+     * @deprecated Use {@link #getAttributes(String, URI)} instead of individual call for every attribute
      */
     @Deprecated
     @Retryable(includes = {IOException.class}, excludes = {FileNotFoundException.class})
@@ -169,10 +163,10 @@ public interface StorageInterface {
     }
 
     default String namespaceFilePrefix(String namespace) {
-        return String.join("/", List.of(
+        return fromParts(
             namespace,
             "files"
-        ));
+        );
     }
 
     default Optional<String> extractExecutionId(URI path) {

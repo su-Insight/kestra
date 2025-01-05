@@ -2,8 +2,6 @@ package io.kestra.jdbc.runner;
 
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
-import io.kestra.core.models.executions.TaskRun;
-import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueFactoryInterface;
@@ -12,6 +10,7 @@ import io.kestra.core.repositories.LocalFlowRepositoryLoader;
 import io.kestra.core.runners.*;
 import io.kestra.core.tasks.flows.EachSequentialTest;
 import io.kestra.core.tasks.flows.FlowCaseTest;
+import io.kestra.core.tasks.flows.ForEachItemCaseTest;
 import io.kestra.core.tasks.flows.PauseTest;
 import io.kestra.core.tasks.flows.WorkingDirectoryTest;
 import io.kestra.core.utils.TestsUtils;
@@ -77,6 +76,12 @@ public abstract class JdbcRunnerTest {
     @Inject
     private SkipExecutionCaseTest skipExecutionCaseTest;
 
+    @Inject
+    private ForEachItemCaseTest forEachItemCaseTest;
+
+    @Inject
+    private FlowConcurrencyCaseTest flowConcurrencyCaseTest;
+
     @BeforeAll
     void init() throws IOException, URISyntaxException {
         jdbcTestUtils.drop();
@@ -98,7 +103,7 @@ public abstract class JdbcRunnerTest {
     void logs() throws TimeoutException {
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs", null, null, Duration.ofSeconds(60));
 
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(4));
     }
 
     @Test
@@ -261,5 +266,35 @@ public abstract class JdbcRunnerTest {
     @Test
     void skipExecution() throws TimeoutException, InterruptedException {
         skipExecutionCaseTest.skipExecution();
+    }
+
+    @Test
+    void forEachItem() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
+        forEachItemCaseTest.forEachItem();
+    }
+
+    @Test
+    void forEachItemNoWait() throws URISyntaxException, IOException, InterruptedException, TimeoutException {
+        forEachItemCaseTest.forEachItemNoWait();
+    }
+
+    @Test
+    void concurrencyCancel() throws TimeoutException, InterruptedException {
+        flowConcurrencyCaseTest.flowConcurrencyCancel();
+    }
+
+    @Test
+    void concurrencyFail() throws TimeoutException, InterruptedException  {
+        flowConcurrencyCaseTest.flowConcurrencyFail();
+    }
+
+    @Test
+    void concurrencyQueue() throws TimeoutException, InterruptedException  {
+        flowConcurrencyCaseTest.flowConcurrencyQueue();
+    }
+
+    @Test
+    void concurrencyQueuePause() throws TimeoutException, InterruptedException  {
+        flowConcurrencyCaseTest.flowConcurrencyQueuePause();
     }
 }

@@ -38,10 +38,13 @@ export const executeTask = (submitor, flow, values, options) => {
         .then(response => {
             submitor.$store.commit("execution/setExecution", response.data)
             if (options.redirect) {
-                const resolved = submitor.$router.resolve({name: "executions/update", params: {...{namespace: response.data.namespace, flowId: response.data.flowId, id: response.data.id}, ...{tab: "gantt"}}})
-                window.open(resolved.href, "_blank")
+                if (options.newTab) {
+                    const resolved = submitor.$router.resolve({name: "executions/update", params: {...{namespace: response.data.namespace, flowId: response.data.flowId, id: response.data.id}, ...{tab: "gantt"}}})
+                    window.open(resolved.href, "_blank")
+                } else {
+                    submitor.$router.push({name: "executions/update", params: {...{namespace: response.data.namespace, flowId: response.data.flowId, id: response.data.id}, ...{tab: "gantt"}}})
+                }
             }
-
             return response.data;
         })
         .then((execution) => {
