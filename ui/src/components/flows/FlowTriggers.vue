@@ -16,6 +16,15 @@
 
         <el-table-column prop="type" :label="$t('type')" />
 
+        <el-table-column prop="workerId" :label="$t('workerId')">
+            <template #default="scope">
+                <id
+                    :value="scope.row.workerId"
+                    :shrink="true"
+                />
+            </template>
+        </el-table-column>
+
         <el-table-column prop="nextExecutionDate" :label="$t('next execution date')">
             <template #default="scope">
                 <date-ago :inverted="true" :date="scope.row.nextExecutionDate" />
@@ -35,7 +44,7 @@
             <template #default="scope">
                 <el-button
                     :icon="CalendarCollapseHorizontalOutline"
-                    v-if="scheduleClassName === scope.row.type && !scope.row.backfill && userCan(action.CREATE)"
+                    v-if="isSchedule(scope.row.type) && !scope.row.backfill && userCan(action.CREATE)"
                     @click="setBackfillModal(scope.row, true)"
                     :disabled="scope.row.disabled"
                     size="small"
@@ -43,7 +52,7 @@
                 >
                     {{ $t("backfill executions") }}
                 </el-button>
-                <template v-else-if="scheduleClassName === scope.row.type && userCan(action.UPDATE)">
+                <template v-else-if="isSchedule(scope.row.type) && userCan(action.UPDATE)">
                     <div class="backfill-cell">
                         <div class="progress-cell">
                             <el-progress
@@ -182,6 +191,7 @@
     import CalendarCollapseHorizontalOutline from "vue-material-design-icons/CalendarCollapseHorizontalOutline.vue"
     import FlowRun from "./FlowRun.vue";
     import RefreshButton from "../layout/RefreshButton.vue";
+    import Id from "../Id.vue";
 </script>
 
 <script>
@@ -203,8 +213,6 @@
                 isOpen: false,
                 isBackfillOpen: false,
                 triggers: [],
-                // className to check to display the backfill button
-                scheduleClassName: "io.kestra.core.models.triggers.types.Schedule",
                 selectedTrigger: null,
                 backfill: {
                     start: null,
@@ -255,7 +263,7 @@
             },
             loadData() {
                 this.$store
-                    .dispatch("trigger/find", {namespace: this.flow.namespace, flowId: this.flow.id})
+                    .dispatch("trigger/find", {namespace: this.flow.namespace, flowId: this.flow.id, size: this.triggersWithType.length})
                     .then(triggers => this.triggers = triggers.results);
             },
             setBackfillModal(trigger, bool) {
@@ -270,12 +278,12 @@
                     return true
                 }
                 if (this.flow.inputs) {
-                    const requiredInputs = this.flow.inputs.map(input => input.required !== false ? input.id : null)
+                    const requiredInputs = this.flow.inputs.map(input => input.required !== false ? input.id : null).filter(i => i !== null)
                     if (requiredInputs.length > 0) {
                         if (!this.backfill.inputs) {
                             return true
                         }
-                        const fillInputs = Object.keys(this.backfill.inputs)
+                        const fillInputs = Object.keys(this.backfill.inputs).filter(i => this.backfill.inputs[i])
                         if (requiredInputs.sort().join(",") !== fillInputs.sort().join(",")) {
                             return true
                         }
@@ -384,6 +392,9 @@
                 const totalDuration = endMoment.diff(startMoment);
                 const elapsedDuration = currentMoment.diff(startMoment);
                 return Math.round((elapsedDuration / totalDuration) * 100);
+            },
+            isSchedule(type) {
+                return type === "io.kestra.plugin.core.trigger.Schedule" || type === "io.kestra.core.models.triggers.types.Schedule";
             }
         }
     };

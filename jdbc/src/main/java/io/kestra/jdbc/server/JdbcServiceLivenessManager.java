@@ -11,6 +11,7 @@ import io.kestra.core.server.LocalServiceStateFactory;
 import io.kestra.core.server.ServiceLivenessManager;
 import io.kestra.core.server.ServiceRegistry;
 import io.kestra.core.server.ServiceStateChangeEvent;
+import io.kestra.jdbc.runner.JdbcRepositoryEnabled;
 import io.kestra.jdbc.runner.JdbcRunnerEnabled;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.runtime.event.annotation.EventListener;
@@ -22,6 +23,7 @@ import java.time.Instant;
 
 @Context
 @JdbcRunnerEnabled
+@JdbcRepositoryEnabled
 public final class JdbcServiceLivenessManager extends ServiceLivenessManager {
 
     private static final Logger log = LoggerFactory.getLogger(JdbcServiceLivenessManager.class);
@@ -70,9 +72,10 @@ public final class JdbcServiceLivenessManager extends ServiceLivenessManager {
             );
             // Force the WORKER to transition to DISCONNECTED.
             ServiceInstance updated = updateServiceInstanceState(now, service, Service.ServiceState.DISCONNECTED, OnStateTransitionFailureCallback.NOOP);
-
-            // Trigger state transition failure callback.
-            onStateTransitionFailureCallback.execute(now, service, updated, true);
+            if (updated != null) {
+                // Trigger state transition failure callback.
+                onStateTransitionFailureCallback.execute(now, service, updated, true);
+            }
             return false;
         }
 

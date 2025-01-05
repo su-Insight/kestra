@@ -1,6 +1,7 @@
 <template>
-    <span class="kicon">
+    <span :data-component="dataComponent" class="kicon">
         <el-tooltip
+            effect="light"
             v-if="tooltip"
             :content="tooltip"
             :raw-content="true"
@@ -15,7 +16,10 @@
     </span>
 </template>
 <script>
+    import BaseComponents from "../components/BaseComponents.vue"
+
     export default {
+        extends: BaseComponents,
         props:{
             tooltip: {
                 type: String,

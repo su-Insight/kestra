@@ -9,13 +9,14 @@ import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.VoidOutput;
 import io.kestra.core.models.triggers.AbstractTrigger;
-import io.kestra.core.plugins.PluginScanner;
+import io.kestra.core.plugins.PluginRegistry;
 import io.kestra.core.plugins.RegisteredPlugin;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.tasks.debugs.Echo;
-import io.kestra.core.tasks.debugs.Return;
-import io.kestra.core.tasks.flows.Dag;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.plugin.core.debug.Echo;
+import io.kestra.plugin.core.debug.Return;
+import io.kestra.plugin.core.flow.Dag;
+import io.kestra.plugin.core.log.Log;
+import io.kestra.core.junit.annotations.KestraTest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.inject.Inject;
 import lombok.Builder;
@@ -25,35 +26,37 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.net.URISyntaxException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-@MicronautTest
+@KestraTest
 class JsonSchemaGeneratorTest {
+
+
     @Inject
     JsonSchemaGenerator jsonSchemaGenerator;
 
-    private List<RegisteredPlugin> scanPlugins() throws URISyntaxException {
-        Path plugins = Paths.get(Objects.requireNonNull(ClassPluginDocumentationTest.class.getClassLoader().getResource("plugins")).toURI());
+    @Inject
+    PluginRegistry pluginRegistry;
 
-        PluginScanner pluginScanner = new PluginScanner(ClassPluginDocumentationTest.class.getClassLoader());
-        return pluginScanner.scan(plugins);
+    @BeforeAll
+    public static void beforeAll() {
+        Helpers.loadExternalPluginsFromClasspath();
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void tasks() throws URISyntaxException {
-        List<RegisteredPlugin> scan = scanPlugins();
-        Class<? extends Task> cls = scan.get(0).getTasks().get(0);
+    void tasks() {
+        List<RegisteredPlugin> scan = pluginRegistry.externalPlugins();
+        Class<? extends Task> cls = scan.getFirst().getTasks().getFirst();
 
         Map<String, Object> generate = jsonSchemaGenerator.properties(Task.class, cls);
         assertThat(((Map<String, Map<String, Object>>) generate.get("properties")).size(), is(5));
@@ -75,19 +78,19 @@ class JsonSchemaGeneratorTest {
 
             var definitions = (Map<String, Map<String, Object>>) generate.get("definitions");
 
-            var flow = definitions.get("io.kestra.core.models.flows.Flow");
+            var flow = definitions.get(Flow.class.getName());
             assertThat((List<String>) flow.get("required"), not(contains("deleted")));
             assertThat((List<String>) flow.get("required"), hasItems("id", "namespace", "tasks"));
 
             Map<String, Object> items = map(
                 properties(flow)
-                .get("tasks")
-                .get("items")
+                    .get("tasks")
+                    .get("items")
             );
             assertThat(items.containsKey("anyOf"), is(false));
             assertThat(items.containsKey("oneOf"), is(true));
 
-            var bash = definitions.get("io.kestra.core.tasks.log.Log-1");
+            var bash = definitions.get(Log.class.getName());
             assertThat((List<String>) bash.get("required"), not(contains("level")));
             assertThat((String) ((Map<String, Map<String, Object>>) bash.get("properties")).get("level").get("markdownDescription"), containsString("Default value is : `INFO`"));
             assertThat(((String) ((Map<String, Map<String, Object>>) bash.get("properties")).get("message").get("markdownDescription")).contains("can be a string"), is(true));
@@ -95,7 +98,7 @@ class JsonSchemaGeneratorTest {
             assertThat((String) bash.get("markdownDescription"), containsString("##### Examples"));
             assertThat((String) bash.get("markdownDescription"), containsString("level: DEBUG"));
 
-            var bashType = definitions.get("io.kestra.core.tasks.log.Log-2");
+            var bashType = definitions.get(Log.class.getName());
             assertThat(bashType, is(notNullValue()));
 
             var properties = (Map<String, Map<String, Object>>) flow.get("properties");
@@ -113,10 +116,8 @@ class JsonSchemaGeneratorTest {
             Map<String, Object> generate = jsonSchemaGenerator.schemas(Task.class);
 
             var definitions = (Map<String, Map<String, Object>>) generate.get("definitions");
-            var task = definitions.get("io.kestra.core.models.tasks.Task-2");
-            var allOf = (List<Object>) task.get("allOf");
-
-            assertThat(allOf.size(), is(1));
+            var task = definitions.get(Task.class.getName());
+            Assertions.assertNotNull(task.get("oneOf"));
         });
     }
 
@@ -126,17 +127,7 @@ class JsonSchemaGeneratorTest {
         Helpers.runApplicationContext((applicationContext) -> {
             JsonSchemaGenerator jsonSchemaGenerator = applicationContext.getBean(JsonSchemaGenerator.class);
 
-            Map<String, Object> generate = jsonSchemaGenerator.schemas(AbstractTrigger.class);
-
-            var definitions = (Map<String, Map<String, Object>>) generate.get("definitions");
-            var task = definitions.get("io.kestra.core.models.triggers.AbstractTrigger-2");
-            var allOf = (List<Object>) task.get("allOf");
-
-            assertThat(allOf.size(), is(1));
-
             Map<String, Object> jsonSchema = jsonSchemaGenerator.generate(AbstractTrigger.class, AbstractTrigger.class);
-
-            System.out.println(jsonSchema.get("properties"));
             assertThat((Map<String, Object>) jsonSchema.get("properties"), allOf(
                 Matchers.aMapWithSize(2),
                 hasKey("conditions"),
@@ -155,7 +146,7 @@ class JsonSchemaGeneratorTest {
 
             var definitions = (Map<String, Map<String, Object>>) generate.get("definitions");
 
-            var dag = definitions.get("io.kestra.core.tasks.flows.Dag-1");
+            var dag = definitions.get(Dag.class.getName());
             assertThat((List<String>) dag.get("required"), not(contains("errors")));
         });
     }
@@ -168,11 +159,11 @@ class JsonSchemaGeneratorTest {
 
             Map<String, Object> returnSchema = jsonSchemaGenerator.schemas(Return.class);
             var definitions = (Map<String, Map<String, Object>>) returnSchema.get("definitions");
-            var returnTask = definitions.get("io.kestra.core.tasks.debugs.Return-1");
+            var returnTask = definitions.get(Return.class.getName());
             var metrics = (List<Object>) returnTask.get("$metrics");
             assertThat(metrics.size(), is(2));
 
-            var firstMetric = (Map<String, Object>) metrics.get(0);
+            var firstMetric = (Map<String, Object>) metrics.getFirst();
             assertThat(firstMetric.get("name"), is("length"));
             assertThat(firstMetric.get("type"), is("counter"));
             var secondMetric = (Map<String, Object>) metrics.get(1);
@@ -189,7 +180,7 @@ class JsonSchemaGeneratorTest {
 
             Map<String, Object> returnSchema = jsonSchemaGenerator.schemas(Echo.class);
             var definitions = (Map<String, Map<String, Object>>) returnSchema.get("definitions");
-            var returnTask = definitions.get("io.kestra.core.tasks.debugs.Echo-1");
+            var returnTask = definitions.get(Echo.class.getName());
             var deprecated = (String) returnTask.get("$deprecated");
             assertThat(deprecated, is("true"));
         });
@@ -204,6 +195,7 @@ class JsonSchemaGeneratorTest {
         assertThat(((Map<String, Map<String, Object>>) generate.get("properties")).get("stringWithDefault").get("default"), is("default"));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void betaTask() {
         Map<String, Object> generate = jsonSchemaGenerator.properties(Task.class, BetaTask.class);
@@ -218,6 +210,7 @@ class JsonSchemaGeneratorTest {
         return (Map<String, Map<String, Object>>) generate.get("properties");
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> map(Object object) {
         return (Map<String, Object>) object;
     }
@@ -227,7 +220,7 @@ class JsonSchemaGeneratorTest {
     @EqualsAndHashCode
     @Getter
     @NoArgsConstructor
-    private static class TaskWithEnum extends ParentClass implements RunnableTask<VoidOutput>  {
+    public static class TaskWithEnum extends ParentClass implements RunnableTask<VoidOutput>  {
 
         @PluginProperty
         @Schema(title = "Title from the attribute")
@@ -240,7 +233,7 @@ class JsonSchemaGeneratorTest {
         @PluginProperty
         @Schema(
             title = "Title from the attribute",
-            anyOf = {String.class, Example[].class, Example.class}
+            oneOf = {String.class, Example[].class, Example.class}
         )
         private Object testObject;
 
@@ -281,7 +274,7 @@ class JsonSchemaGeneratorTest {
         beta = true,
         examples = {}
     )
-    private static class BetaTask extends Task {
+    public static class BetaTask extends Task {
         @PluginProperty(beta = true)
         private String beta;
     }

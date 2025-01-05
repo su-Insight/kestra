@@ -10,8 +10,7 @@ import DotsVerticalCircle from "vue-material-design-icons/DotsVerticalCircle.vue
 import MotionPauseOutline from "vue-material-design-icons/MotionPauseOutline.vue";
 import Refresh from "vue-material-design-icons/Refresh.vue";
 import Cancel from "vue-material-design-icons/Cancel.vue";
-import {cssVariable} from "./global"
-
+import {cssVariable} from "@kestra-io/ui-libs/src/utils/global";
 
 const STATE = Object.freeze({
     CREATED: {
@@ -109,6 +108,14 @@ const STATE = Object.freeze({
         isRunning: false,
         isKillable: true,
         isFailed: false
+    },
+    RETRIED: {
+        name: "RETRIED",
+        colorClass: "gray",
+        icon: Refresh,
+        isRunning: false,
+        isKillable: false,
+        isFailed: false
     }
 });
 
@@ -159,6 +166,10 @@ export default class State {
 
     static get RETRYING() {
         return STATE.RETRYING.name;
+    }
+
+    static get RETRIED() {
+        return STATE.RETRIED.name;
     }
 
     static isRunning(state) {

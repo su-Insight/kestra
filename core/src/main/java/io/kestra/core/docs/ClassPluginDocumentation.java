@@ -14,25 +14,29 @@ public class ClassPluginDocumentation<T> extends AbstractClassDocumentation<T> {
     private String group;
     private String pluginTitle;
     private String subGroup;
+    private String replacement;
     private List<MetricDoc> docMetrics;
     private Map<String, Object> outputs = new TreeMap<>();
     private Map<String, Object> outputsSchema;
 
     @SuppressWarnings("unchecked")
-    private ClassPluginDocumentation(JsonSchemaGenerator jsonSchemaGenerator, RegisteredPlugin plugin, Class<? extends T> cls, Class<T> baseCls) {
+    private ClassPluginDocumentation(JsonSchemaGenerator jsonSchemaGenerator, RegisteredPlugin plugin, Class<? extends T> cls, Class<T> baseCls, String alias) {
         super(jsonSchemaGenerator, cls, baseCls);
 
         // plugins metadata
-        this.cls = cls.getName();
+        this.cls = alias == null ? cls.getName() : alias;
         this.group = plugin.group();
         this.pluginTitle = plugin.title();
         this.icon = plugin.icon(cls);
+        if (alias != null) {
+            replacement = cls.getName();
+        }
 
         if (this.group != null && cls.getPackageName().startsWith(this.group) && cls.getPackageName().length() > this.group.length() && cls.getPackageName().charAt(this.group.length()) == '.') {
             this.subGroup = cls.getPackageName().substring(this.group.length() + 1);
         }
 
-        this.shortName = cls.getSimpleName();
+        this.shortName = alias == null ? cls.getSimpleName() : alias.substring(alias.lastIndexOf('.') + 1);
 
         // outputs
         this.outputsSchema = jsonSchemaGenerator.outputs(baseCls, cls);
@@ -58,12 +62,20 @@ public class ClassPluginDocumentation<T> extends AbstractClassDocumentation<T> {
                     (String) r.get("unit"),
                     (String) r.get("description")
                 ))
-                .collect(Collectors.toList());
+                .toList();
+        }
+
+        if (alias != null) {
+            this.deprecated = true;
         }
     }
 
     public static <T> ClassPluginDocumentation<T> of(JsonSchemaGenerator jsonSchemaGenerator, RegisteredPlugin plugin, Class<? extends T> cls, Class<T> baseCls) {
-        return new ClassPluginDocumentation<>(jsonSchemaGenerator, plugin, cls, baseCls);
+        return new ClassPluginDocumentation<>(jsonSchemaGenerator, plugin, cls, baseCls, null);
+    }
+
+    public static <T> ClassPluginDocumentation<T> of(JsonSchemaGenerator jsonSchemaGenerator, RegisteredPlugin plugin, Class<? extends T> cls, Class<T> baseCls, String alias) {
+        return new ClassPluginDocumentation<>(jsonSchemaGenerator, plugin, cls, baseCls, alias);
     }
 
     @AllArgsConstructor

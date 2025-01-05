@@ -2,6 +2,7 @@ package io.kestra.core.models.collectors;
 
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.micronaut.core.annotation.Introspected;
@@ -9,8 +10,10 @@ import lombok.Getter;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.jackson.Jacksonized;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -23,6 +26,7 @@ public class FlowUsage {
     private final Long namespacesCount;
     private final Map<String, Long> taskTypeCount;
     private final Map<String, Long> triggerTypeCount;
+    private final Map<String, Long> taskRunnerTypeCount;
 
     public static FlowUsage of(String tenantId, FlowRepositoryInterface flowRepository) {
         return FlowUsage.of(flowRepository.findAll(tenantId));
@@ -38,6 +42,7 @@ public class FlowUsage {
             .namespacesCount(namespacesCount(flows))
             .taskTypeCount(taskTypeCount(flows))
             .triggerTypeCount(triggerTypeCount(flows))
+            .taskRunnerTypeCount(taskRunnerTypeCount(flows))
             .build();
     }
 
@@ -67,5 +72,26 @@ public class FlowUsage {
             .collect(Collectors.groupingBy(f -> f, Collectors.counting()));
     }
 
-
+    protected static Map<String, Long> taskRunnerTypeCount(List<Flow> allFlows) {
+        return allFlows
+            .stream()
+            .flatMap(Flow::allTasks)
+            .filter(t -> {
+                try {
+                    return t.getClass().getMethod("getTaskRunner") != null;
+                } catch (NoSuchMethodException e) {
+                    return false;
+                }
+            })
+            .map(t -> {
+                try {
+                    TaskRunner taskRunner = (TaskRunner) t.getClass().getMethod("getTaskRunner").invoke(t);
+                    return taskRunner != null ? taskRunner.getType() : null;
+                } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                    return null;
+                }
+            })
+            .filter(Objects::nonNull)
+            .collect(Collectors.groupingBy(f -> f, Collectors.counting()));
+    }
 }

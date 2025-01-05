@@ -3,11 +3,11 @@ package io.kestra.jdbc.runner;
 import io.kestra.core.runners.DeserializationIssuesCaseTest;
 import io.kestra.core.runners.StandAloneRunner;
 import io.kestra.core.utils.IdUtils;
-import io.kestra.jdbc.JdbcConfiguration;
+import io.kestra.jdbc.JdbcTableConfigs;
 import io.kestra.jdbc.JdbcTestUtils;
 import io.kestra.jdbc.JooqDSLContextWrapper;
 import io.kestra.jdbc.repository.AbstractJdbcRepository;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.jooq.*;
 import org.jooq.Record;
@@ -20,7 +20,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
-@MicronautTest(transactional = false)
+@KestraTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // must be per-class to allow calling once init() which took a lot of time
 public abstract class AbstractJdbcDeserializationIssuesTest {
     @Inject
@@ -33,7 +33,7 @@ public abstract class AbstractJdbcDeserializationIssuesTest {
     private JooqDSLContextWrapper dslContextWrapper;
 
     @Inject
-    private JdbcConfiguration jdbcConfiguration;
+    private JdbcTableConfigs jdbcTableConfigs;
 
     @Inject
     private StandAloneRunner runner;
@@ -64,7 +64,7 @@ public abstract class AbstractJdbcDeserializationIssuesTest {
 
     private void sendToQueue(DeserializationIssuesCaseTest.QueueMessage queueMessage) {
 
-        Table<Record> table = DSL.table(jdbcConfiguration.tableConfig("queues").getTable());
+        Table<Record> table = DSL.table(jdbcTableConfigs.tableConfig("queues").table());
 
         Map<Field<Object>, Object> fields = fields(queueMessage);
 

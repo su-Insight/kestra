@@ -1,5 +1,6 @@
 <template>
-    <div class="d-flex pagination" :class="{'top': top}">
+    <div :data-component="dataComponent + (top ? '#top' : '#not-top')" class="d-flex pagination" :class="{'top': top}">
+        <slot name="search" />
         <div class="flex-grow-1 d-sm-none d-md-inline-block page-size">
             <el-select
                 v-if="!top"
@@ -40,8 +41,10 @@
 </template>
 <script>
     import {storageKeys} from "../../utils/constants";
+    import BaseComponents from "./../BaseComponents.vue";
 
     export default {
+        extends: BaseComponents,
         props: {
             total: {type: Number, default: 0},
             max: {type: Number, default: undefined},
