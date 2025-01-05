@@ -5,6 +5,7 @@
         @update:collapsed="onToggleCollapse"
         width="268px"
         :collapsed="collapsed"
+        link-component-name="LeftMenuLink"
     >
         <template #header>
             <div class="logo">
@@ -38,21 +39,27 @@
     import TimelineTextOutline from "vue-material-design-icons/TimelineTextOutline.vue";
     import ChartTimeline from "vue-material-design-icons/ChartTimeline.vue";
     import BallotOutline from "vue-material-design-icons/BallotOutline.vue";
-    import FolderEditOutline from "vue-material-design-icons/FolderEditOutline.vue";
     import ShieldAccountVariantOutline from "vue-material-design-icons/ShieldAccountVariantOutline.vue";
     import CogOutline from "vue-material-design-icons/CogOutline.vue";
     import ViewDashboardVariantOutline from "vue-material-design-icons/ViewDashboardVariantOutline.vue";
     import TimerCogOutline from "vue-material-design-icons/TimerCogOutline.vue";
     import {mapState} from "vuex";
     import ChartBoxOutline from "vue-material-design-icons/ChartBoxOutline.vue";
+    import Connection from "vue-material-design-icons/Connection.vue";
     import {shallowRef} from "vue";
+
+    import VectorIntersection from "vue-material-design-icons/VectorIntersection.vue";
+    import AccountOutline from "vue-material-design-icons/AccountOutline.vue";
+    import ShieldCheckOutline from "vue-material-design-icons/ShieldCheckOutline.vue";
+    import ServerOutline from "vue-material-design-icons/ServerOutline.vue";
+    import ShieldLockOutline from "vue-material-design-icons/ShieldLockOutline.vue"
 
     export default {
         components: {
             ChevronDoubleLeft,
             ChevronDoubleRight,
             SidebarMenu,
-            Environment
+            Environment,
         },
         emits: ["menu-collapse"],
         methods: {
@@ -115,14 +122,6 @@
                         exact: false,
                     },
                     {
-                        href: {name: "editor"},
-                        title: this.$t("editor"),
-                        icon: {
-                            element: shallowRef(FolderEditOutline),
-                            class: "menu-icon",
-                        },
-                    },
-                    {
                         href: {name: "templates/list"},
                         routes: this.routeStartWith("templates"),
                         title: this.$t("templates"),
@@ -161,11 +160,31 @@
                         },
                     },
                     {
+                        title: this.$t("namespaces"),
+                        icon: {
+                            element: shallowRef(VectorIntersection),
+                            class: "menu-icon"
+                        },
+                        disabled: true,
+                        attributes: {
+                            locked: true
+                        }
+                    },
+                    {
                         href: {name: "blueprints"},
                         routes: this.routeStartWith("blueprints"),
                         title: this.$t("blueprints.title"),
                         icon: {
                             element: shallowRef(BallotOutline),
+                            class: "menu-icon"
+                        },
+                    },
+                    {
+                        href: {name: "plugins/list"},
+                        routes: this.routeStartWith("plugins"),
+                        title: this.$t("plugins.names"),
+                        icon: {
+                            element: shallowRef(Connection),
                             class: "menu-icon"
                         },
                     },
@@ -178,12 +197,56 @@
                         },
                         child: [
                             {
+                                title: this.$t("iam"),
+                                icon: {
+                                    element: shallowRef(AccountOutline),
+                                    class: "menu-icon"
+                                },
+                                disabled: true,
+                                attributes: {
+                                    locked: true
+                                }
+                            },
+                            {
+                                title: this.$t("auditlogs"),
+                                icon: {
+                                    element: shallowRef(ShieldCheckOutline),
+                                    class: "menu-icon"
+                                },
+                                disabled: true,
+                                attributes: {
+                                    locked: true
+                                }
+                            },
+                            {
                                 href: {name: "admin/triggers"},
                                 routes: this.routeStartWith("admin/triggers"),
                                 title: this.$t("triggers"),
                                 icon: {
                                     element: shallowRef(TimerCogOutline),
                                     class: "menu-icon"
+                                }
+                            },
+                            {
+                                title: this.$t("cluster"),
+                                icon: {
+                                    element: shallowRef(ServerOutline),
+                                    class: "menu-icon"
+                                },
+                                disabled: true,
+                                attributes: {
+                                    locked: true
+                                }
+                            },
+                            {
+                                title: this.$t("tenants"),
+                                icon: {
+                                    element: shallowRef(ShieldLockOutline),
+                                    class: "menu-icon"
+                                },
+                                disabled: true,
+                                attributes: {
+                                    locked: true
                                 }
                             },
                             {
@@ -200,7 +263,7 @@
                     {
                         href: {name: "settings"},
                         routes: this.routeStartWith("admin/settings"),
-                        title: this.$t("settings"),
+                        title: this.$t("settings.label"),
                         icon: {
                             element: shallowRef(CogOutline),
                             class: "menu-icon"
@@ -340,7 +403,11 @@
             }
 
             &_disabled {
-                opacity: 1;
+                pointer-events: auto;
+            }
+
+            .el-tooltip__trigger {
+                display: flex;
             }
         }
 
@@ -421,5 +488,11 @@
                 width: 0;
             }
         }
+
+        .el-tooltip__trigger .lock-icon.material-design-icon > .material-design-icon__svg {
+            bottom: 0 !important;
+            margin-left: 5px;
+        }
     }
+
 </style>

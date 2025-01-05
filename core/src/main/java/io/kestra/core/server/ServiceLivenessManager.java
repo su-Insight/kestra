@@ -4,6 +4,8 @@ import com.google.common.annotations.VisibleForTesting;
 import io.kestra.core.contexts.KestraContext;
 import io.kestra.core.repositories.ServiceInstanceRepositoryInterface;
 import io.kestra.core.server.ServiceStateTransition.Result;
+import jakarta.annotation.Nullable;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +30,6 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
     private final ServiceInstanceRepositoryInterface serviceRepository;
     private final ReentrantLock stateLock = new ReentrantLock();
     protected final OnStateTransitionFailureCallback onStateTransitionFailureCallback;
-
     private final ServerInstanceFactory serverInstanceFactory;
     private final ServiceRegistry serviceRegistry;
 
@@ -100,11 +101,13 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
         );
         ServiceInstance instance = serviceRepository.save(localServiceState.instance());
         this.serviceRegistry.register(localServiceState.with(instance));
-        log.info("[Service id={}, type='{}', hostname='{}'] Connected.",
-            instance.id(),
-            instance.type(),
-            instance.server().hostname()
-        );
+        if (log.isDebugEnabled()) {
+            log.debug("[Service id={}, type='{}', hostname='{}'] Connected.",
+                instance.id(),
+                instance.type(),
+                instance.server().hostname()
+            );
+        }
     }
 
     /**
@@ -131,23 +134,24 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
             .filter(localServiceState -> localServiceState.isStateUpdatable().get())
             .forEach(localServiceState -> {
                 final long start = System.currentTimeMillis();
-                final ServiceInstance instance = localServiceState.instance();
                 final Service service = localServiceState.service();
 
                 // Execute the before hook.
-                if (!beforeScheduledStateUpdate(now, service, instance)) {
+                if (!beforeScheduledStateUpdate(now, service, localServiceState.instance())) {
                     return;
                 }
 
                 // Execute state update for current service (i.e., heartbeat).
-                updateServiceInstanceState(now, service, instance.state(), onStateTransitionFailureCallback);
-                log.trace("[Service id={}, type={}, hostname='{}'] Completed scheduled state update: '{}' ({}ms).",
-                    instance.id(),
-                    instance.type(),
-                    instance.server().hostname(),
-                    instance.state(),
-                    System.currentTimeMillis() - start
-                );
+                ServiceInstance instance = updateServiceInstanceState(now, service, null, onStateTransitionFailureCallback);
+                if (log.isTraceEnabled() && instance != null) {
+                    log.trace("[Service id={}, type={}, hostname='{}'] Completed scheduled state update: '{}' ({}ms).",
+                        instance.id(),
+                        instance.type(),
+                        instance.server().hostname(),
+                        instance.state(),
+                        System.currentTimeMillis() - start
+                    );
+                }
             });
     }
 
@@ -172,29 +176,38 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
     }
 
     /**
-     * Updates the state of the local worker instance.
+     * Updates a service with the given state.
      *
-     * @param newState           the new worker state.
+     * @param newState           the new state, or {@code null} to update using current state.
      * @param onStateChangeError the callback to invoke if the state cannot be changed.
+     * @return the updated {@link ServiceInstance}, or {@code null} if state exist for the service.
      */
     protected ServiceInstance updateServiceInstanceState(final Instant now,
                                                          final Service service,
-                                                         final Service.ServiceState newState,
+                                                         @Nullable Service.ServiceState newState,
                                                          final OnStateTransitionFailureCallback onStateChangeError) {
 
-        // Pre-check the state transition validation with the known local state.
-        ServiceInstance localInstance = localServiceState(service).instance();
-        if (!localInstance.state().isValidTransition(newState)) {
-            log.warn("Failed to transition service [id={}, type={}, hostname={}] from {} to {}. Cause: {}.",
-                localInstance.id(),
-                localInstance.type(),
-                localInstance.server().hostname(),
-                localInstance.state(),
-                newState,
-                "Invalid transition"
-            );
-            mayDisableStateUpdate(service, localInstance);
-            return localInstance;
+        LocalServiceState localServiceState = localServiceState(service);
+        if (localServiceState == null) {
+            return null; // service has been unregistered.
+        }
+
+        // If a new state is passed, then pre-check that transition
+        // is valid with the known local service state.
+        if (newState != null) {
+            ServiceInstance localInstance = localServiceState.instance();
+            if (!localInstance.state().isValidTransition(newState)) {
+                log.warn("Failed to transition service [id={}, type={}, hostname={}] from {} to {}. Cause: {}.",
+                    localInstance.id(),
+                    localInstance.type(),
+                    localInstance.server().hostname(),
+                    localInstance.state(),
+                    newState,
+                    "Invalid transition"
+                );
+                mayDisableStateUpdate(service, localInstance);
+                return localInstance;
+            }
         }
 
         // Ensure only one thread can update any instance at a time.
@@ -202,15 +215,22 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
         // Optional callback to be executed at the end.
         Runnable returnCallback = null;
         try {
-            LocalServiceState localState = localServiceState(service);
+            localServiceState = localServiceState(service);
+
+            if (localServiceState == null) {
+                return null; // service has been unregistered.
+            }
+
+            if (newState == null) {
+                newState = localServiceState.instance().state(); // use current state.
+            }
 
             // Get an updated view of the local instance.
-            localInstance = localState.instance()
-                .metrics(localState.service().getMetrics())
+            final ServiceInstance localInstance = localServiceState.instance()
+                .metrics(localServiceState.service().getMetrics())
                 .server(serverInstanceFactory.newServerInstance());
 
             ServiceStateTransition.Response response = serviceRepository.mayTransitionServiceTo(localInstance, newState);
-
             ServiceInstance remoteInstance = response.instance();
 
             boolean isStateTransitionSucceed = response.is(Result.SUCCEED);
@@ -246,12 +266,14 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
                 this.lastSucceedStateUpdated = now;
             }
             // Update the local instance
-            this.serviceRegistry.register(localServiceState(service).with(remoteInstance));
+            this.serviceRegistry.register(localServiceState.with(remoteInstance));
         } catch (Exception e) {
-            log.error("[Service id={}, type='{}', hostname='{}'] Failed to update state. Error: {}",
+            final ServiceInstance localInstance = localServiceState(service).instance();
+            log.error("[Service id={}, type='{}', hostname='{}'] Failed to update state to {}. Error: {}",
                 localInstance.id(),
                 localInstance.type(),
                 localInstance.server().hostname(),
+                newState.name(),
                 e.getMessage()
             );
         } finally {
@@ -270,7 +292,7 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
         if (actualState.hasCompletedTermination()) {
             log.error(
                 "[Service id={}, type={}, hostname={}] Termination already completed ({}). " +
-                 "This error may occur if the service has already been evicted by Kestra due to a prior error.",
+                    "This error may occur if the service has already been evicted by Kestra due to a prior error.",
                 instance.id(),
                 instance.type(),
                 instance.server().hostname(),
@@ -298,7 +320,6 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
          *
          * @param service  the service.
          * @param instance the service instance.
-         *
          * @return an optional {@link ServiceInstance} that be used to force a state transition.
          */
         Optional<ServiceInstance> execute(Instant now,
@@ -338,7 +359,7 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
                 if (state.equals(Service.ServiceState.NOT_RUNNING) || state.equals(Service.ServiceState.EMPTY)) {
                     service.skipGracefulTermination(true);
                 }
-                KestraContext.getContext().exit(1);
+                KestraContext.getContext().shutdown();
                 return Optional.empty();
             }
 
@@ -346,8 +367,8 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
             log.warn("[Service id={}, type={}, hostname='{}'] Received unexpected state [{}] transition error [bug].",
                 instance.id(),
                 instance.type(),
-                instance.state(),
-                instance.server().hostname()
+                instance.server().hostname(),
+                instance.state()
             );
             return Optional.empty();
         }
@@ -361,5 +382,28 @@ public class ServiceLivenessManager extends AbstractServiceLivenessTask {
     @VisibleForTesting
     public void updateServiceInstance(final Service service, final ServiceInstance instance) {
         this.serviceRegistry.register(new LocalServiceState(service, instance));
+    }
+
+    /**
+     * {@inheritDoc}
+     **/
+    @Override
+    @PreDestroy
+    public void close() {
+        // Ensures that all service are closed before the ServiceLivenessManager.
+        List<LocalServiceState> states = serviceRegistry.all();
+        for (LocalServiceState state : states) {
+            final Service service = state.service();
+            try {
+                service.unwrap().close();
+            } catch (Exception e) {
+                log.error("[Service id={}, type={}] Unexpected error on close",
+                    service.getId(),
+                    service.getType(),
+                    e
+                );
+            }
+        }
+        super.close();
     }
 }

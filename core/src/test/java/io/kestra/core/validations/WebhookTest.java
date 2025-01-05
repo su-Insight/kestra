@@ -1,9 +1,9 @@
 package io.kestra.core.validations;
 
-import io.kestra.core.models.conditions.types.MultipleCondition;
-import io.kestra.core.models.triggers.types.Webhook;
+import io.kestra.plugin.core.condition.MultipleCondition;
+import io.kestra.plugin.core.trigger.Webhook;
 import io.kestra.core.models.validations.ModelValidator;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +13,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 
-@MicronautTest
+@KestraTest
 public class WebhookTest {
     @Inject
     private ModelValidator modelValidator;

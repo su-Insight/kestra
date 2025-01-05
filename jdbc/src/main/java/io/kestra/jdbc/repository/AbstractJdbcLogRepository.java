@@ -72,11 +72,11 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
         @Nullable ZonedDateTime endDate
     ) {
         if (namespace != null) {
-            select.and(DSL.or(field("namespace").eq(namespace), field("namespace").likeIgnoreCase(namespace + ".%")));
+            select = select.and(DSL.or(field("namespace").eq(namespace), field("namespace").likeIgnoreCase(namespace + ".%")));
         }
 
         if (flowId != null) {
-            select.and(field("flow_id").eq(flowId));
+            select = select.and(field("flow_id").eq(flowId));
         }
 
         if (minLevel != null) {
@@ -116,9 +116,9 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
 
         List<Field<?>> dateFields = new ArrayList<>(groupByFields(Duration.between(finalStartDate, finalEndDate), "timestamp", groupBy));
         List<Field<?>> selectFields = new ArrayList<>(fields);
-        selectFields.addAll(List.of(
+        selectFields.add(
             DSL.count().as("count")
-        ));
+        );
 
         selectFields.addAll(dateFields);
 
@@ -211,7 +211,7 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                         .flatMap(levelLongMap -> levelLongMap.entrySet().stream())
                         .collect(Collectors.groupingBy(Map.Entry::getKey, Collectors.summingLong(Map.Entry::getValue)));
 
-                    return logStatistics.get(0).toBuilder().counts(collect).build();
+                    return logStatistics.getFirst().toBuilder().counts(collect).build();
                 })
                 .findFirst()
                 .orElse(LogStatistics.builder().timestamp(currentDate.toInstant()).groupBy(groupByType.val()).build());
@@ -243,6 +243,17 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
     }
 
     @Override
+    public List<LogEntry> findByExecutionId(String tenantId, String namespace, String flowId, String executionId, Level minLevel) {
+        return this.query(
+            tenantId,
+            field("execution_id").eq(executionId)
+                .and(field("namespace").eq(namespace))
+                .and(field("flow_id").eq(flowId)),
+            minLevel
+        );
+    }
+
+    @Override
     public List<LogEntry> findByExecutionIdAndTaskId(String tenantId, String executionId, String taskId, Level minLevel) {
         return this.query(
             tenantId,
@@ -259,6 +270,18 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                 .and(field("task_id").eq(taskId)),
             minLevel,
             pageable
+        );
+    }
+
+    @Override
+    public List<LogEntry> findByExecutionIdAndTaskId(String tenantId, String namespace, String flowId, String executionId, String taskId, Level minLevel) {
+        return this.query(
+            tenantId,
+            field("execution_id").eq(executionId)
+                .and(field("namespace").eq(namespace))
+                .and(field("flow_id").eq(flowId))
+                .and(field("task_id").eq(taskId)),
+            minLevel
         );
     }
 
@@ -348,19 +371,19 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                     .and(field("execution_id").eq(executionId));
 
                 if (taskId != null) {
-                    delete.and(field("task_id").eq(taskId));
+                    delete = delete.and(field("task_id").eq(taskId));
                 }
 
                 if (taskRunId != null) {
-                    delete.and(field("taskrun_id").eq(taskRunId));
+                    delete = delete.and(field("taskrun_id").eq(taskRunId));
                 }
 
                 if (minLevel != null) {
-                    delete.and(minLevel(minLevel));
+                    delete = delete.and(minLevel(minLevel));
                 }
 
                 if (attempt != null) {
-                    delete.and(field("attempt_number").eq(attempt));
+                    delete = delete.and(field("attempt_number").eq(attempt));
                 }
 
                 delete.execute();
@@ -382,7 +405,7 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                 select = select.and(condition);
 
                 if (minLevel != null) {
-                    select.and(minLevel(minLevel));
+                    select = select.and(minLevel(minLevel));
                 }
 
                 return this.jdbcRepository.fetchPage(context, select, pageable
@@ -403,7 +426,7 @@ public abstract class AbstractJdbcLogRepository extends AbstractJdbcRepository i
                 select = select.and(condition);
 
                 if (minLevel != null) {
-                    select.and(minLevel(minLevel));
+                    select = select.and(minLevel(minLevel));
                 }
 
                 return this.jdbcRepository.fetch(select

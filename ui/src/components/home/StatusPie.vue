@@ -1,6 +1,7 @@
 <template>
     <div class="status-pie" v-if="dataReady">
         <el-tooltip
+            effect="light"
             placement="right"
             :persistent="false"
             :hide-after="0"
@@ -19,7 +20,7 @@
     import {defineComponent, computed, ref} from "vue";
     import {Doughnut} from "vue-chartjs"
     import {tooltip, defaultConfig, backgroundFromState} from "../../utils/charts.js";
-    import {cssVariable} from "../../utils/global";
+    import {cssVariable} from "@kestra-io/ui-libs/src/utils/global";
 
     export default defineComponent({
         components: {Doughnut},

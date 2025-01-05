@@ -71,7 +71,7 @@ export default (callback, store, router) => {
         response => {
             return response
         }, errorResponse => {
-            if (errorResponse?.code === "ERR_BAD_RESPONSE") {
+            if (errorResponse?.code === "ERR_BAD_RESPONSE" && !errorResponse?.response?.data) {
                 store.dispatch("core/showMessage", {
                     response: errorResponse,
                     content: errorResponse,
@@ -93,7 +93,7 @@ export default (callback, store, router) => {
 
             if (errorResponse.response.status === 401
                 && !store.getters["auth/isLogged"]) {
-                if(window.location.pathname === "/ui/login"){
+                if(window.location.pathname.startsWith("/ui/login")){
                     return Promise.reject(errorResponse);
                 }
 

@@ -4,7 +4,7 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.models.annotations.PluginSubGroup;
 import io.kestra.core.models.conditions.Condition;
-import io.kestra.core.models.script.ScriptRunner;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.plugins.RegisteredPlugin;
@@ -70,7 +70,7 @@ public class DocumentationGenerator {
         result.addAll(this.generate(registeredPlugin, registeredPlugin.getTasks(), Task.class, "tasks"));
         result.addAll(this.generate(registeredPlugin, registeredPlugin.getTriggers(), AbstractTrigger.class, "triggers"));
         result.addAll(this.generate(registeredPlugin, registeredPlugin.getConditions(), Condition.class, "conditions"));
-        result.addAll(this.generate(registeredPlugin, registeredPlugin.getScriptRunner(), ScriptRunner.class, "scriptRunner"));
+        result.addAll(this.generate(registeredPlugin, registeredPlugin.getTaskRunners(), TaskRunner.class, "task-runners"));
 
         result.addAll(guides(registeredPlugin));
 
@@ -153,7 +153,7 @@ public class DocumentationGenerator {
             )
             .collect(Collectors.groupingBy(
                 ClassPlugin::getSubgroup,
-                Collectors.groupingBy(ClassPlugin::getType)
+                Collectors.groupingBy(classPlugin -> Slugify.toStartCase(classPlugin.getType()))
             ));
     }
 
@@ -202,7 +202,7 @@ public class DocumentationGenerator {
                 e.getValue(),
                 null
             )))
-            .collect(Collectors.toList());
+            .toList();
     }
 
 
@@ -221,7 +221,7 @@ public class DocumentationGenerator {
                     throw new RuntimeException(e);
                 }
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static String docPath(RegisteredPlugin registeredPlugin) {
