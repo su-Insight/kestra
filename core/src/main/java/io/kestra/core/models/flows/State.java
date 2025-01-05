@@ -8,8 +8,8 @@ import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -108,6 +108,14 @@ public class State {
         return this.histories.get(this.histories.size() - 1).getDate();
     }
 
+    public Instant minDate() {
+        if (this.histories.size() == 0) {
+            return Instant.now();
+        }
+
+        return this.histories.get(0).getDate();
+    }
+
     @JsonIgnore
     public boolean isTerminated() {
         return this.current.isTerminated();
@@ -141,8 +149,18 @@ public class State {
     }
 
     @JsonIgnore
+    public boolean isRetrying() {
+        return this.current.isRetrying();
+    }
+
+    @JsonIgnore
     public boolean isRestartable() {
         return this.current.isFailed() || this.isPaused();
+    }
+
+    @JsonIgnore
+    public boolean isResumable() {
+        return this.current.isPaused() || this.current.isRetrying();
     }
 
 
@@ -156,10 +174,14 @@ public class State {
         SUCCESS,
         WARNING,
         FAILED,
-        KILLED;
+        KILLED,
+        CANCELLED,
+        QUEUED,
+        RETRYING,
+        RETRIED;
 
         public boolean isTerminated() {
-            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED;
+            return this == Type.FAILED || this == Type.WARNING || this == Type.SUCCESS || this == Type.KILLED || this == Type.CANCELLED || this == Type.RETRIED;
         }
 
         public boolean isCreated() {
@@ -177,6 +199,11 @@ public class State {
         public boolean isPaused() {
             return this == Type.PAUSED;
         }
+
+        public boolean isRetrying() {
+            return this == Type.RETRYING || this == Type.RETRIED;
+        }
+
     }
 
     @Value

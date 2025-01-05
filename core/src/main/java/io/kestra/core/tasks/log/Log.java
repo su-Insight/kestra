@@ -7,14 +7,13 @@ import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.VoidOutput;
 import io.kestra.core.runners.RunContext;
-import io.micronaut.core.annotation.NonNull;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.slf4j.Logger;
 import org.slf4j.event.Level;
 
-import javax.validation.constraints.NotBlank;
 import java.util.Collection;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
@@ -25,18 +24,18 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Log a message to the console"
+    title = "Log a message to the console."
 )
 @Plugin(
     examples = {
         @Example(
             code = {
                 "level: DEBUG",
-                "message: \"{{task.id}} > {{taskrun.startDate}}\""
+                "message: \"{{ task.id }} > {{ taskrun.startDate }}\""
             }
         ),
         @Example(
-            title = "Log one or more messages to the console",
+            title = "Log one or more messages to the console.",
             full = true,
             code = """
                 id: hello_world
@@ -53,20 +52,19 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 )
 public class Log extends Task implements RunnableTask<VoidOutput> {
     @Schema(
-        title = "One or more message(s) to be sent to the backend as logs",
+        title = "One or more message(s) to be sent to the backend as logs.",
         description = "It can be a string or an array of strings.",
         anyOf = {
             String.class,
             String[].class
         }
     )
-    @NonNull
-    @NotBlank
+    @NotNull
     @PluginProperty(dynamic = true)
     private Object message;
 
     @Schema(
-        title = "The log level. If not specified, it defaults to INFO."
+        title = "The log level. If not specified, it defaults to `INFO`."
     )
     @Builder.Default
     @PluginProperty

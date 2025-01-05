@@ -1,5 +1,6 @@
 id: "first_flow"
-namespace: "validation"
+namespace: "system"
+revision: 1
 tasks:
   - id: task_one
     type: io.kestra.core.tasks.log.Log
@@ -19,8 +20,8 @@ id: "second_flow"
 namespace: "validation"
 tasks:
   - id: task-two
-    type: io.kestra.core.tasks.debugs.Return
+    type: io.kestra.core.tasks.debugs.Echo
     format: strangestring---
   - id: task-three
-    type: io.kestra.core.tasks.debugs.Return
+    type: io.kestra.core.tasks.debugs.Echo
     format: ---strangestring

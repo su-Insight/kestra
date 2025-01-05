@@ -44,6 +44,9 @@ export default {
         canSave() {
             return canSaveFlowTemplate(true, this.user, this.item, this.dataType);
         },
+        canCreate() {
+            return this.dataType === "flow" && this.user.isAllowed(permission.FLOW, action.CREATE, this.item.namespace)
+        },
         canExecute() {
             return this.dataType === "flow" && this.user.isAllowed(permission.EXECUTION, action.CREATE, this.item.namespace)
         },
@@ -166,7 +169,10 @@ export default {
                                         this.content = ""
                                         this.previousContent = ""
                                         return this.$router.push({
-                                            name: this.dataType + "s/list"
+                                            name: this.dataType + "s/list",
+                                            params: {
+                                                tenant: this.$route.params.tenant
+                                            }
                                         });
                                     })
                                     .then(() => {
@@ -242,7 +248,11 @@ export default {
 
                         this.$router.push({
                             name: `${this.dataType}s/update`,
-                            params: {...item, ...{tab: "source"}}
+                            params: {
+                                ...item,
+                                tab: "source",
+                                tenant: this.$route.params.tenant
+                            }
                         });
                     })
                     .then(() => {
@@ -253,16 +263,10 @@ export default {
         updatePluginDocumentation(event) {
             const taskType = yamlUtils.getTaskType(event.model.getValue(), event.position)
             if (taskType && this.pluginSingleList.includes(taskType)) {
-                if (!this.pluginsDocumentation[taskType]) {
-                    this.$store
-                        .dispatch("plugin/load", {cls: taskType})
-                        .then(plugin => {
-                            this.$store.commit("plugin/setPluginsDocumentation", {...this.pluginsDocumentation, [taskType]: plugin});
-                            this.$store.commit("plugin/setEditorPlugin", plugin);
-                        });
-                } else if (this.pluginsDocumentation[taskType]) {
-                    this.$store.commit("plugin/setEditorPlugin", this.pluginsDocumentation[taskType]);
-                }
+                this.$store.dispatch("plugin/load", {cls: taskType})
+                    .then(plugin => {
+                        this.$store.commit("plugin/setEditorPlugin", plugin);
+                    });
             } else {
                 this.$store.commit("plugin/setEditorPlugin", undefined);
             }

@@ -6,8 +6,8 @@ import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.FlowWithSource;
 import io.micronaut.data.model.Pageable;
 
-import javax.annotation.Nullable;
-import javax.validation.ConstraintViolationException;
+import jakarta.annotation.Nullable;
+import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -18,6 +18,30 @@ public interface FlowRepositoryInterface {
 
     default Optional<Flow> findById(String tenantId, String namespace, String id, Optional<Integer> revision) {
         return this.findById(tenantId, namespace, id, revision, false);
+    }
+
+    Optional<Flow> findByIdWithoutAcl(String tenantId, String namespace, String id, Optional<Integer> revision);
+
+    /**
+     * Used only if result is used internally and not exposed to the user.
+     * It is useful when we want to restart/resume a flow.
+     */
+    default Flow findByExecutionWithoutAcl(Execution execution) {
+        Optional<Flow> find = this.findByIdWithoutAcl(
+            execution.getTenantId(),
+            execution.getNamespace(),
+            execution.getFlowId(),
+            Optional.of(execution.getFlowRevision())
+        );
+
+        if (find.isEmpty()) {
+            throw new IllegalStateException("Unable to find flow '" + execution.getNamespace() + "." +
+                execution.getFlowId() + "' with revision " + execution.getFlowRevision() + " on execution " +
+                execution.getId()
+            );
+        } else {
+            return find.get();
+        }
     }
 
     default Flow findByExecution(Execution execution) {
@@ -54,11 +78,15 @@ public interface FlowRepositoryInterface {
 
     List<FlowWithSource> findRevisions(String tenantId, String namespace, String id);
 
+    Integer lastRevision(String tenantId, String namespace, String id);
+
     List<Flow> findAll(String tenantId);
 
     List<Flow> findAllForAllTenants();
 
     List<Flow> findByNamespace(String tenantId, String namespace);
+
+    List<FlowWithSource> findByNamespaceWithSource(String tenantId, String namespace);
 
     ArrayListTotal<Flow> find(
         Pageable pageable,

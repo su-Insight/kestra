@@ -1,8 +1,8 @@
 <template>
     <el-table stripe table-layout="auto" fixed :data="variables">
-        <el-table-column prop="key" rowspan="3" :label="$t('name')">
+        <el-table-column prop="key" min-width="500" :label="$t('name')">
             <template #default="scope">
-                <code>{{ scope.row.key }}</code>
+                <code class="key-col">{{ scope.row.key }}</code>
             </template>
         </el-table-column>
 
@@ -40,12 +40,7 @@
             data: {
                 type: Object,
                 required: true
-            },
-            execution: {
-                type: Object,
-                required: false,
-                default: undefined
-            },
+            }
         },
         computed: {
             ...mapState("execution", ["execution"]),
@@ -55,3 +50,8 @@
         },
     };
 </script>
+<style>
+    .key-col {
+        min-width: 200px;
+    }
+</style>
