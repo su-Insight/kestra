@@ -1,6 +1,5 @@
 import axios from "axios";
 import NProgress from "nprogress"
-import {baseUrl} from "override/utils/route";
 
 // nprogress
 let requestsTotal = 0
@@ -72,7 +71,7 @@ export default (callback, store, router) => {
         response => {
             return response
         }, errorResponse => {
-            if (errorResponse.code && (errorResponse.code === "ECONNABORTED" || errorResponse.code === "ERR_BAD_RESPONSE")) {
+            if (errorResponse?.code === "ERR_BAD_RESPONSE") {
                 store.dispatch("core/showMessage", {
                     response: errorResponse,
                     content: errorResponse,
@@ -136,7 +135,6 @@ export default (callback, store, router) => {
             return Promise.reject(errorResponse);
         })
 
-    instance.defaults.baseURL = baseUrl;
 
     instance.defaults.paramsSerializer = {
         indexes: null

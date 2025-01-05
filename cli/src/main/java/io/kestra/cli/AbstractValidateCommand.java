@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
 import static io.kestra.core.utils.Rethrow.throwFunction;
@@ -74,7 +74,8 @@ public abstract class AbstractValidateCommand extends AbstractApiCommand {
         Class<?> cls,
         YamlFlowParser yamlFlowParser,
         ModelValidator modelValidator,
-        Function<Object, String> identity
+        Function<Object, String> identity,
+        Function<Object, List<String>> warningsFunction
     ) throws Exception {
         super.call();
 
@@ -90,6 +91,8 @@ public abstract class AbstractValidateCommand extends AbstractApiCommand {
                             Object parse = yamlFlowParser.parse(path.toFile(), cls);
                             modelValidator.validate(parse);
                             stdOut("@|green \u2713|@ - " + identity.apply(parse));
+                            List<String> warnings = warningsFunction.apply(parse);
+                            warnings.forEach(warning -> stdOut("@|bold,yellow \u26A0|@ - " + warning));
                         } catch (ConstraintViolationException e) {
                             stdErr("@|red \u2718|@ - " + path);
                             FlowValidateCommand.handleException(e, clsName);

@@ -7,11 +7,11 @@ import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.queues.QueueException;
 import io.kestra.core.queues.QueueInterface;
 import io.kestra.core.queues.QueueService;
-import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.utils.Either;
 import io.kestra.core.utils.ExecutorsUtils;
 import io.kestra.core.utils.IdUtils;
-import io.kestra.jdbc.JdbcConfiguration;
+import io.kestra.jdbc.JdbcTableConfigs;
+import io.kestra.jdbc.JdbcMapper;
 import io.kestra.jdbc.JooqDSLContextWrapper;
 import io.kestra.jdbc.repository.AbstractJdbcRepository;
 import io.micronaut.context.ApplicationContext;
@@ -20,11 +20,14 @@ import io.micronaut.transaction.exceptions.CannotCreateTransactionException;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.jooq.DSLContext;
+import org.jooq.Field;
+import org.jooq.JSONB;
 import org.jooq.Record;
-import org.jooq.*;
+import org.jooq.Result;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
 
-import javax.sql.DataSource;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -42,9 +45,9 @@ import java.util.function.Supplier;
 
 @Slf4j
 public abstract class JdbcQueue<T> implements QueueInterface<T> {
-    protected static final ObjectMapper mapper = JacksonMapper.ofJson();
+    protected static final ObjectMapper MAPPER = JdbcMapper.of();
 
-    private static ExecutorService poolExecutor;
+    private final ExecutorService poolExecutor;
 
     protected final QueueService queueService;
 
@@ -52,31 +55,26 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
 
     protected final JooqDSLContextWrapper dslContextWrapper;
 
-    protected final DataSource dataSource;
-
     protected final Configuration configuration;
 
     protected final Table<Record> table;
 
     protected final JdbcQueueIndexer jdbcQueueIndexer;
 
-    protected Boolean isShutdown = false;
+    protected volatile boolean isShutdown = false;
 
     public JdbcQueue(Class<T> cls, ApplicationContext applicationContext) {
-        if (poolExecutor == null) {
-            ExecutorsUtils executorsUtils = applicationContext.getBean(ExecutorsUtils.class);
-            poolExecutor = executorsUtils.cachedThreadPool("jdbc-queue");
-        }
+        ExecutorsUtils executorsUtils = applicationContext.getBean(ExecutorsUtils.class);
+        this.poolExecutor = executorsUtils.cachedThreadPool("jdbc-queue-" + cls.getSimpleName());
 
         this.queueService = applicationContext.getBean(QueueService.class);
         this.cls = cls;
         this.dslContextWrapper = applicationContext.getBean(JooqDSLContextWrapper.class);
-        this.dataSource = applicationContext.getBean(DataSource.class);
         this.configuration = applicationContext.getBean(Configuration.class);
 
-        JdbcConfiguration jdbcConfiguration = applicationContext.getBean(JdbcConfiguration.class);
+        JdbcTableConfigs jdbcTableConfigs = applicationContext.getBean(JdbcTableConfigs.class);
 
-        this.table = DSL.table(jdbcConfiguration.tableConfig("queues").getTable());
+        this.table = DSL.table(jdbcTableConfigs.tableConfig("queues").table());
 
         this.jdbcQueueIndexer = applicationContext.getBean(JdbcQueueIndexer.class);
     }
@@ -86,7 +84,7 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
         Map<Field<Object>, Object> fields = new HashMap<>();
         fields.put(AbstractJdbcRepository.field("type"), this.cls.getName());
         fields.put(AbstractJdbcRepository.field("key"), key != null ? key : IdUtils.create());
-        fields.put(AbstractJdbcRepository.field("value"), JSONB.valueOf(mapper.writeValueAsString(message)));
+        fields.put(AbstractJdbcRepository.field("value"), JSONB.valueOf(MAPPER.writeValueAsString(message)));
 
         if (consumerGroup != null) {
             fields.put(AbstractJdbcRepository.field("consumer_group"), consumerGroup);
@@ -289,7 +287,7 @@ public abstract class JdbcQueue<T> implements QueueInterface<T> {
         return fetch
             .map(record -> {
                 try {
-                    return Either.left(JacksonMapper.ofJson().readValue(record.get("value", String.class), cls));
+                    return Either.left(MAPPER.readValue(record.get("value", String.class), cls));
                 } catch (JsonProcessingException e) {
                     return Either.right(new DeserializationException(e, record.get("value", String.class)));
                 }

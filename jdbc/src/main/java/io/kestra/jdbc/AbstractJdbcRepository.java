@@ -1,13 +1,12 @@
 package io.kestra.jdbc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.exceptions.DeserializationException;
 import io.kestra.core.models.executions.metrics.MetricAggregation;
 import io.kestra.core.queues.QueueService;
 import io.kestra.core.repositories.ArrayListTotal;
-import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.utils.IdUtils;
-import io.micronaut.context.ApplicationContext;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.data.model.Sort;
 import lombok.Getter;
@@ -19,6 +18,7 @@ import org.jooq.*;
 import org.jooq.impl.DSL;
 
 import java.io.IOException;
+import java.sql.Timestamp;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public abstract class AbstractJdbcRepository<T> {
+    protected static final ObjectMapper MAPPER = JdbcMapper.of();
+
     protected final QueueService queueService;
 
     protected final Class<T> cls;
@@ -44,16 +46,13 @@ public abstract class AbstractJdbcRepository<T> {
     protected Table<Record> table;
 
     public AbstractJdbcRepository(
-        Class<T> cls,
-        ApplicationContext applicationContext
-    ) {
-        this.cls = cls;
-        this.queueService = applicationContext.getBean(QueueService.class);
-        this.dslContextWrapper = applicationContext.getBean(JooqDSLContextWrapper.class);
-
-        JdbcConfiguration jdbcConfiguration = applicationContext.getBean(JdbcConfiguration.class);
-
-        this.table = DSL.table(jdbcConfiguration.tableConfig(cls).getTable());
+        JdbcTableConfig tableConfig,
+        QueueService queueService,
+        JooqDSLContextWrapper dslContextWrapper) {
+        this.cls = (Class<T>) tableConfig.cls();
+        this.queueService = queueService;
+        this.dslContextWrapper = dslContextWrapper;
+        this.table = DSL.table(tableConfig.table());
     }
 
     abstract public Condition fullTextCondition(List<String> fields, String query);
@@ -162,7 +161,7 @@ public abstract class AbstractJdbcRepository<T> {
 
     public T deserialize(String record) {
         try {
-            return JacksonMapper.ofJson().readValue(record, cls);
+            return MAPPER.readValue(record, cls);
         } catch (IOException e) {
             throw new DeserializationException(e, record);
         }
@@ -245,5 +244,9 @@ public abstract class AbstractJdbcRepository<T> {
         select = this.sort(select, pageable);
 
         return this.limit(select, pageable);
+    }
+
+    public Field<Integer> weekFromTimestamp(Field<Timestamp> timestampField) {
+        return DSL.week(timestampField);
     }
 }

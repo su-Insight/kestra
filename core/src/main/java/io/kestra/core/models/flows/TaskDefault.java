@@ -1,5 +1,7 @@
 package io.kestra.core.models.flows;
 
+import io.kestra.core.validations.TaskDefaultValidation;
+import io.micronaut.core.annotation.Introspected;
 import io.micronaut.core.convert.format.MapFormat;
 import io.micronaut.core.naming.conventions.StringConvention;
 import lombok.AllArgsConstructor;
@@ -11,6 +13,8 @@ import java.util.Map;
 @Getter
 @Builder(toBuilder = true)
 @AllArgsConstructor
+@Introspected
+@TaskDefaultValidation
 public class TaskDefault {
     private final String type;
 

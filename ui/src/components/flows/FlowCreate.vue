@@ -1,19 +1,20 @@
 <template>
     <top-nav-bar :title="routeInfo.title" />
-    <div class="mt-3">
+    <section class="full-container">
         <editor-view
             :flow-id="defaultFlowTemplate.id"
             :namespace="defaultFlowTemplate.namespace"
             :is-creating="true"
             :flow-graph="flowGraph"
             :is-read-only="false"
+            :is-dirty="true"
             :total="total"
             :guided-properties="guidedProperties"
-            :flow-error="flowError"
-            :flow-deprecations="flowDeprecations"
+            :flow-validation="flowValidation"
             :flow="sourceWrapper"
+            :next-revision="1"
         />
-    </div>
+    </section>
     <div id="guided-right" />
 </template>
 
@@ -30,8 +31,7 @@
             TopNavBar
         },
         beforeUnmount() {
-            this.$store.commit("flow/setFlowError", undefined);
-            this.$store.commit("flow/setFlowDeprecations", undefined);
+            this.$store.commit("flow/setFlowValidation", undefined);
         },
         computed: {
             sourceWrapper() {
@@ -42,18 +42,42 @@
                     return this.flow.source;
                 }
 
-                return `id: hello-world
-namespace: company.team
+                return `id: myflow
+namespace: myteam
+description: Save and Execute the flow
+
+labels:
+  env: dev
+  project: myproject
+
+inputs:
+  - id: payload
+    type: JSON
+    defaults: |
+      [{"name": "kestra", "rating": "best in class"}]
+
 tasks:
-  - id: hello
+  - id: send_data
+    type: io.kestra.plugin.fs.http.Request
+    uri: https://reqres.in/api/products
+    method: POST
+    contentType: application/json
+    body: "{{ inputs.payload }}"
+
+  - id: print_status
     type: io.kestra.core.tasks.log.Log
-    message: Kestra team wishes you a great day! 👋`;
+    message: hello on {{ outputs.send_data.headers.date | first }}
+
+triggers:
+  - id: daily
+    type: io.kestra.core.models.triggers.types.Schedule
+    cron: "0 9 * * *"`;
             },
             ...mapState("flow", ["flowGraph", "total"]),
             ...mapState("auth", ["user"]),
             ...mapState("plugin", ["pluginSingleList", "pluginsDocumentation"]),
             ...mapGetters("core", ["guidedProperties"]),
-            ...mapGetters("flow", ["flow", "flowError", "flowDeprecations"]),
+            ...mapGetters("flow", ["flow", "flowValidation"]),
             routeInfo() {
                 return {
                     title: this.$t("flows")

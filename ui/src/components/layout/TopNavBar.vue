@@ -16,7 +16,7 @@
         </div>
         <div class="d-flex side gap-2 flex-shrink-0">
             <div class="d-none d-lg-flex align-items-center">
-                <global-search />
+                <global-search class="trigger-flow-guided-step" />
             </div>
             <slot name="additional-right" />
             <div class="d-flex fixed-buttons">
@@ -26,36 +26,61 @@
                     </el-button>
                     <template #dropdown>
                         <el-dropdown-menu>
-                            <a href="https://kestra.io/slack"
-                               target="_blank"
-                               class="d-flex gap-2 el-dropdown-menu__item">
+                            <a
+                                href="https://kestra.io/slack?utm_source=app&utm_content=top-nav-bar"
+                                target="_blank"
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
                                 <HelpBox class="align-middle" /> {{ $t("live help") }}
                             </a>
-                            <a href="https://kestra.io/docs"
-                               target="_blank"
-                               class="d-flex gap-2 el-dropdown-menu__item">
+                            <a
+                                @click="restartGuidedTour"
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
+                                <ProgressQuestion class="align-middle" /> {{ $t('Reset guided tour') }}
+                            </a>
+
+                            <a
+                                href="https://kestra.io/docs?utm_source=app&utm_content=top-nav-bar"
+                                target="_blank"
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
                                 <BookMultipleOutline class="align-middle" /> {{ $t("documentation.documentation") }}
                             </a>
                             <router-link
                                 :to="{name: 'plugins/list'}"
-                                class="d-flex gap-2 el-dropdown-menu__item">
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
                                 <GoogleCirclesExtended class="align-middle" /> {{ $t("plugins.names") }}
                             </router-link>
-                            <a href="https://github.com/kestra-io/kestra/issues"
-                               target="_blank"
-                               class="d-flex gap-2 el-dropdown-menu__item">
+                            <a
+                                href="https://github.com/kestra-io/kestra/issues"
+                                target="_blank"
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
                                 <Github class="align-middle" /> {{ $t("documentation.github") }}
                             </a>
-                            <a href="https://kestra.io/slack"
-                               target="_blank"
-                               class="d-flex gap-2 el-dropdown-menu__item">
+                            <a
+                                href="https://kestra.io/slack?utm_source=app&utm_content=top-nav-bar"
+                                target="_blank"
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
                                 <Slack class="align-middle" /> {{ $t("join community") }}
                             </a>
-                            <a v-if="version"
-                               :href="version.url"
-                               target="_blank"
-                               class="el-dropdown-menu__item">
-                                New version available!
+                            <a
+                                href="https://kestra.io/contact-us?utm_source=app&utm_content=top-nav-bar"
+                                target="_blank"
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
+                                <EmailHeartOutline class="align-middle" /> {{ $t("reach us") }}
+                            </a>
+                            <a
+                                v-if="version"
+                                :href="version.url"
+                                target="_blank"
+                                class="d-flex gap-2 el-dropdown-menu__item"
+                            >
+                                <Update class="align-middle text-danger" /> <span class="text-danger">{{ $t("new version", {"version": version.latest}) }}</span>
                             </a>
                         </el-dropdown-menu>
                     </template>
@@ -68,32 +93,30 @@
 </template>
 <script>
     import {mapState} from "vuex";
-    import HomeOutline from "vue-material-design-icons/HomeOutline.vue";
     import Auth from "override/components/auth/Auth.vue";
     import News from "./News.vue";
-    import SearchField from "./SearchField.vue";
-    import Keyboard from "vue-material-design-icons/Keyboard.vue";
     import HelpBox from "vue-material-design-icons/HelpBox.vue";
     import BookMultipleOutline from "vue-material-design-icons/BookMultipleOutline.vue";
     import GoogleCirclesExtended from "vue-material-design-icons/GoogleCirclesExtended.vue";
     import Github from "vue-material-design-icons/Github.vue";
     import Slack from "vue-material-design-icons/Slack.vue";
-    import Magnify from "vue-material-design-icons/Magnify.vue";
+    import EmailHeartOutline from "vue-material-design-icons/EmailHeartOutline.vue";
+    import Update from "vue-material-design-icons/Update.vue";
+    import ProgressQuestion from "vue-material-design-icons/ProgressQuestion.vue";
     import GlobalSearch from "./GlobalSearch.vue"
 
     export default {
         components: {
-            HomeOutline,
             Auth,
             News,
-            SearchField,
-            Keyboard,
             HelpBox,
             BookMultipleOutline,
             GoogleCirclesExtended,
             Github,
             Slack,
-            Magnify,
+            EmailHeartOutline,
+            Update,
+            ProgressQuestion,
             GlobalSearch
         },
         props: {
@@ -110,6 +133,25 @@
             ...mapState("api", ["version"]),
             displayNavBar() {
                 return this.$route?.name !== "welcome";
+            }
+        },
+        methods: {
+            restartGuidedTour() {
+                localStorage.setItem("tourDoneOrSkip", undefined);
+                this.$store.commit("core/setGuidedProperties", {
+                    tourStarted: false,
+                    flowSource: undefined,
+                    saveFlow: false,
+                    executeFlow: false,
+                    validateInputs: false,
+                    monacoRange: undefined,
+                    monacoDisableRange: undefined
+                });
+
+                this.$router
+                    .push({name: "flows/create"}).then(() => {
+                        this.$tours["guidedTour"].start();
+                    })
             }
         }
     };

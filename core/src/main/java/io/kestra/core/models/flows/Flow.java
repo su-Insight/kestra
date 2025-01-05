@@ -10,10 +10,13 @@ import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
 import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.DeletedInterface;
 import io.kestra.core.models.Label;
+import io.kestra.core.models.TenantInterface;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.listeners.Listener;
 import io.kestra.core.models.tasks.FlowableTask;
 import io.kestra.core.models.tasks.Task;
+import io.kestra.core.models.tasks.retrys.AbstractRetry;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.validations.ManualConstraintViolation;
 import io.kestra.core.serializers.JacksonMapper;
@@ -25,6 +28,10 @@ import io.kestra.core.validations.FlowValidation;
 import io.micronaut.core.annotation.Introspected;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.slf4j.Logger;
@@ -33,10 +40,6 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.validation.ConstraintViolation;
-import javax.validation.ConstraintViolationException;
-import javax.validation.Valid;
-import javax.validation.constraints.*;
 
 @SuperBuilder(toBuilder = true)
 @Getter
@@ -45,7 +48,7 @@ import javax.validation.constraints.*;
 @ToString
 @EqualsAndHashCode
 @FlowValidation
-public class Flow implements DeletedInterface {
+public class Flow implements DeletedInterface, TenantInterface {
     private static final ObjectMapper jsonMapper = JacksonMapper.ofJson().copy()
         .setAnnotationIntrospector(new JacksonAnnotationIntrospector() {
             @Override
@@ -55,17 +58,17 @@ public class Flow implements DeletedInterface {
             }
         });
 
-    @Pattern(regexp = "[a-z0-9_-]+")
     @Hidden
+    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
     String tenantId;
 
     @NotNull
     @NotBlank
-    @Pattern(regexp = "[a-zA-Z0-9._-]+")
+    @Pattern(regexp = "^[a-zA-Z0-9][a-zA-Z0-9._-]*")
     String id;
 
     @NotNull
-    @Pattern(regexp = "[a-z0-9._-]+")
+    @Pattern(regexp = "^[a-z0-9][a-z0-9._-]*")
     String namespace;
 
     @Min(value = 1)
@@ -97,6 +100,7 @@ public class Flow implements DeletedInterface {
     @Valid
     List<AbstractTrigger> triggers;
 
+    @Valid
     List<TaskDefault> taskDefaults;
 
     @NotNull
@@ -106,6 +110,20 @@ public class Flow implements DeletedInterface {
     @NotNull
     @Builder.Default
     boolean deleted = false;
+
+    @Valid
+    Concurrency concurrency;
+
+    @Schema(
+        title = "Output values available and exposes to other flows.",
+        description = "Output values make information about the execution of your Flow available and expose for other Kestra flows to use. Output values are similar to return values in programming languages."
+    )
+    @PluginProperty(dynamic = true)
+    @Valid
+    List<Output> outputs;
+
+    @Valid
+    protected AbstractRetry retry;
 
     public Logger logger() {
         return LoggerFactory.getLogger("flow." + this.id);
@@ -228,7 +246,7 @@ public class Flow implements DeletedInterface {
         return allTasks()
             .flatMap(t -> t.findById(taskId).stream())
             .findFirst()
-            .orElseThrow(() -> new InternalException("Can't find task with id '" + id + "' on flow '" + this.id + "'"));
+            .orElseThrow(() -> new InternalException("Can't find task with id '" + taskId + "' on flow '" + this.id + "'"));
     }
 
     public Flow updateTask(String taskId, Task newValue) throws InternalException {
