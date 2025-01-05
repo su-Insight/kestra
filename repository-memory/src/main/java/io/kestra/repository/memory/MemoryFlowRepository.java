@@ -4,6 +4,7 @@ import io.kestra.core.events.CrudEvent;
 import io.kestra.core.events.CrudEventType;
 import io.kestra.core.models.SearchResult;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.FlowForExecution;
 import io.kestra.core.models.flows.FlowWithSource;
 import io.kestra.core.models.triggers.Trigger;
 import io.kestra.core.models.validations.ManualConstraintViolation;
@@ -78,6 +79,11 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
             );
     }
 
+    @Override
+    public Optional<Flow> findByIdWithoutAcl(String tenantId, String namespace, String id, Optional<Integer> revision) {
+        return findById(tenantId, namespace, id, revision, false);
+    }
+
     private Optional<String> findSourceById(String tenantId, String namespace, String id) {
         return this.flowSources.containsKey(flowId(tenantId, namespace, id)) ?
             Optional.of(this.flowSources.get(flowId(tenantId, namespace, id))) :
@@ -86,13 +92,22 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
 
     @Override
     public Optional<FlowWithSource> findByIdWithSource(String tenantId, String namespace, String id, Optional<Integer> revision, Boolean allowDeleted) {
-        Optional<Flow> flow = findById(tenantId, namespace, id, revision);
-        Optional<String> sourceCode = findSourceById(tenantId, namespace, id);
-        if (flow.isPresent() && sourceCode.isPresent()) {
-            return Optional.of(FlowWithSource.of(flow.get(), FlowService.cleanupSource(sourceCode.get())));
+        FlowWithSource[] revisions = findRevisions(tenantId, namespace, id)
+            .stream()
+            .filter(flow -> flow.getRevision().equals(revision.orElse(flow.getRevision())))
+            .toArray(FlowWithSource[]::new);
+        if (revisions.length == 0) {
+            return Optional.empty();
         }
 
-        return Optional.empty();
+        FlowWithSource lastRevision = revisions[revisions.length - 1];
+        if (!allowDeleted && lastRevision.isDeleted()) {
+            return Optional.empty();
+        }
+
+        Optional<String> sourceCode = findSourceById(tenantId, namespace, id);
+        return sourceCode.map(s -> lastRevision.toBuilder().source(FlowService.cleanupSource(s)).build());
+
     }
 
     @Override
@@ -134,6 +149,21 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
             .filter(flow -> (tenantId == null && flow.getTenantId() == null) || (tenantId != null && tenantId.equals(flow.getTenantId())))
             .sorted(Comparator.comparingInt(Flow::getRevision))
             .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Flow> findByNamespacePrefix(String tenantId, String namespacePrefix) {
+        return flows.values()
+            .stream()
+            .filter(flow -> flow.getNamespace().equals(namespacePrefix) || flow.getNamespace().startsWith(namespacePrefix + "."))
+            .filter(flow -> (tenantId == null && flow.getTenantId() == null) || (tenantId != null && tenantId.equals(flow.getTenantId())))
+            .sorted(Comparator.comparingInt(Flow::getRevision))
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<FlowForExecution> findByNamespaceExecutable(String tenantId, String namespace) {
+        return List.of();
     }
 
     @Override
@@ -293,5 +323,10 @@ public class MemoryFlowRepository implements FlowRepositoryInterface {
         ArrayList<String> namespacesList = new ArrayList<>(namespaces);
         Collections.sort(namespacesList);
         return new ArrayList<>(namespacesList);
+    }
+
+    @Override
+    public List<String> findDistinctNamespaceExecutable(String tenantId) {
+        return List.of();
     }
 }

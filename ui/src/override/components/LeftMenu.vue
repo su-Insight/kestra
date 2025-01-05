@@ -38,13 +38,13 @@
     import TimelineTextOutline from "vue-material-design-icons/TimelineTextOutline.vue";
     import ChartTimeline from "vue-material-design-icons/ChartTimeline.vue";
     import BallotOutline from "vue-material-design-icons/BallotOutline.vue";
-    import FolderEditOutline from "vue-material-design-icons/FolderEditOutline.vue";
     import ShieldAccountVariantOutline from "vue-material-design-icons/ShieldAccountVariantOutline.vue";
     import CogOutline from "vue-material-design-icons/CogOutline.vue";
     import ViewDashboardVariantOutline from "vue-material-design-icons/ViewDashboardVariantOutline.vue";
     import TimerCogOutline from "vue-material-design-icons/TimerCogOutline.vue";
     import {mapState} from "vuex";
     import ChartBoxOutline from "vue-material-design-icons/ChartBoxOutline.vue";
+    import Connection from "vue-material-design-icons/Connection.vue";
     import {shallowRef} from "vue";
 
     export default {
@@ -115,14 +115,6 @@
                         exact: false,
                     },
                     {
-                        href: {name: "editor"},
-                        title: this.$t("editor"),
-                        icon: {
-                            element: shallowRef(FolderEditOutline),
-                            class: "menu-icon",
-                        },
-                    },
-                    {
                         href: {name: "templates/list"},
                         routes: this.routeStartWith("templates"),
                         title: this.$t("templates"),
@@ -170,6 +162,15 @@
                         },
                     },
                     {
+                        href: {name: "plugins/list"},
+                        routes: this.routeStartWith("plugins"),
+                        title: this.$t("plugins.names"),
+                        icon: {
+                            element: shallowRef(Connection),
+                            class: "menu-icon"
+                        },
+                    },
+                    {
                         title: this.$t("administration"),
                         routes: this.routeStartWith("admin"),
                         icon: {
@@ -200,7 +201,7 @@
                     {
                         href: {name: "settings"},
                         routes: this.routeStartWith("admin/settings"),
-                        title: this.$t("settings"),
+                        title: this.$t("settings.label"),
                         icon: {
                             element: shallowRef(CogOutline),
                             class: "menu-icon"

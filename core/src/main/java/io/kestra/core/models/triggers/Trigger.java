@@ -78,6 +78,10 @@ public class Trigger extends TriggerContext {
         );
     }
 
+    public String flowUid() {
+        return Flow.uid(this.getTenantId(), this.getNamespace(), this.getFlowId(), Optional.of(this.getFlowRevision()));
+    }
+
     /**
      * Create a new Trigger with no execution information and no evaluation lock.
      */
@@ -161,6 +165,12 @@ public class Trigger extends TriggerContext {
 
     // Used to update trigger in flowListeners
     public static Trigger of(Flow flow, AbstractTrigger abstractTrigger, ConditionContext conditionContext, Optional<Trigger> lastTrigger) throws Exception {
+        ZonedDateTime nextDate = null;
+
+        if (abstractTrigger instanceof PollingTriggerInterface pollingTriggerInterface) {
+            nextDate = pollingTriggerInterface.nextEvaluationDate(conditionContext, Optional.empty());
+        }
+
         return Trigger.builder()
             .tenantId(flow.getTenantId())
             .namespace(flow.getNamespace())
@@ -168,7 +178,7 @@ public class Trigger extends TriggerContext {
             .flowRevision(flow.getRevision())
             .triggerId(abstractTrigger.getId())
             .date(ZonedDateTime.now().truncatedTo(ChronoUnit.SECONDS))
-            .nextExecutionDate(((PollingTriggerInterface) abstractTrigger).nextEvaluationDate(conditionContext, Optional.empty()))
+            .nextExecutionDate(nextDate)
             .stopAfter(abstractTrigger.getStopAfter())
             .disabled(lastTrigger.map(TriggerContext::getDisabled).orElse(Boolean.FALSE))
             .backfill(null)

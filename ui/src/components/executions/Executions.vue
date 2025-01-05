@@ -2,6 +2,13 @@
     <top-nav-bar v-if="topbar" :title="routeInfo.title">
         <template #additional-right v-if="displayButtons">
             <ul>
+                <template v-if="$route.name === 'executions/list'">
+                    <li>
+                        <template v-if="hasAnyExecute">
+                            <trigger-flow />
+                        </template>
+                    </li>
+                </template>
                 <template v-if="$route.name === 'flows/update'">
                     <li>
                         <template v-if="isAllowedEdit">
@@ -35,10 +42,9 @@
                 <el-form-item>
                     <search-field />
                 </el-form-item>
-                <el-form-item>
+                <el-form-item v-if="$route.name !== 'flows/update'">
                     <namespace-select
                         data-type="flow"
-                        v-if="$route.name !== 'flows/update'"
                         :value="$route.query.namespace"
                         @update:model-value="onDataTableValue('namespace', $event)"
                     />
@@ -51,8 +57,8 @@
                 </el-form-item>
                 <el-form-item>
                     <date-filter
-                        @update:is-relative="onDateFilterTypeChange($event)"
-                        @update:filter-value="onDataTableValue($event)"
+                        @update:is-relative="onDateFilterTypeChange"
+                        @update:filter-value="onDataTableValue"
                     />
                 </el-form-item>
                 <el-form-item>
@@ -90,7 +96,7 @@
                         multiple
                         collapse-tags
                         collapse-tags-tooltip
-                        @change="onDisplayColumnsChange($event)"
+                        @change="onDisplayColumnsChange"
                     >
                         <el-option
                             v-for="col in optionalColumns"
@@ -325,7 +331,7 @@
                             align="center"
                         >
                             <template #default="scope">
-                                <el-tooltip>
+                                <el-tooltip effect="light">
                                     <template #content>
                                         <pre class="mb-0">{{ JSON.stringify(scope.row.inputs, null, "\t") }}</pre>
                                     </template>
@@ -340,7 +346,7 @@
                             :label="$t('task id')"
                         >
                             <template #header="scope">
-                                <el-tooltip :content="$t('taskid column details')">
+                                <el-tooltip :content="$t('taskid column details')" effect="light">
                                     {{ scope.column.label }}
                                 </el-tooltip>
                             </template>
@@ -416,6 +422,8 @@
     import TriggerFlow from "../../components/flows/TriggerFlow.vue";
     import {storageKeys} from "../../utils/constants";
     import LabelInput from "../../components/labels/LabelInput.vue";
+    import {ElMessageBox, ElSwitch, ElFormItem, ElAlert} from "element-plus";
+    import {h, ref} from "vue";
 
     export default {
         mixins: [RouteContext, RestoreUrl, DataTableActions, SelectTableActions],
@@ -546,6 +554,8 @@
                 storageKey: storageKeys.DISPLAY_EXECUTIONS_COLUMNS,
                 isOpenLabelsModal: false,
                 executionLabels: [],
+                actionOptions: {},
+                refreshDates: false
             };
         },
         created() {
@@ -575,6 +585,7 @@
                 return undefined;
             },
             startDate() {
+                this.refreshDates;
                 if (this.$route.query.startDate) {
                     return this.$route.query.startDate;
                 }
@@ -586,7 +597,7 @@
                 return this.$moment().subtract(30, "days").toISOString(true);
             },
             displayButtons() {
-                return (this.$route.name === "flows/update");
+                return (this.$route.name === "flows/update") || (this.$route.name === "executions/list");
             },
             canCheck() {
                 return this.canDelete || this.canUpdate;
@@ -602,6 +613,9 @@
             },
             isAllowedEdit() {
                 return this.user.isAllowed(permission.FLOW, action.UPDATE, this.flow.namespace);
+            },
+            hasAnyExecute() {
+                return this.user.hasAnyActionOnAnyNamespace(permission.EXECUTION, action.CREATE);
             },
             isDisplayedTop() {
                 return this.embed === false || this.filter
@@ -645,6 +659,9 @@
                     delete queryFilter["timeRange"];
                     delete queryFilter["startDate"];
                     delete queryFilter["endDate"];
+                } else if (queryFilter.timeRange) {
+                    delete queryFilter["startDate"];
+                    delete queryFilter["endDate"];
                 }
 
                 if (this.namespace) {
@@ -658,6 +675,7 @@
                 return _merge(base, queryFilter)
             },
             loadData(callback) {
+                this.refreshDates = !this.refreshDates;
                 if (this.isDisplayedTop) {
                     this.dailyReady = false;
 
@@ -687,31 +705,37 @@
             genericConfirmAction(toast, queryAction, byIdAction, success) {
                 this.$toast().confirm(
                     this.$t(toast, {"executionCount": this.queryBulkAction ? this.total : this.selection.length}),
-                    () => {
-                        if (this.queryBulkAction) {
-                            return this.$store
-                                .dispatch(queryAction, this.loadQuery({
-                                    sort: this.$route.query.sort || "state.startDate:desc",
-                                    state: this.$route.query.state ? [this.$route.query.state] : this.statuses,
-                                }, false))
-                                .then(r => {
-                                    this.$toast().success(this.$t(success, {executionCount: r.data.count}));
-                                    this.loadData();
-                                })
-                        } else {
-                            return this.$store
-                                .dispatch(byIdAction, {executionsId: this.selection})
-                                .then(r => {
-                                    this.$toast().success(this.$t(success, {executionCount: r.data.count}));
-                                    this.loadData();
-                                }).catch(e => this.$toast().error(e.invalids.map(exec => {
-                                    return {message: this.$t(exec.message, {executionId: exec.invalidValue})}
-                                }), this.$t(e.message)))
-                        }
-                    },
-                    () => {
-                    }
-                )
+                    () => this.genericConfirmCallback(queryAction, byIdAction, success),
+                    () => {}
+                );
+            },
+            genericConfirmCallback(queryAction, byIdAction, success) {
+                if (this.queryBulkAction) {
+                    const query = this.loadQuery({
+                        sort: this.$route.query.sort || "state.startDate:desc",
+                        state: this.$route.query.state ? [this.$route.query.state] : this.statuses,
+                    }, false);
+                    const options = {...query, ...this.actionOptions};
+                    return this.$store
+                        .dispatch(queryAction, options)
+                        .then(r => {
+                            this.$toast().success(this.$t(success, {executionCount: r.data.count}));
+                            this.loadData();
+                        })
+                } else {
+                    const selection = {executionsId: this.selection};
+                    const options = {...selection, ...this.actionOptions};
+                    return this.$store
+                        .dispatch(byIdAction, options)
+                        .then(r => {
+                            this.$toast().success(this.$t(success, {executionCount: r.data.count}));
+                            this.loadData();
+                        }).catch(e => {
+                            this.$toast().error(e?.invalids.map(exec => {
+                                return {message: this.$t(exec.message, {executionId: exec.invalidValue})}
+                            }), this.$t(e.message))
+                        })
+                }
             },
             resumeExecutions() {
                 this.genericConfirmAction(
@@ -738,12 +762,43 @@
                 );
             },
             deleteExecutions() {
-                this.genericConfirmAction(
-                    "bulk delete",
-                    "execution/queryDeleteExecution",
-                    "execution/bulkDeleteExecution",
-                    "executions deleted"
-                );
+
+                const includeNonTerminated = ref(false);
+                const message = () => h("div", null, [
+                    h(
+                        "p",
+                        {innerHTML: this.$t("bulk delete", {"executionCount": this.queryBulkAction ? this.total : this.selection.length})}
+                    ),
+                    h(ElFormItem, {
+                        class: "mt-3",
+                        label: this.$t("execution-include-non-terminated")
+                    }, [
+                        h(ElSwitch, {
+                            modelValue: includeNonTerminated.value,
+                            "onUpdate:modelValue": (val) => {
+                                includeNonTerminated.value = val
+                            },
+                        }),
+                    ]),
+                    h(ElAlert, {
+                        title: this.$t("execution-warn-deleting-still-running"),
+                        type: "warning",
+                        showIcon: true,
+                        closable: false
+                    })
+                ]);
+                ElMessageBox.confirm(message, this.$t("confirmation"), {
+                    type: "confirm",
+                    inputType: "checkbox",
+                    inputValue: "false",
+                }).then(() => {
+                    this.actionOptions.includeNonTerminated = includeNonTerminated.value;
+                    this.genericConfirmCallback(
+                        "execution/queryDeleteExecution",
+                        "execution/bulkDeleteExecution",
+                        "executions deleted"
+                    )
+                });
             },
             killExecutions() {
                 this.genericConfirmAction(

@@ -1,0 +1,27 @@
+$background: var(--card-bg);
+$color: var(--bs-heading-color);
+$active: #8405ff;
+$height: 50px;
+$full: 100%;
+
+.main {
+    padding: 1rem 2rem;
+}
+
+.alternative {
+    background: $background;
+
+    &:hover {
+        border: 1px solid $active;
+        background-color: var(--card-bg);
+        opacity: 0.9;
+    }
+}
+
+.high {
+    height: $height;
+}
+
+.full {
+    width: $full;
+}

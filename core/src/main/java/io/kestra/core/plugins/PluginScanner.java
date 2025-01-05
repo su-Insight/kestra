@@ -1,20 +1,17 @@
 package io.kestra.core.plugins;
 
+import io.kestra.core.models.Plugin;
 import io.kestra.core.models.conditions.Condition;
-import io.kestra.core.models.script.ScriptRunner;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.secret.SecretPluginInterface;
 import io.kestra.core.storages.StorageInterface;
-import io.micronaut.core.beans.BeanIntrospectionReference;
-import io.micronaut.core.io.service.SoftServiceLoader;
-import io.micronaut.http.annotation.Controller;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
-import java.lang.reflect.Modifier;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +19,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.Function;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 import java.util.stream.Collectors;
@@ -30,7 +28,7 @@ import java.util.stream.Collectors;
 public class PluginScanner {
     ClassLoader parent;
 
-    public PluginScanner(ClassLoader parent) {
+    public PluginScanner(final ClassLoader parent) {
         this.parent = parent;
     }
 
@@ -40,9 +38,10 @@ public class PluginScanner {
      * @param pluginPaths the absolute path to a top-level plugin directory.
      */
     public List<RegisteredPlugin> scan(final Path pluginPaths) {
-        return new PluginResolver(pluginPaths)
+        long start = System.currentTimeMillis();
+        List<RegisteredPlugin> scanResult = new PluginResolver(pluginPaths)
             .resolves()
-            .stream()
+            .parallelStream()
             .map(plugin -> {
                 log.debug("Loading plugins from path: {}", plugin.getLocation());
 
@@ -61,7 +60,11 @@ public class PluginScanner {
                 return scanClassLoader(classLoader, plugin, null);
             })
             .filter(RegisteredPlugin::isValid)
-            .collect(Collectors.toList());
+            .toList();
+
+        int nbPlugins = scanResult.stream().mapToInt(registeredPlugin -> registeredPlugin.allClass().size()).sum();
+        log.info("Registered {} plugins from {} groups (scan done in {}ms)", nbPlugins, scanResult.size(), System.currentTimeMillis() - start);
+        return scanResult;
     }
 
     /**
@@ -69,90 +72,86 @@ public class PluginScanner {
      */
     public RegisteredPlugin scan() {
         try {
+            long start = System.currentTimeMillis();
             Manifest manifest = new Manifest(IOUtils.toInputStream("Manifest-Version: 1.0\n" +
                 "X-Kestra-Title: core\n" +
-                "X-Kestra-Group: io.kestra.core.tasks\n",
+                "X-Kestra-Group: io.kestra.plugin.core\n",
                 StandardCharsets.UTF_8
             ));
 
-            return scanClassLoader(PluginScanner.class.getClassLoader(), null, manifest);
+            RegisteredPlugin corePlugin = scanClassLoader(PluginScanner.class.getClassLoader(), null, manifest);
+            log.info("Registered {} core plugins (scan done in {}ms)", corePlugin.allClass().size(), System.currentTimeMillis() - start);
+            return corePlugin;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private RegisteredPlugin scanClassLoader(final ClassLoader classLoader, ExternalPlugin externalPlugin, Manifest manifest) {
+    private RegisteredPlugin scanClassLoader(final ClassLoader classLoader,
+                                             final ExternalPlugin externalPlugin,
+                                             Manifest manifest) {
         List<Class<? extends Task>> tasks = new ArrayList<>();
         List<Class<? extends AbstractTrigger>> triggers = new ArrayList<>();
         List<Class<? extends Condition>> conditions = new ArrayList<>();
         List<Class<? extends StorageInterface>> storages = new ArrayList<>();
         List<Class<? extends SecretPluginInterface>> secrets = new ArrayList<>();
-        List<Class<? extends ScriptRunner>> scriptRunners = new ArrayList<>();
-        List<Class<?>> controllers = new ArrayList<>();
+        List<Class<? extends TaskRunner>> taskRunners = new ArrayList<>();
         List<String> guides = new ArrayList<>();
-
-        final SoftServiceLoader<BeanIntrospectionReference> loader = SoftServiceLoader.load(
-            BeanIntrospectionReference.class,
-            classLoader
-        );
+        Map<String, Class<?>> aliases = new HashMap<>();
 
         if (manifest == null) {
             manifest = getManifest(classLoader);
         }
 
-        List<BeanIntrospectionReference> definitions = new ArrayList<>(100);
-        loader.collectAll(definitions);
+        final ServiceLoader<Plugin> sl = ServiceLoader.load(Plugin.class, classLoader);
+        try {
+            sl.forEach(plugin -> {
+                if (plugin.getClass().isAnnotationPresent(Hidden.class)) {
+                    return;
+                }
 
-        for (BeanIntrospectionReference definition : definitions) {
-            Class beanType;
-            try {
-                beanType = definition.getBeanType();
-            } catch (Throwable e) {
-                log.warn(
-                    "Unable to load class '{}' on plugin '{}'",
-                    definition.getName(), externalPlugin  != null ? externalPlugin.getLocation().toString() : (manifest != null ? manifest.getMainAttributes().getValue("X-Kestra-Title") : ""),
-                    e
-                );
-                continue;
-            }
+                switch (plugin) {
+                    case Task task -> {
+                        log.debug("Loading Task plugin: '{}'", plugin.getClass());
+                        tasks.add(task.getClass());
+                    }
+                    case AbstractTrigger trigger -> {
+                        log.debug("Loading Trigger plugin: '{}'", plugin.getClass());
+                        triggers.add(trigger.getClass());
+                    }
+                    case Condition condition -> {
+                        log.debug("Loading Condition plugin: '{}'", plugin.getClass());
+                        conditions.add(condition.getClass());
+                    }
+                    case StorageInterface storage -> {
+                        log.debug("Loading Storage plugin: '{}'", plugin.getClass());
+                        storages.add(storage.getClass());
+                    }
+                    case SecretPluginInterface storage -> {
+                        log.debug("Loading SecretPlugin plugin: '{}'", plugin.getClass());
+                        secrets.add(storage.getClass());
+                    }
+                    case TaskRunner runner -> {
+                        log.debug("Loading TaskRunner plugin: '{}'", plugin.getClass());
+                        taskRunners.add(runner.getClass());
+                    }
+                    default -> {
+                    }
+                }
 
-            if (Modifier.isAbstract(beanType.getModifiers())) {
-                continue;
-            }
-
-            if(beanType.isAnnotationPresent(Hidden.class)) {
-                continue;
-            }
-
-            if (Task.class.isAssignableFrom(beanType)) {
-                tasks.add(beanType);
-            }
-
-            if (AbstractTrigger.class.isAssignableFrom(beanType)) {
-                triggers.add(beanType);
-            }
-
-            if (Condition.class.isAssignableFrom(beanType)) {
-                conditions.add(beanType);
-            }
-
-            if (StorageInterface.class.isAssignableFrom(beanType)) {
-                storages.add(beanType);
-            }
-
-            if (SecretPluginInterface.class.isAssignableFrom(beanType)) {
-                secrets.add(beanType);
-            }
-
-            if (ScriptRunner.class.isAssignableFrom(beanType)) {
-                scriptRunners.add(beanType);
-            }
-
-            if (beanType.isAnnotationPresent(Controller.class)) {
-                controllers.add(beanType);
-            }
+                if (plugin.getClass().isAnnotationPresent(io.kestra.core.models.annotations.Plugin.class)) {
+                    String[] pluginAliases = plugin.getClass()
+                        .getAnnotation(io.kestra.core.models.annotations.Plugin.class)
+                        .aliases();
+                    for (String alias : pluginAliases) {
+                        aliases.put(alias, plugin.getClass());
+                    }
+                }
+            });
+        } catch (ServiceConfigurationError e) {
+            Object location = externalPlugin != null ? externalPlugin.getLocation() : "core";
+            log.error("Unable to load all plugin classes from '{}'. Cause: {}", location, e.getMessage());
         }
 
         var guidesDirectory = classLoader.getResource("doc/guides");
@@ -180,11 +179,14 @@ public class PluginScanner {
             .tasks(tasks)
             .triggers(triggers)
             .conditions(conditions)
-            .controllers(controllers)
             .storages(storages)
             .secrets(secrets)
-            .scriptRunner(scriptRunners)
+            .taskRunners(taskRunners)
             .guides(guides)
+            .aliases(aliases.entrySet().stream().collect(Collectors.toMap(
+                e -> e.getKey().toLowerCase(),
+                Function.identity()
+            )))
             .build();
     }
 

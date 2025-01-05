@@ -1,7 +1,7 @@
 package io.kestra.core.validations.validator;
 
-import io.kestra.core.models.conditions.types.MultipleCondition;
-import io.kestra.core.models.triggers.types.Webhook;
+import io.kestra.plugin.core.condition.MultipleCondition;
+import io.kestra.plugin.core.trigger.Webhook;
 import io.kestra.core.validations.WebhookValidation;
 import io.micronaut.core.annotation.AnnotationValue;
 import io.micronaut.core.annotation.Introspected;
@@ -13,7 +13,7 @@ import jakarta.inject.Singleton;
 
 @Singleton
 @Introspected
-public class WebhookValidator  implements ConstraintValidator<WebhookValidation, Webhook> {
+public class WebhookValidator implements ConstraintValidator<WebhookValidation, Webhook> {
     @Override
     public boolean isValid(
         @Nullable Webhook value,
@@ -25,8 +25,9 @@ public class WebhookValidator  implements ConstraintValidator<WebhookValidation,
 
         if (value.getConditions() != null) {
             if (value.getConditions().stream().anyMatch(condition -> condition instanceof MultipleCondition)) {
-                context.messageTemplate("invalid webhook: conditions of type MultipleCondition are not supported");
-
+                context.disableDefaultConstraintViolation();
+                context.buildConstraintViolationWithTemplate("invalid webhook: conditions of type MultipleCondition are not supported")
+                    .addConstraintViolation();
                 return false;
             }
         }

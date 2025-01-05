@@ -2,7 +2,7 @@
     <top-nav-bar v-if="!embed && blueprint" :title="blueprint.title" :breadcrumb="breadcrumb" v-loading="!blueprint">
         <template #additional-right>
             <ul v-if="userCanCreateFlow">
-                <router-link :to="{name: 'flows/create'}" @click="asAutoRestoreDraft">
+                <router-link :to="{name: 'flows/create', query: {blueprintId: blueprint.id}}">
                     <el-button type="primary" v-if="!embed">
                         {{ $t('use') }}
                     </el-button>
@@ -44,7 +44,7 @@
                     <editor class="position-relative" :read-only="true" :full-height="false" :minimap="false" :model-value="blueprint.flow" lang="yaml">
                         <template #nav>
                             <div class="position-absolute copy-wrapper">
-                                <el-tooltip trigger="click" content="Copied" placement="left" :auto-close="2000">
+                                <el-tooltip trigger="click" content="Copied" placement="left" :auto-close="2000" effect="light">
                                     <el-button text round :icon="icon.ContentCopy" @click="Utils.copy(blueprint.flow)" />
                                 </el-tooltip>
                             </div>
@@ -132,9 +132,6 @@
                         }
                     })
                 }
-            },
-            asAutoRestoreDraft() {
-                localStorage.setItem("autoRestore-creation_draft", this.blueprint.flow);
             }
         },
         async created() {

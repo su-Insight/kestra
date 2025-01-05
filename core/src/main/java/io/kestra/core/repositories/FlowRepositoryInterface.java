@@ -3,6 +3,7 @@ package io.kestra.core.repositories;
 import io.kestra.core.models.SearchResult;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.flows.FlowForExecution;
 import io.kestra.core.models.flows.FlowWithSource;
 import io.micronaut.data.model.Pageable;
 
@@ -18,6 +19,30 @@ public interface FlowRepositoryInterface {
 
     default Optional<Flow> findById(String tenantId, String namespace, String id, Optional<Integer> revision) {
         return this.findById(tenantId, namespace, id, revision, false);
+    }
+
+    Optional<Flow> findByIdWithoutAcl(String tenantId, String namespace, String id, Optional<Integer> revision);
+
+    /**
+     * Used only if result is used internally and not exposed to the user.
+     * It is useful when we want to restart/resume a flow.
+     */
+    default Flow findByExecutionWithoutAcl(Execution execution) {
+        Optional<Flow> find = this.findByIdWithoutAcl(
+            execution.getTenantId(),
+            execution.getNamespace(),
+            execution.getFlowId(),
+            Optional.of(execution.getFlowRevision())
+        );
+
+        if (find.isEmpty()) {
+            throw new IllegalStateException("Unable to find flow '" + execution.getNamespace() + "." +
+                execution.getFlowId() + "' with revision " + execution.getFlowRevision() + " on execution " +
+                execution.getId()
+            );
+        } else {
+            return find.get();
+        }
     }
 
     default Flow findByExecution(Execution execution) {
@@ -62,6 +87,10 @@ public interface FlowRepositoryInterface {
 
     List<Flow> findByNamespace(String tenantId, String namespace);
 
+    List<Flow> findByNamespacePrefix(String tenantId, String namespacePrefix);
+
+    List<FlowForExecution> findByNamespaceExecutable(String tenantId, String namespace);
+
     List<FlowWithSource> findByNamespaceWithSource(String tenantId, String namespace);
 
     ArrayListTotal<Flow> find(
@@ -82,6 +111,20 @@ public interface FlowRepositoryInterface {
     ArrayListTotal<SearchResult<Flow>> findSourceCode(Pageable pageable, @Nullable String query, @Nullable String tenantId, @Nullable String namespace);
 
     List<String> findDistinctNamespace(String tenantId);
+
+    List<String> findDistinctNamespaceExecutable(String tenantId);
+
+    default List<String> findDistinctNamespace(String tenantId, String prefix) {
+        List<String> distinctNamespaces = this.findDistinctNamespace(tenantId);
+
+        if (prefix == null) {
+            return distinctNamespaces;
+        }
+
+        return distinctNamespaces.stream()
+            .filter(n -> n.startsWith(prefix))
+            .toList();
+    }
 
     FlowWithSource create(Flow flow, String flowSource, Flow flowWithDefaults);
 
