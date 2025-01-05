@@ -10,9 +10,10 @@ import java.io.*;
 import java.net.URI;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static io.kestra.core.utils.Rethrow.throwFunction;
@@ -32,17 +33,43 @@ public class LocalStorage implements StorageInterface {
     }
 
     private Path getPath(String tenantId, URI uri) {
+        Path basePath = tenantId == null ? config.getBasePath().toAbsolutePath()
+            : Paths.get(config.getBasePath().toAbsolutePath().toString(), tenantId);
+        if(uri == null) {
+            return basePath;
+        }
+
         parentTraversalGuard(uri);
-        return tenantId == null ? Paths.get(config.getBasePath().toAbsolutePath().toString(), uri.getPath())
-            : Paths.get(config.getBasePath().toAbsolutePath().toString(), tenantId, uri.getPath());
+        return Paths.get(basePath.toString(), uri.getPath());
     }
 
     @Override
     public InputStream get(String tenantId, URI uri) throws IOException {
-        return new BufferedInputStream(new FileInputStream(getPath(tenantId, URI.create(uri.getPath()))
+        return new BufferedInputStream(new FileInputStream(getPath(tenantId, uri)
             .toAbsolutePath()
             .toString())
         );
+    }
+
+    @Override
+    public List<URI> allByPrefix(String tenantId, URI prefix, boolean includeDirectories) throws IOException {
+        Path fsPath = getPath(tenantId, prefix);
+        try (Stream<Path> walk = Files.walk(fsPath)) {
+            return walk.sorted(Comparator.reverseOrder())
+                .filter(path -> includeDirectories || !Files.isDirectory(path))
+                .map(path -> {
+                    Path relativePath = fsPath.relativize(path);
+                    return relativePath + (Files.isDirectory(path) && !relativePath.toString().isEmpty() ? "/" : "");
+                })
+                .filter(Predicate.not(String::isEmpty))
+                .map(path -> {
+                    String prefixPath = prefix.getPath();
+                    return URI.create("kestra://" + prefixPath + (prefixPath.endsWith("/") ? "" : "/") + path);
+                })
+                .toList();
+        } catch (NoSuchFileException e) {
+            return Collections.emptyList();
+        }
     }
 
     @Override
@@ -52,11 +79,11 @@ public class LocalStorage implements StorageInterface {
 
     @Override
     public List<FileAttributes> list(String tenantId, URI uri) throws IOException {
-        try (Stream<Path> stream = Files.list(getPath(tenantId, URI.create(uri.getPath())))) {
+        try (Stream<Path> stream = Files.list(getPath(tenantId, uri))) {
             return stream
                 .map(throwFunction(file -> {
                     URI relative = URI.create(
-                        getPath(tenantId, URI.create("")).relativize(
+                        getPath(tenantId, null).relativize(
                             Path.of(file.toUri())
                         ).toString()
                     );
@@ -66,28 +93,6 @@ public class LocalStorage implements StorageInterface {
         } catch (NoSuchFileException e) {
             throw new FileNotFoundException(e.getMessage());
         }
-    }
-
-    @Override
-    public Long size(String tenantId, URI uri) throws IOException {
-        try {
-            return Files.size(getPath(tenantId, URI.create(uri.getPath())));
-        } catch (NoSuchFileException e) {
-            throw new FileNotFoundException("Unable to find file at '" + uri + "'");
-        } catch (IOException e) {
-            throw new IOException("Unable to find file at '" + uri + "' with message '" + e.getMessage() + "'");
-        }
-    }
-
-    @Override
-    public Long lastModifiedTime(String tenantId, URI uri) throws IOException {
-        FileTime lastModifiedTime;
-        try {
-            lastModifiedTime = Files.getLastModifiedTime(getPath(tenantId, uri));
-        } catch (NoSuchFileException e) {
-            throw new FileNotFoundException(e.getMessage());
-        }
-        return lastModifiedTime.toMillis();
     }
 
     @Override
@@ -148,7 +153,7 @@ public class LocalStorage implements StorageInterface {
 
     @Override
     public boolean delete(String tenantId, URI uri) throws IOException {
-        Path path = getPath(tenantId, URI.create(uri.getPath()));
+        Path path = getPath(tenantId, uri);
         File file = path.toFile();
 
         if (file.isDirectory()) {

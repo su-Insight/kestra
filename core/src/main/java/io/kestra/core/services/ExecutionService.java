@@ -17,6 +17,7 @@ import io.kestra.core.repositories.ExecutionRepositoryInterface;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.repositories.LogRepositoryInterface;
 import io.kestra.core.repositories.MetricRepositoryInterface;
+import io.kestra.core.storages.StorageContext;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tasks.flows.WorkingDirectory;
 import io.kestra.core.utils.GraphUtils;
@@ -29,6 +30,7 @@ import jakarta.inject.Singleton;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.experimental.SuperBuilder;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.net.URI;
@@ -41,6 +43,7 @@ import java.util.stream.Stream;
 import static io.kestra.core.utils.Rethrow.*;
 
 @Singleton
+@Slf4j
 public class ExecutionService {
 
     @Inject
@@ -193,12 +196,6 @@ public class ExecutionService {
     }
 
     public Execution markAs(final Execution execution, String taskRunId, State.Type newState) throws Exception {
-        if (!(execution.getState().isTerminated() || execution.getState().isPaused())) {
-            throw new IllegalStateException("Execution must be terminated to be restarted, " +
-                "current state is '" + execution.getState().getCurrent() + "' !"
-            );
-        }
-
         final Flow flow = flowRepositoryInterface.findByExecution(execution);
 
         Set<String> taskRunToRestart = this.taskRunToRestart(
@@ -256,9 +253,10 @@ public class ExecutionService {
                 null,
                 endDate,
                 state,
+                null,
                 null
             )
-            .map(execution -> {
+            .map(throwFunction(execution -> {
                 PurgeResult.PurgeResultBuilder<?, ?> builder = PurgeResult.builder();
 
                 if (purgeExecution) {
@@ -274,12 +272,12 @@ public class ExecutionService {
                 }
 
                 if (purgeStorage) {
-                    builder.storagesCount(storageInterface.deleteByPrefix(execution.getTenantId(), URI.create("kestra://" + storageInterface.executionPrefix(
-                        execution))).size());
+                    URI uri = StorageContext.forExecution(execution).getExecutionStorageURI(StorageContext.KESTRA_SCHEME);
+                    builder.storagesCount(storageInterface.deleteByPrefix(execution.getTenantId(), uri).size());
                 }
 
                 return (PurgeResult) builder.build();
-            })
+            }))
             .reduce((a, b) -> a
                 .toBuilder()
                 .executionsCount(a.getExecutionsCount() + b.getExecutionsCount())
@@ -287,7 +285,7 @@ public class ExecutionService {
                 .storagesCount(a.getStoragesCount() + b.getStoragesCount())
                 .build()
             )
-            .blockingGet();
+            .block();
 
         if (purgeResult != null) {
             return purgeResult;
@@ -321,6 +319,45 @@ public class ExecutionService {
         this.eventPublisher.publishEvent(new CrudEvent<>(execution, CrudEventType.UPDATE));
 
         return unpausedExecution;
+    }
+
+    /**
+     * Kill an execution.
+     *
+     * @return the execution in a KILLING state if not already terminated
+     */
+    public Execution kill(Execution execution) {
+        if (execution.getState().isPaused()) {
+            // Must be resumed and killed, no need to send killing event to the worker as the execution is not executing anything in it.
+            // An edge case can exist where the execution is resumed automatically before we resume it with a killing.
+            try {
+                return this.resume(execution, State.Type.KILLING);
+            } catch (InternalException e) {
+                // if we cannot resume, we set it anyway to killing, so we don't throw
+                log.warn("Unable to resume a paused execution before killing it", e);
+            }
+        }
+
+        if (execution.getState().getCurrent() != State.Type.KILLING && !execution.getState().isTerminated()) {
+            return execution.withState(State.Type.KILLING);
+        }
+
+        return execution;
+    }
+
+    /**
+     * Climb up the hierarchy of parent taskruns and kill them all.
+     */
+    public Execution killParentTaskruns(TaskRun taskRun, Execution execution) throws InternalException {
+        var parentTaskRun = execution.findTaskRunByTaskRunId(taskRun.getParentTaskRunId());
+        Execution newExecution = execution;
+        if (parentTaskRun.getState().getCurrent() != State.Type.KILLED) {
+            newExecution = newExecution.withTaskRun(parentTaskRun.withState(State.Type.KILLED));
+        }
+        if (parentTaskRun.getParentTaskRunId() != null) {
+            return killParentTaskruns(parentTaskRun, newExecution);
+        }
+        return newExecution;
     }
 
     @Getter

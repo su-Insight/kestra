@@ -2,6 +2,7 @@ package io.kestra.core.runners;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.collect.ImmutableMap;
+import io.kestra.core.crypto.CryptoService;
 import io.kestra.core.exceptions.MissingRequiredInput;
 import io.kestra.core.models.Label;
 import io.kestra.core.models.executions.Execution;
@@ -17,16 +18,18 @@ import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.utils.Await;
 import io.kestra.core.utils.IdUtils;
 import io.micronaut.http.multipart.StreamingFileUpload;
-import io.reactivex.Flowable;
-import io.reactivex.Single;
-import io.reactivex.schedulers.Schedulers;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URI;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -40,6 +43,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static io.kestra.core.utils.Rethrow.throwFunction;
 
 @Singleton
 public class RunnerUtils {
@@ -58,23 +63,26 @@ public class RunnerUtils {
     @Inject
     private ConditionService conditionService;
 
-    public Map<String, Object> typedInputs(Flow flow, Execution execution, Map<String, Object> in, Publisher<StreamingFileUpload> files) {
+    @Inject
+    private CryptoService cryptoService;
+
+    public Map<String, Object> typedInputs(Flow flow, Execution execution, Map<String, Object> in, Publisher<StreamingFileUpload> files) throws IOException {
         if (files == null) {
             return this.typedInputs(flow, execution, in);
         }
 
-        Map<String, String> uploads = Flowable.fromPublisher(files)
-            .subscribeOn(Schedulers.io())
-            .map(file -> {
+        Map<String, String> uploads = Flux.from(files)
+            .subscribeOn(Schedulers.boundedElastic())
+            .map(throwFunction(file -> {
                 File tempFile = File.createTempFile(file.getFilename() + "_", ".upl");
                 Publisher<Boolean> uploadPublisher = file.transferTo(tempFile);
-                Boolean bool = Single.fromPublisher(uploadPublisher).blockingGet();
+                Boolean bool = Mono.from(uploadPublisher).block();
 
                 if (!bool) {
                     throw new RuntimeException("Can't upload");
                 }
 
-                URI from = storageInterface.from(flow, execution, file.getFilename(), tempFile);
+                URI from = storageInterface.from(execution, file.getFilename(), tempFile);
                 //noinspection ResultOfMethodCallIgnored
                 tempFile.delete();
 
@@ -82,9 +90,9 @@ public class RunnerUtils {
                     file.getFilename(),
                     from.toString()
                 );
-            })
-            .toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue)
-            .blockingGet();
+            }))
+            .collectMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue)
+            .block();
 
         Map<String, Object> merged = new HashMap<>();
         if (in != null) {
@@ -105,19 +113,19 @@ public class RunnerUtils {
             .getInputs()
             .stream()
             .map((Function<Input, Optional<AbstractMap.SimpleEntry<String, Object>>>) input -> {
-                Object current = in == null ? null : in.get(input.getName());
+                Object current = in == null ? null : in.get(input.getId());
 
                 if (current == null && input.getDefaults() != null) {
                     current = input.getDefaults();
                 }
 
                 if (input.getRequired() && current == null) {
-                    throw new MissingRequiredInput("Missing required input value '" + input.getName() + "'");
+                    throw new MissingRequiredInput("Missing required input value '" + input.getId() + "'");
                 }
 
                 if (!input.getRequired() && current == null) {
                     return Optional.of(new AbstractMap.SimpleEntry<>(
-                        input.getName(),
+                        input.getId(),
                         null
                     ));
                 }
@@ -135,112 +143,122 @@ public class RunnerUtils {
 
     private Optional<AbstractMap.SimpleEntry<String, Object>> parseInput(Flow flow, Execution execution, Input<?> input, Object current) {
         switch (input.getType()) {
-            case STRING:
+            case STRING -> {
                 return Optional.of(new AbstractMap.SimpleEntry<>(
-                    input.getName(),
+                    input.getId(),
                     current
                 ));
-
-            case INT:
-                return Optional.of(new AbstractMap.SimpleEntry<>(
-                    input.getName(),
-                    current instanceof Integer ? current : Integer.valueOf((String) current)
-                ));
-
-            case FLOAT:
-                return Optional.of(new AbstractMap.SimpleEntry<>(
-                    input.getName(),
-                    current instanceof Float ? current : Float.valueOf((String) current)
-                ));
-
-            case BOOLEAN:
-                return Optional.of(new AbstractMap.SimpleEntry<>(
-                    input.getName(),
-                    current instanceof Boolean ? current : Boolean.valueOf((String) current)
-                ));
-
-            case DATETIME:
+            }
+            case SECRET -> {
                 try {
                     return Optional.of(new AbstractMap.SimpleEntry<>(
-                        input.getName(),
+                        input.getId(),
+                        cryptoService.encrypt((String) current)
+                    ));
+                } catch (GeneralSecurityException e) {
+                    throw new MissingRequiredInput("Invalid SECRET format for '" + input.getId() + "' for '" + current + "' with error " + e.getMessage(), e);
+                }
+            }
+            case INT -> {
+                return Optional.of(new AbstractMap.SimpleEntry<>(
+                    input.getId(),
+                    current instanceof Integer ? current : Integer.valueOf((String) current)
+                ));
+            }
+            case FLOAT -> {
+                return Optional.of(new AbstractMap.SimpleEntry<>(
+                    input.getId(),
+                    current instanceof Float ? current : Float.valueOf((String) current)
+                ));
+            }
+            case BOOLEAN -> {
+                return Optional.of(new AbstractMap.SimpleEntry<>(
+                    input.getId(),
+                    current instanceof Boolean ? current : Boolean.valueOf((String) current)
+                ));
+            }
+            case DATETIME -> {
+                try {
+                    return Optional.of(new AbstractMap.SimpleEntry<>(
+                        input.getId(),
                         Instant.parse(((String) current))
                     ));
                 } catch (DateTimeParseException e) {
-                    throw new MissingRequiredInput("Invalid DATETIME format for '" + input.getName() + "' for '" + current + "' with error " + e.getMessage(), e);
+                    throw new MissingRequiredInput("Invalid DATETIME format for '" + input.getId() + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-
-            case DATE:
+            }
+            case DATE -> {
                 try {
                     return Optional.of(new AbstractMap.SimpleEntry<>(
-                        input.getName(),
+                        input.getId(),
                         LocalDate.parse(((String) current))
                     ));
                 } catch (DateTimeParseException e) {
-                    throw new MissingRequiredInput("Invalid DATE format for '" + input.getName() + "' for '" + current + "' with error " + e.getMessage(), e);
+                    throw new MissingRequiredInput("Invalid DATE format for '" + input.getId() + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-
-            case TIME:
+            }
+            case TIME -> {
                 try {
                     return Optional.of(new AbstractMap.SimpleEntry<>(
-                        input.getName(),
+                        input.getId(),
                         LocalTime.parse(((String) current))
                     ));
                 } catch (DateTimeParseException e) {
-                    throw new MissingRequiredInput("Invalid TIME format for '" + input.getName() + "' for '" + current + "' with error " + e.getMessage(), e);
+                    throw new MissingRequiredInput("Invalid TIME format for '" + input.getId() + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-
-            case DURATION:
+            }
+            case DURATION -> {
                 try {
                     return Optional.of(new AbstractMap.SimpleEntry<>(
-                        input.getName(),
+                        input.getId(),
                         Duration.parse(((String) current))
                     ));
                 } catch (DateTimeParseException e) {
-                    throw new MissingRequiredInput("Invalid DURATION format for '" + input.getName() + "' for '" + current + "' with error " + e.getMessage(), e);
+                    throw new MissingRequiredInput("Invalid DURATION format for '" + input.getId() + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-
-            case FILE:
+            }
+            case FILE -> {
                 try {
                     URI uri = URI.create(((String) current).replace(File.separator, "/"));
 
                     if (uri.getScheme() != null && uri.getScheme().equals("kestra")) {
                         return Optional.of(new AbstractMap.SimpleEntry<>(
-                            input.getName(),
+                            input.getId(),
                             uri
                         ));
                     } else {
                         return Optional.of(new AbstractMap.SimpleEntry<>(
-                            input.getName(),
-                            storageInterface.from(flow, execution, input, new File(((String) current)))
+                            input.getId(),
+                            storageInterface.from(execution, input.getId(), new File(((String) current)))
                         ));
                     }
                 } catch (Exception e) {
-                    throw new MissingRequiredInput("Invalid input arguments for file on input '" + input.getName() + "'", e);
+                    throw new MissingRequiredInput("Invalid input arguments for file on input '" + input.getId() + "'", e);
                 }
-
-            case JSON:
+            }
+            case JSON -> {
                 try {
                     return Optional.of(new AbstractMap.SimpleEntry<>(
-                        input.getName(),
+                        input.getId(),
                         JacksonMapper.toObject(((String) current))
                     ));
                 } catch (JsonProcessingException e) {
-                    throw new MissingRequiredInput("Invalid JSON format for '" + input.getName() + "' for '" + current + "' with error " + e.getMessage(), e);
+                    throw new MissingRequiredInput("Invalid JSON format for '" + input.getId() + "' for '" + current + "' with error " + e.getMessage(), e);
                 }
-
-            case URI:
-                Matcher matcher = URI_PATTERN.matcher(((String) current));
+            }
+            case URI -> {
+                Matcher matcher = URI_PATTERN.matcher((String) current);
                 if (matcher.matches()) {
                     return Optional.of(new AbstractMap.SimpleEntry<>(
-                        input.getName(),
+                        input.getId(),
                         current
                     ));
                 } else {
-                    throw new MissingRequiredInput("Invalid URI format for '" + input.getName() + "' for '" + current + "'");
+                    throw new MissingRequiredInput("Invalid URI format for '" + input.getId() + "' for '" + current + "'");
                 }
-
-            default:
-                throw new MissingRequiredInput("Invalid input type '" + input.getType() + "' for '" + input.getName() + "'");
+            }
+            default ->
+                throw new MissingRequiredInput("Invalid input type '" + input.getType() + "' for '" + input.getId() + "'");
         }
     }
 
@@ -338,6 +356,32 @@ public class RunnerUtils {
         }, duration);
     }
 
+    public Execution runOneUntilRunning(String tenantId, String namespace, String flowId) throws TimeoutException {
+        return this.runOneUntilRunning(tenantId, namespace, flowId, null, null, null);
+    }
+
+    public Execution runOneUntilRunning(String tenantId, String namespace, String flowId, Integer revision, BiFunction<Flow, Execution, Map<String, Object>> inputs, Duration duration) throws TimeoutException {
+        return this.runOneUntilRunning(
+            flowRepository
+                .findById(tenantId, namespace, flowId, revision != null ? Optional.of(revision) : Optional.empty())
+                .orElseThrow(() -> new IllegalArgumentException("Unable to find flow '" + flowId + "'")),
+            inputs,
+            duration
+        );
+    }
+
+    public Execution runOneUntilRunning(Flow flow, BiFunction<Flow, Execution, Map<String, Object>> inputs, Duration duration) throws TimeoutException {
+        if (duration == null) {
+            duration = Duration.ofSeconds(15);
+        }
+
+        Execution execution = this.newExecution(flow, inputs, null);
+
+        return this.awaitExecution(isRunningExecution(execution), () -> {
+            this.executionQueue.emit(execution);
+        }, duration);
+    }
+
     public Execution awaitExecution(Predicate<Execution> predicate, Runnable executionEmitter, Duration duration) throws TimeoutException {
         AtomicReference<Execution> receive = new AtomicReference<>();
 
@@ -374,6 +418,10 @@ public class RunnerUtils {
 
     public Predicate<Execution> isPausedExecution(Execution execution) {
         return e -> e.getId().equals(execution.getId()) && e.getState().isPaused() && e.getTaskRunList().stream().anyMatch(t -> t.getState().isPaused());
+    }
+
+    public Predicate<Execution> isRunningExecution(Execution execution) {
+        return e -> e.getId().equals(execution.getId()) && e.getState().isRunning() && e.getTaskRunList().stream().anyMatch(t -> t.getState().isRunning());
     }
 
     private Predicate<Execution> isTerminatedChildExecution(Execution parentExecution, Flow flow) {
