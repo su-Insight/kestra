@@ -10,8 +10,7 @@ import io.kestra.core.runners.FlowListeners;
 import io.kestra.core.runners.TestMethodScopedWorker;
 import io.kestra.core.runners.Worker;
 import jakarta.inject.Inject;
-import org.junit.jupiter.api.RepeatedTest;
-import org.junitpioneer.jupiter.RetryingTest;
+import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
 import java.util.List;
@@ -21,9 +20,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.*;
+import static org.hamcrest.Matchers.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 
 public class SchedulerThreadTest extends AbstractSchedulerTest {
     @Inject
@@ -51,13 +50,28 @@ public class SchedulerThreadTest extends AbstractSchedulerTest {
         ));
     }
 
-    @RetryingTest(5)
+    @Test
     void thread() throws Exception {
+        Flow flow = createThreadFlow();
+        CountDownLatch queueCount = new CountDownLatch(2);
+        AtomicReference<Execution> last = new AtomicReference<>();
+
+        // wait for execution
+        Runnable assertionStop = executionQueue.receive(SchedulerThreadTest.class, either -> {
+            Execution execution = either.getLeft();
+            last.set(execution);
+
+            assertThat(execution.getFlowId(), is(flow.getId()));
+
+            if (execution.getState().getCurrent() != State.Type.SUCCESS) {
+                executionQueue.emit(execution.withState(State.Type.SUCCESS));
+                queueCount.countDown();
+            }
+        });
+
         // mock flow listeners
         FlowListeners flowListenersServiceSpy = spy(this.flowListenersService);
-        CountDownLatch queueCount = new CountDownLatch(2);
 
-        Flow flow = createThreadFlow();
 
         doReturn(Collections.singletonList(flow))
             .when(flowListenersServiceSpy)
@@ -72,28 +86,14 @@ public class SchedulerThreadTest extends AbstractSchedulerTest {
             );
             Worker worker = new TestMethodScopedWorker(applicationContext, 8, null);
         ) {
-            AtomicReference<Execution> last = new AtomicReference<>();
-
-            // wait for execution
-            Runnable assertionStop = executionQueue.receive(SchedulerThreadTest.class, either -> {
-                Execution execution = either.getLeft();
-                last.set(execution);
-
-                assertThat(execution.getFlowId(), is(flow.getId()));
-
-                if (execution.getState().getCurrent() != State.Type.SUCCESS) {
-                    executionQueue.emit(execution.withState(State.Type.SUCCESS));
-                    queueCount.countDown();
-                }
-            });
-
             // start the worker as it execute polling triggers
             worker.run();
             scheduler.run();
-            queueCount.await(1, TimeUnit.MINUTES);
+            boolean sawSuccessExecution = queueCount.await(1, TimeUnit.MINUTES);
             // needed for RetryingTest to work since there is no context cleaning between method => we have to clear assertion receiver manually
             assertionStop.run();
 
+            assertThat("Countdown latch returned " + sawSuccessExecution, last.get(), notNullValue());
             assertThat(last.get().getTrigger().getVariables().get("defaultInjected"), is("done"));
             assertThat(last.get().getTrigger().getVariables().get("counter"), is(3));
             assertThat(last.get().getLabels(), hasItem(new Label("flow-label-1", "flow-label-1")));

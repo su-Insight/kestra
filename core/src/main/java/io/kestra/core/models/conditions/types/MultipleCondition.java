@@ -19,10 +19,10 @@ import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import java.time.Duration;
 import java.util.AbstractMap;
 import java.util.Map;
@@ -37,14 +37,14 @@ import java.util.stream.Stream;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Condition for a list of flow",
-    description = "Trigger the first time all the flow are successfully executed during the `window` duration "
+    title = "Condition for a list of flows.",
+    description = "Trigger when all the flows are successfully executed for the first time during the `window` duration."
 )
 @Plugin(
     examples = {
         @Example(
             full = true,
-            title = "A flow that is waiting for 2 flows that is successful in 1 days",
+            title = "A flow that is waiting for 2 flows to run successfully in a day",
             code = {
                 "triggers:",
                 "  - id: multiple-listen-flow",
@@ -74,7 +74,7 @@ import java.util.stream.Stream;
 public class MultipleCondition extends Condition {
     @NotNull
     @NotBlank
-    @Pattern(regexp="[a-zA-Z0-9_-]+")
+    @Pattern(regexp="^[a-zA-Z0-9][a-zA-Z0-9_-]*")
     @Schema(title = "A unique id for the whole flow")
     @PluginProperty
     protected String id;

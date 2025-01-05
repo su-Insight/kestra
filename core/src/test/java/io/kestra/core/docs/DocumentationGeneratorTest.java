@@ -6,7 +6,7 @@ import io.kestra.core.plugins.RegisteredPlugin;
 import io.kestra.core.tasks.debugs.Echo;
 import io.kestra.core.tasks.debugs.Return;
 import io.kestra.core.tasks.flows.Dag;
-import io.kestra.core.tasks.flows.Flow;
+import io.kestra.core.tasks.flows.Subflow;
 import io.kestra.core.tasks.states.Set;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
@@ -108,7 +108,7 @@ class DocumentationGeneratorTest {
     void defaultBool() throws IOException {
         PluginScanner pluginScanner = new PluginScanner(ClassPluginDocumentationTest.class.getClassLoader());
         RegisteredPlugin scan = pluginScanner.scan();
-        Class bash = scan.findClass(Flow.class.getName()).orElseThrow();
+        Class bash = scan.findClass(Subflow.class.getName()).orElseThrow();
 
         ClassPluginDocumentation<? extends Task> doc = ClassPluginDocumentation.of(jsonSchemaGenerator, scan, bash, Task.class);
 
@@ -129,7 +129,7 @@ class DocumentationGeneratorTest {
         String render = DocumentationGenerator.render(doc);
 
         assertThat(render, containsString("Echo"));
-        assertThat(render, containsString("- \uD83D\uDD12 Deprecated"));
+        assertThat(render, containsString("Deprecated"));
     }
 
     @Test
@@ -154,6 +154,6 @@ class DocumentationGeneratorTest {
         List<Document> docs = documentationGenerator.generate(core);
         Document doc = docs.get(0);
         assertThat(doc.getIcon(), is(notNullValue()));
-        assertThat(doc.getBody(), containsString("##  <img width=\"25\" src=\"data:image/svg+xml;base64,"));
+        assertThat(doc.getBody(), containsString("## <img width=\"25\" src=\"data:image/svg+xml;base64,"));
     }
 }

@@ -10,15 +10,6 @@
                         <el-tooltip :content="$t('Unfold content lines')" :persistent="false" transition="" :hide-after="0">
                             <el-button :icon="icon.UnfoldMoreHorizontal" @click="unfoldAll" size="small" />
                         </el-tooltip>
-                        <el-tooltip
-                            v-if="schemaType === 'flow' && creating"
-                            :content="$t('Reset guided tour')"
-                            :persistent="false"
-                            transition=""
-                            :hide-after="0"
-                        >
-                            <el-button :icon="icon.Help" @click="restartGuidedTour" size="small" />
-                        </el-tooltip>
                     </el-button-group>
                     <slot name="extends-navbar" />
                 </div>
@@ -77,6 +68,7 @@
             navbar: {type: Boolean, default: true},
             input: {type: Boolean, default: false},
             fullHeight: {type: Boolean, default: true},
+            customHeight: {type: Number, default: 7},
             theme: {type: String, default: undefined},
             placeholder: {type: [String, Number], default: ""},
             diffSideBySide: {type: Boolean, default: true},
@@ -88,7 +80,7 @@
         components: {
             MonacoEditor,
         },
-        emits: ["save", "execute", "focusout", "tab", "update:modelValue", "cursor", "restartGuidedTour"],
+        emits: ["save", "execute", "focusout", "tab", "update:modelValue", "cursor"],
         editor: undefined,
         data() {
             return {
@@ -108,7 +100,7 @@
         },
         computed: {
             ...mapGetters("core", ["guidedProperties"]),
-            ...mapGetters("flow", ["flowError"]),
+            ...mapGetters("flow", ["flowValidation"]),
             themeComputed() {
                 const darkTheme = document.getElementsByTagName("html")[0].className.indexOf("dark") >= 0;
 
@@ -117,8 +109,6 @@
             containerClass() {
                 return [
                     !this.input ? "" : "single-line",
-                    !this.fullHeight ? "" : "full-height",
-                    !this.original ? "" : "diff",
                     "theme-" + this.themeComputed,
                     this.themeComputed === "dark" ? "custom-dark-vs-theme" : ""
                 ]
@@ -300,7 +290,7 @@
 
                 if (!this.fullHeight) {
                     editor.onDidContentSizeChange(e => {
-                        this.$refs.container.style.height = (e.contentHeight + 7) + "px";
+                        this.$refs.container.style.height = (e.contentHeight + this.customHeight) + "px";
                     });
                 }
 
@@ -357,21 +347,6 @@
                 this.editor.layout()
                 this.editor.focus()
             },
-            restartGuidedTour() {
-                localStorage.setItem("tourDoneOrSkip", undefined);
-                this.$store.commit("core/setGuidedProperties", {
-                    tourStarted: false,
-                    flowSource: undefined,
-                    saveFlow: false,
-                    executeFlow: false,
-                    validateInputs: false,
-                    monacoRange: undefined,
-                    monacoDisableRange: undefined
-                }
-                );
-                this.$tours["guidedTour"].start();
-                this.$emit("restartGuidedTour", true);
-            }
         },
     };
 </script>
@@ -396,14 +371,7 @@
 
         .editor-container {
             display: flex;
-
-            &.full-height {
-                height: calc(100vh - 249px);
-            }
-
-            &.diff {
-                height: calc(100vh - 305px);
-            }
+            height: 100%;
 
             &.single-line {
                 min-height: var(--el-component-size);
@@ -456,15 +424,15 @@
             }
 
             .bottom-right {
-                bottom: var(--spacer);
-                right: var(--spacer);
+                bottom: 0px;
+                right: 0px;
 
                 ul {
                     display: flex;
                     list-style: none;
                     padding: 0;
                     margin: 0;
-                    gap: calc(var(--spacer) / 2);
+                    //gap: calc(var(--spacer) / 2);
                 }
             }
         }

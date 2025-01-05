@@ -48,7 +48,7 @@
 
         <p v-html="$t(replayOrRestart + ' confirm', {id: execution.id})" />
 
-        <el-form>
+        <el-form v-if="revisionsOptions && revisionsOptions.length > 1">
             <p class="text-muted">
                 {{ $t("restart change revision") }}
             </p>
@@ -153,7 +153,15 @@
                         if (execution.id === this.execution.id) {
                             this.$emit("follow")
                         } else {
-                            this.$router.push({name: "executions/update", params: {...{namespace: execution.namespace, flowId: execution.flowId, id: execution.id}, ...{tab: "gantt"}}});
+                            this.$router.push({
+                                name: "executions/update",
+                                params: {
+                                    namespace: execution.namespace,
+                                    flowId: execution.flowId,
+                                    id: execution.id,
+                                    tab: "gantt",
+                                    tenant: this.$route.params.tenant
+                                }});
                         }
 
                         this.$toast().success(this.$t(this.replayOrRestart + "ed"));

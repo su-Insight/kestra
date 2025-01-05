@@ -22,16 +22,42 @@ micronaut:
     idle-timeout: 60m
     netty:
       max-chunk-size: 10MB
+      responses:
+        file:
+          cache-seconds: 86400
+          cache-control:
+            public: true
+
+      # Access log configuration, see https://docs.micronaut.io/latest/guide/index.html#accessLogger
+      access-logger:
+        enabled: true
+        logger-name: io.kestra.webserver.access
+        log-format: "%{yyyy-MM-dd'T'HH:mm:ss.SSS'Z'}t | %r | status: %s | ip: %a | length: %b | duration: %D"
+        exclusions:
+          - /ui/.+
+          - /health
+          - /prometheus
+    http-version: HTTP_1_1
   caches:
     default:
       maximum-weight: 10485760
 
   http:
+    client:
+      read-idle-timeout: 60s
+      connect-timeout: 30s
+      read-timeout: 60s
+      http-version: HTTP_1_1
     services:
       api:
         url: https://api.kestra.io
 
       remote-api:
+        read-idle-timeout: 180s
+        connect-timeout: 180s
+        read-timeout: 180s
+
+      proxy:
         read-idle-timeout: 180s
         connect-timeout: 180s
         read-timeout: 180s
@@ -119,9 +145,9 @@ kestra:
       multipleconditions:
         table: "multipleconditions"
         cls: io.kestra.core.models.triggers.multipleflows.MultipleConditionWindow
-      workertaskexecutions:
-        table: "workertaskexecutions"
-        cls: io.kestra.core.runners.WorkerTaskExecution
+      subflow_executions:
+        table: "subflow_executions"
+        cls: io.kestra.core.runners.SubflowExecution
       executorstate:
         table: "executorstate"
         cls: io.kestra.core.runners.ExecutorState
@@ -140,6 +166,9 @@ kestra:
       workerjobrunning:
         cls: io.kestra.core.runners.WorkerJobRunning
         table: "worker_job_running"
+      executionqueued:
+        table: "execution_queued"
+        cls: io.kestra.core.runners.ExecutionQueued
 
     queues:
       min-poll-interval: 25ms
@@ -155,10 +184,20 @@ kestra:
     repositories:
       central:
         url: https://repo.maven.apache.org/maven2/
-
+    configurations:
+      - type: io.kestra.core.tasks.flows.Subflow
+        values:
+          outputs:
+            enabled: true # backward-compatibility with version prior to v0.15.0
+      - type: io.kestra.core.tasks.flows.Flow
+        values:
+          outputs:
+            enabled: true # backward-compatibility with version prior to v0.15.0
+      - type: io.kestra.core.models.triggers.types.Schedule
+        values:
+          recoverMissedSchedules: ALL
   variables:
     env-vars-prefix: KESTRA_
-    disable-handlebars: true
     cache-enabled: true
     cache-size: 1000
 
@@ -166,12 +205,6 @@ kestra:
     prefix: kestra
 
   server:
-    access-log:
-      enabled: true
-      name: io.kestra.webserver.access
-      format: "[Date: {}] [Duration: {} ms] [Method: {}] [Url: {}] [Status: {}] [Length: {}] [Ip: {}] [Port: {}]"
-      filters:
-        - ".*\\[Url: /api/.*"
     basic-auth:
       enabled: false
       # These URLs will not be authenticated, by default we open some of the Micronaut default endpoints but not all for security reasons

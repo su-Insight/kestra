@@ -8,7 +8,8 @@
             :restore-url="false"
             :statuses="['FAILED', 'KILLED', 'WARNING']"
             embed
-            :hidden="['id', 'state.endDate', 'triggers', 'selection', 'labels', 'inputs', 'taskRunList.taskId']"
+            :topbar="false"
+            :hidden="['id', 'state.endDate', 'triggers', 'selection', 'labels', 'inputs', 'taskRunList.taskId' , 'flowRevision']"
         />
     </el-card>
 </template>

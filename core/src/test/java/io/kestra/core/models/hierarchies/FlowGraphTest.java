@@ -4,12 +4,16 @@ import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
+import io.kestra.core.models.triggers.Trigger;
+import io.kestra.core.repositories.TriggerRepositoryInterface;
 import io.kestra.core.runners.AbstractMemoryRunnerTest;
 import io.kestra.core.serializers.YamlFlowParser;
 import io.kestra.core.services.GraphService;
+import io.kestra.core.tasks.flows.Subflow;
 import io.kestra.core.tasks.flows.Switch;
 import io.kestra.core.utils.GraphUtils;
 import io.kestra.core.utils.TestsUtils;
+import io.micronaut.data.model.Pageable;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +33,9 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
 
     @Inject
     private GraphService graphService;
+
+    @Inject
+    private TriggerRepositoryInterface triggerRepositoryInterface;
 
     @Test
     void simple() throws IllegalVariableEvaluationException {
@@ -204,11 +211,17 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
     @Test
     void trigger() throws IllegalVariableEvaluationException {
         Flow flow = this.parse("flows/valids/trigger-flow-listener.yaml");
-        FlowGraph flowGraph = GraphUtils.flowGraph(flow, null);
+        triggerRepositoryInterface.save(
+            Trigger.of(flow, flow.getTriggers().get(0)).toBuilder().disabled(true).build()
+        );
+
+        FlowGraph flowGraph = graphService.flowGraph(flow, null);
 
         assertThat(flowGraph.getNodes().size(), is(6));
         assertThat(flowGraph.getEdges().size(), is(5));
         assertThat(flowGraph.getClusters().size(), is(1));
+        AbstractGraph triggerGraph = flowGraph.getNodes().stream().filter(e -> e instanceof GraphTrigger).findFirst().orElseThrow();
+        assertThat(((GraphTrigger) triggerGraph).getTrigger().getDisabled(), is(true));
     }
 
     @Test
@@ -236,9 +249,9 @@ class FlowGraphTest extends AbstractMemoryRunnerTest {
         assertThat(flowGraph.getEdges().size(), is(20));
         assertThat(flowGraph.getClusters().size(), is(3));
 
-        assertThat(((SubflowGraphTask) ((SubflowGraphCluster) cluster(flowGraph, "root\\.launch").getCluster()).getTaskNode()).getTask().getFlowId(), is("switch"));
+        assertThat(((SubflowGraphTask) ((SubflowGraphCluster) cluster(flowGraph, "root\\.launch").getCluster()).getTaskNode()).getExecutableTask().subflowId().flowId(), is("switch"));
         SubflowGraphTask subflowGraphTask = (SubflowGraphTask) nodeByUid(flowGraph, "root.launch");
-        assertThat(subflowGraphTask.getTask(), instanceOf(io.kestra.core.tasks.flows.Flow.class));
+        assertThat(subflowGraphTask.getTask(), instanceOf(Subflow.class));
         assertThat(subflowGraphTask.getRelationType(), is(RelationType.SEQUENTIAL));
 
         GraphTask switchNode = (GraphTask) nodeByUid(flowGraph, "root.launch.parent-seq");
