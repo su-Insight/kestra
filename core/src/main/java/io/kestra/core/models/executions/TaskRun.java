@@ -1,5 +1,7 @@
 package io.kestra.core.models.executions;
 
+import io.kestra.core.models.TenantInterface;
+import io.swagger.v3.oas.annotations.Hidden;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -15,13 +17,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 
 @ToString
 @EqualsAndHashCode
 @AllArgsConstructor
 @Getter
 @Builder(toBuilder = true)
-public class TaskRun {
+public class TaskRun implements TenantInterface {
+    @Hidden
+    @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*")
     String tenantId;
 
     @NotNull
@@ -41,6 +46,7 @@ public class TaskRun {
 
     String parentTaskRunId;
 
+    @With
     String value;
 
     @With
@@ -52,11 +58,19 @@ public class TaskRun {
     @NotNull
     State state;
 
+    @With
+    Integer iteration;
+
     public void destroyOutputs() {
         // DANGER ZONE: this method is only used to deals with issues with messages too big that must be stripped down
         // to avoid crashing the platform. Don't use it for anything else.
         this.outputs = Collections.emptyMap();
         this.state = this.state.withState(State.Type.FAILED);
+    }
+
+    @Deprecated
+    public void setItems(String items) {
+        // no-op for backward compatibility
     }
 
     public TaskRun withState(State.Type state) {
@@ -71,7 +85,29 @@ public class TaskRun {
             this.value,
             this.attempts,
             this.outputs,
-            this.state.withState(state)
+            this.state.withState(state),
+            this.iteration
+        );
+    }
+
+    public TaskRun fail() {
+        var attempt = TaskRunAttempt.builder().state(new State(State.Type.FAILED)).build();
+        List<TaskRunAttempt> newAttempts = this.attempts == null ? new ArrayList<>(1) : this.attempts;
+        newAttempts.add(attempt);
+
+        return new TaskRun(
+            this.tenantId,
+            this.id,
+            this.executionId,
+            this.namespace,
+            this.flowId,
+            this.taskId,
+            this.parentTaskRunId,
+            this.value,
+            newAttempts,
+            this.outputs,
+            this.state.withState(State.Type.FAILED),
+            this.iteration
         );
     }
 
@@ -88,6 +124,7 @@ public class TaskRun {
             .attempts(this.getAttempts())
             .outputs(this.getOutputs())
             .state(state == null ? this.getState() : state)
+            .iteration(this.getIteration())
             .build();
     }
 
@@ -128,7 +165,7 @@ public class TaskRun {
     public TaskRun onRunningResend() {
         TaskRunBuilder taskRunBuilder = this.toBuilder();
 
-        if (taskRunBuilder.attempts == null || taskRunBuilder.attempts.size() == 0) {
+        if (taskRunBuilder.attempts == null || taskRunBuilder.attempts.isEmpty()) {
             taskRunBuilder.attempts = new ArrayList<>();
 
             taskRunBuilder.attempts.add(TaskRunAttempt.builder()
@@ -154,10 +191,9 @@ public class TaskRun {
     }
 
     public boolean isSame(TaskRun taskRun) {
-        return this.getId().equals(taskRun.getId()) && (
-            (this.getValue() == null && taskRun.getValue() == null) ||
-                (this.getValue() != null && this.getValue().equals(taskRun.getValue()))
-        );
+        return this.getId().equals(taskRun.getId()) &&
+            ((this.getValue() == null && taskRun.getValue() == null) || (this.getValue() != null && this.getValue().equals(taskRun.getValue()))) &&
+            ((this.getIteration() == null && taskRun.getIteration() == null) || (this.getIteration() != null && this.getIteration().equals(taskRun.getIteration()))) ;
     }
 
     public String toString(boolean pretty) {
@@ -172,7 +208,7 @@ public class TaskRun {
             ", parentTaskRunId=" + this.getParentTaskRunId() +
             ", state=" + this.getState().getCurrent().toString() +
             ", outputs=" + this.getOutputs() +
-            ", attemps=" + this.getAttempts() +
+            ", attempts=" + this.getAttempts() +
             ")";
     }
 

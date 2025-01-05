@@ -1,5 +1,5 @@
 <template>
-    <top-nav-bar v-if="!embed" :title="routeInfo.title">
+    <top-nav-bar v-if="topbar" :title="routeInfo.title">
         <template #additional-right v-if="displayButtons">
             <ul>
                 <template v-if="$route.name === 'flows/update'">
@@ -18,9 +18,9 @@
             </ul>
         </template>
     </top-nav-bar>
-    <div :class="{'mt-3': !embed}" v-if="ready">
+    <div :class="{'mt-3': topbar}" v-if="ready">
         <data-table @page-changed="onPageChanged" ref="dataTable" :total="total" :size="pageSize" :page="pageNumber">
-            <template #navbar v-if="embed === false || filter">
+            <template #navbar v-if="isDisplayedTop">
                 <el-form-item>
                     <search-field />
                 </el-form-item>
@@ -28,7 +28,7 @@
                     <namespace-select
                         data-type="flow"
                         v-if="$route.name !== 'flows/update'"
-                        :value="$route.query.namespace"
+                        :value="namespace"
                         @update:model-value="onDataTableValue('namespace', $event)"
                     />
                 </el-form-item>
@@ -62,6 +62,14 @@
                     </el-select>
                 </el-form-item>
                 <el-form-item>
+                    <el-input
+                        :placeholder="$t('trigger execution id')"
+                        clearable
+                        :model-value="$route.query.triggerExecutionId"
+                        @update:model-value="onDataTableValue('triggerExecutionId', $event)"
+                    />
+                </el-form-item>
+                <el-form-item>
                     <label-filter
                         :model-value="$route.query.labels"
                         @update:model-value="onDataTableValue('labels', $event)"
@@ -72,7 +80,7 @@
                 </el-form-item>
             </template>
 
-            <template #top v-if="embed === false">
+            <template #top v-if="isDisplayedTop">
                 <state-global-chart
                     v-if="daily"
                     class="mb-4"
@@ -80,6 +88,8 @@
                     :data="daily"
                     :start-date="startDate"
                     :end-date="endDate"
+                    :namespace="namespace"
+                    :flow-id="flowId"
                 />
             </template>
 
@@ -315,10 +325,24 @@
                 type: Boolean,
                 default: false
             },
+            topbar: {
+                type: Boolean,
+                default: true
+            },
             filter: {
                 type: Boolean,
                 default: false
-            }
+            },
+            namespace: {
+                type: String,
+                required: false,
+                default: undefined
+            },
+            flowId: {
+                type: String,
+                required: false,
+                default: undefined
+            },
         },
         data() {
             return {
@@ -330,47 +354,58 @@
                 optionalColumns: [
                     {
                         label: "start date",
-                        prop: "state.startDate"
+                        prop: "state.startDate",
+                        default: true
                     },
                     {
                         label: "end date",
-                        prop: "state.endDate"
+                        prop: "state.endDate",
+                        default: true
                     },
                     {
                         label: "duration",
-                        prop: "state.duration"
+                        prop: "state.duration",
+                        default: true
                     },
                     {
                         label: "state",
-                        prop: "state.current"
+                        prop: "state.current",
+                        default: true
                     },
                     {
                         label: "triggers",
-                        prop: "triggers"
+                        prop: "triggers",
+                        default: true
                     },
                     {
                         label: "labels",
-                        prop: "labels"
+                        prop: "labels",
+                        default: true
                     },
                     {
                         label: "inputs",
-                        prop: "inputs"
+                        prop: "inputs",
+                        default: false
                     },
                     {
                         label: "namespace",
-                        prop: "namespace"
+                        prop: "namespace",
+                        default: true
                     },
                     {
                         label: "flow",
-                        prop: "flowId"
+                        prop: "flowId",
+                        default: true
                     },
                     {
                         label: "revision",
-                        prop: "flowRevision"
+                        prop: "flowRevision",
+                        default: false
                     },
                     {
                         label: "task id",
-                        prop: "taskRunList.taskId"
+                        prop: "taskRunList.taskId",
+                        default: false
                     }
                 ],
                 displayColumns: [],
@@ -384,7 +419,7 @@
                 this.optionalColumns = this.optionalColumns.filter(col => col.prop !== "namespace" && col.prop !== "flowId")
             }
             this.displayColumns = localStorage.getItem(this.storageKey)?.split(",")
-                || this.optionalColumns.map(col => col.prop);
+                || this.optionalColumns.filter(col => col.default).map(col => col.prop);
         },
         computed: {
             ...mapState("execution", ["executions", "total"]),
@@ -414,18 +449,21 @@
                 return this.canDelete || this.canUpdate;
             },
             canUpdate() {
-                return this.user && this.user.isAllowed(permission.EXECUTION, action.UPDATE, this.$route.query.namespace);
+                return this.user && this.user.isAllowed(permission.EXECUTION, action.UPDATE, this.namespace);
             },
             canDelete() {
-                return this.user && this.user.isAllowed(permission.EXECUTION, action.DELETE, this.$route.query.namespace);
+                return this.user && this.user.isAllowed(permission.EXECUTION, action.DELETE, this.namespace);
             },
             isAllowedEdit() {
                 return this.user.isAllowed(permission.FLOW, action.UPDATE, this.flow.namespace);
+            },
+            isDisplayedTop() {
+                return this.embed === false || this.filter
             }
         },
         methods: {
             onDisplayColumnsChange(event) {
-                localStorage.setItem("displayExecutionsColumns", event);
+                localStorage.setItem(this.storageKey, event);
                 this.displayColumns = event;
             },
             displayColumn(column) {
@@ -457,15 +495,18 @@
                     delete queryFilter["endDate"];
                 }
 
-                if (this.$route.name === "flows/update") {
-                    queryFilter["namespace"] = this.$route.params.namespace;
-                    queryFilter["flowId"] = this.$route.params.id;
+                if (this.namespace) {
+                    queryFilter["namespace"] = this.namespace;
+                }
+
+                if (this.flowId) {
+                    queryFilter["flowId"] = this.flowId;
                 }
 
                 return _merge(base, queryFilter)
             },
             loadData(callback) {
-                if (this.embed === false) {
+                if (this.isDisplayedTop) {
                     this.dailyReady = false;
 
                     this.$store
@@ -580,7 +621,8 @@
                     name: "flows/update", params: {
                         namespace: this.flow.namespace,
                         id: this.flow.id,
-                        tab: "editor"
+                        tab: "editor",
+                        tenant: this.$route.params.tenant
                     }
                 })
             },

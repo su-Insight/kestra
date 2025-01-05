@@ -141,10 +141,6 @@
                         name: "executions",
                         component: FlowExecutions,
                         title: this.$t("executions"),
-                        props: {
-                            expandedSubflows: this.expandedSubflows,
-                            isReadOnly: this.deleted
-                        },
                     });
                 }
 
@@ -197,7 +193,7 @@
                         name: "dependencies",
                         component: FlowDependencies,
                         title: this.$t("dependencies"),
-                        count: this.depedenciesCount
+                        count: this.depedenciesCount===0?0:this.depedenciesCount-1
                     })
                 }
                 return tabs;
@@ -218,7 +214,8 @@
                     name: "flows/update", params: {
                         namespace: this.flow.namespace,
                         id: this.flow.id,
-                        tab: "editor"
+                        tab: "editor",
+                        tenant: this.$route.params.tenant
                     }
                 })
             },

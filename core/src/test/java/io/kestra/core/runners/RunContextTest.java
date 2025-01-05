@@ -31,6 +31,7 @@ import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Property(name = "kestra.tasks.tmp-dir.path", value = "/tmp/sub/dir/tmp/")
 class RunContextTest extends AbstractMemoryRunnerTest {
@@ -58,7 +59,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
         Execution execution = runnerUtils.runOne(null, "io.kestra.tests", "logs");
 
-        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getTaskRunList(), hasSize(4));
 
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(0).getId()));
         assertThat(matchingLog, notNullValue());
@@ -74,6 +75,9 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(matchingLog, notNullValue());
         assertThat(matchingLog.getLevel(), is(Level.ERROR));
         assertThat(matchingLog.getMessage(), is("third logs"));
+
+        matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(3).getId()));
+        assertThat(matchingLog, nullValue());
     }
 
     @Test
@@ -145,13 +149,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         p.destroy();
 
         URI uri = runContext.putTempFile(path.toFile());
-        assertThat(storageInterface.size(null, uri), is(size + 1));
-    }
-
-    @Test
-    void invalidTaskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/invalid-task-defaults.yaml")));
-        taskDefaultsCaseTest.invalidTaskDefaults();
+        assertThat(storageInterface.getAttributes(null, uri).getSize(), is(size + 1));
     }
 
     @Test
@@ -189,5 +187,24 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         assertThat(runContext.fileExtension(""), nullValue());
         assertThat(runContext.fileExtension("/file/hello"), nullValue());
         assertThat(runContext.fileExtension("/file/hello.txt"), is(".txt"));
+    }
+
+    @Test
+    void resolve() {
+        RunContext runContext = runContextFactory.of();
+        String baseDir = runContext.tempDir().toString();
+
+        Path path = runContext.resolve(Path.of("file.txt"));
+        assertThat(path.toString(), is(baseDir + "/file.txt"));
+
+        path = runContext.resolve(Path.of("subdir/file.txt"));
+        assertThat(path.toString(), is(baseDir + "/subdir/file.txt"));
+
+        path = runContext.resolve(null);
+        assertThat(path.toString(), is(baseDir));
+
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("/etc/passwd")));
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("../../etc/passwd")));
+        assertThrows(IllegalArgumentException.class, () -> runContext.resolve(Path.of("subdir/../../../etc/passwd")));
     }
 }
