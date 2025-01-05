@@ -1,6 +1,7 @@
 package io.kestra.core.runners;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableMap;
@@ -8,6 +9,7 @@ import com.google.common.collect.Lists;
 import io.kestra.core.encryption.EncryptionService;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.metrics.MetricRegistry;
+import io.kestra.core.models.Plugin;
 import io.kestra.core.models.executions.AbstractMetricEntry;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
@@ -15,9 +17,9 @@ import io.kestra.core.models.executions.TaskRun;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.Input;
 import io.kestra.core.models.flows.input.SecretInput;
-import io.kestra.core.models.script.ScriptRunner;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.models.tasks.common.EncryptedString;
+import io.kestra.core.models.tasks.runners.TaskRunner;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.plugins.PluginConfigurations;
@@ -61,7 +63,7 @@ public class RunContext {
     private Map<String, Object> variables;
     private List<AbstractMetricEntry<?>> metrics = new ArrayList<>();
     private RunContextLogger runContextLogger;
-    private final List<WorkerTaskResult> dynamicWorkerTaskResult = new ArrayList<>();
+    private List<WorkerTaskResult> dynamicWorkerTaskResult = new ArrayList<>();
     protected transient Path temporaryDirectory;
     private String triggerExecutionId;
     private Storage storage;
@@ -69,7 +71,7 @@ public class RunContext {
     private Optional<String> secretKey;
 
     /**
-     * Only used by {@link io.kestra.core.models.triggers.types.Flow}
+     * Only used by {@link io.kestra.plugin.core.trigger.Flow}
      *
      * @param applicationContext the current {@link ApplicationContext}
      * @param flow the current {@link Flow}
@@ -103,7 +105,7 @@ public class RunContext {
         this.initBean(applicationContext);
         this.initLogger(taskRun, task);
         this.initContext(flow, task, execution, taskRun, decryptVariables);
-        this.initPluginConfiguration(applicationContext, task.getType());
+        this.initPluginConfiguration(applicationContext, task.getClass(), task.getType());
     }
 
     /**
@@ -115,7 +117,7 @@ public class RunContext {
         this.initBean(applicationContext);
         this.initLogger(flow, trigger);
         this.variables = this.variables(flow, null, null, null, trigger);
-        this.initPluginConfiguration(applicationContext, trigger.getType());
+        this.initPluginConfiguration(applicationContext, trigger.getClass(), trigger.getType());
     }
 
     /**
@@ -144,9 +146,28 @@ public class RunContext {
         this.pluginConfiguration = Collections.emptyMap();
     }
 
-    private void initPluginConfiguration(ApplicationContext applicationContext, String plugin) {
+    private RunContext(final ApplicationContext context) {
+        this.applicationContext = context;
+        this.initBean(context);
+    }
+
+    @VisibleForTesting
+    void initPluginConfiguration(ApplicationContext applicationContext, Class<? extends Plugin> plugin, String type) {
         this.pluginConfiguration = applicationContext.findBean(PluginConfigurations.class)
-            .map(pluginConfigurations -> pluginConfigurations.getConfigurationByPluginType(plugin))
+            .map(pluginConfigurations -> {
+                Map<String, Object> configuration = pluginConfigurations.getConfigurationByPluginType(type);
+                if (configuration.isEmpty()) {
+                    // let's check if the plugin-configuration was provided using type alias.
+                    Set<String> aliases = Plugin.getAliases(plugin);
+                    for (String alias: aliases) {
+                        configuration = pluginConfigurations.getConfigurationByPluginType(alias);
+                        if (!configuration.isEmpty()) {
+                            break; // non-empty configuration was found for a plugin alias.
+                        }
+                    }
+                }
+                return configuration;
+            })
             .map(Collections::unmodifiableMap)
             .orElseThrow();
     }
@@ -170,7 +191,10 @@ public class RunContext {
 
     private void initContext(Flow flow, Task task, Execution execution, TaskRun taskRun, boolean decryptVariables) {
         this.variables = this.variables(flow, task, execution, taskRun, null, decryptVariables);
+        initStorage(taskRun);
+    }
 
+    private void initStorage(TaskRun taskRun) {
         if (taskRun != null && this.storageInterface != null) {
             this.storage = new InternalStorage(
                 logger(),
@@ -237,6 +261,7 @@ public class RunContext {
         return triggerExecutionId;
     }
 
+    @JsonInclude
     public Map<String, Object> getVariables() {
         return variables;
     }
@@ -307,6 +332,7 @@ public class RunContext {
                 executionMap.put("originalId", execution.getOriginalId());
             }
 
+
             builder
                 .put("execution", executionMap.build());
 
@@ -352,12 +378,13 @@ public class RunContext {
             if (execution.getLabels() != null) {
                 builder.put("labels", execution.getLabels()
                     .stream()
-                    .filter(label -> label.value() != null)
+                    .filter(label -> label.value() != null && label.key() != null)
                     .map(label -> new AbstractMap.SimpleEntry<>(
                         label.key(),
                         label.value()
                     ))
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
+                    // using an accumulator in case labels with the same key exists: the first is kept
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (first, second) -> first))
                 );
             }
 
@@ -407,6 +434,10 @@ public class RunContext {
 
         if (taskRun.getValue() != null) {
             builder.put("value", taskRun.getValue());
+        }
+
+        if (taskRun.getIteration() != null) {
+            builder.put("iteration", taskRun.getIteration());
         }
 
         return builder.build();
@@ -489,7 +520,7 @@ public class RunContext {
             context,
             storageInterface
         );
-        this.initPluginConfiguration(applicationContext, trigger.getType());
+        this.initPluginConfiguration(applicationContext, trigger.getClass(), trigger.getType());
         return this;
     }
 
@@ -499,10 +530,7 @@ public class RunContext {
 
         final TaskRun taskRun = workerTask.getTaskRun();
 
-        this.initLogger(taskRun, workerTask.getTask());
-
-        Map<String, Object> clone = new HashMap<>(this.variables);
-
+        final Map<String, Object> clone = new HashMap<>(this.variables);
         clone.remove("taskrun");
         clone.put("taskrun", this.variables(taskRun));
 
@@ -519,36 +547,44 @@ public class RunContext {
             clone.put("taskrun", taskrun);
         }
 
-        clone.put("addSecretConsumer", (Consumer<String>) s -> runContextLogger.usedSecret(s));
+        final RunContext newContext = new RunContext(applicationContext);
+        clone.put("addSecretConsumer", (Consumer<String>) s -> newContext.runContextLogger.usedSecret(s));
 
-        this.variables = ImmutableMap.copyOf(clone);
-        this.storage = new InternalStorage(logger(), StorageContext.forTask(taskRun), storageInterface);
-        this.initPluginConfiguration(applicationContext, workerTask.getTask().getType());
-        return this;
+        newContext.variables = ImmutableMap.copyOf(clone);
+        newContext.temporaryDirectory = this.tempDir();
+        newContext.dynamicWorkerTaskResult = this.dynamicWorkerResults();
+        newContext.initLogger(taskRun, workerTask.getTask());
+        newContext.initStorage(taskRun);
+        newContext.initPluginConfiguration(applicationContext, workerTask.getTask().getClass(), workerTask.getTask().getType());
+        return newContext;
     }
 
     public RunContext forWorker(ApplicationContext applicationContext, WorkerTrigger workerTrigger) {
         this.initBean(applicationContext);
         this.initLogger(workerTrigger.getTriggerContext(), workerTrigger.getTrigger());
 
+        Map<String, Object> clone = new HashMap<>(this.variables);
+        clone.put("addSecretConsumer", (Consumer<String>) s -> runContextLogger.usedSecret(s));
+        this.variables = ImmutableMap.copyOf(clone);
+
         // Mutability hack to update the triggerExecutionId for each evaluation on the worker
         return forScheduler(workerTrigger.getTriggerContext(), workerTrigger.getTrigger());
     }
 
     public RunContext forWorkingDirectory(ApplicationContext applicationContext, WorkerTask workerTask) {
-        forWorker(applicationContext, workerTask);
+        RunContext newContext = forWorker(applicationContext, workerTask);
 
-        Map<String, Object> clone = new HashMap<>(this.variables);
+        Map<String, Object> clone = new HashMap<>(newContext.variables);
 
         clone.put("workerTaskrun", clone.get("taskrun"));
 
-        this.variables = ImmutableMap.copyOf(clone);
+        newContext.variables = ImmutableMap.copyOf(clone);
 
-        return this;
+        return newContext;
     }
 
-    public RunContext forScriptRunner(ScriptRunner scriptRunner) {
-        this.initPluginConfiguration(applicationContext, scriptRunner.getType());
+    public RunContext forTaskRunner(TaskRunner taskRunner) {
+        this.initPluginConfiguration(applicationContext, taskRunner.getClass(), taskRunner.getType());
 
         return this;
     }
@@ -590,12 +626,22 @@ public class RunContext {
     }
 
     public Map<String, String> renderMap(Map<String, String> inline) throws IllegalVariableEvaluationException {
+        return renderMap(inline, Collections.emptyMap());
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, String> renderMap(Map<String, String> inline, Map<String, Object> variables) throws IllegalVariableEvaluationException {
+        if (inline == null) {
+            return null;
+        }
+
+        Map<String, Object> allVariables = mergeWithNullableValues(this.variables, variables);
         return inline
             .entrySet()
             .stream()
             .map(throwFunction(entry -> new AbstractMap.SimpleEntry<>(
-                this.render(entry.getKey(), variables),
-                this.render(entry.getValue(), variables)
+                this.render(entry.getKey(), allVariables),
+                this.render(entry.getValue(), allVariables)
             )))
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
@@ -860,6 +906,22 @@ public class RunContext {
         return tempFile;
     }
 
+    public Path file(String filename) throws IOException {
+        return this.file(null, filename);
+    }
+
+    public Path file(byte[] content, String filename) throws IOException {
+        Path newFilePath = this.resolve(Path.of(filename));
+        Files.createDirectories(newFilePath.getParent());
+        Path file = Files.createFile(newFilePath);
+
+        if (content != null) {
+            Files.write(file, content);
+        }
+
+        return file;
+    }
+
     /**
      * Get the file extension including the '.' to be used with the various methods that took a suffix.
      * @param fileName the name of the file
@@ -874,7 +936,7 @@ public class RunContext {
         try {
             this.cleanTemporaryDirectory();
         } catch (IOException ex) {
-            logger().warn("Unable to cleanup worker task", ex);
+            new RunContextLogger().logger().warn("Unable to cleanup worker task", ex);
         }
     }
 
@@ -891,6 +953,15 @@ public class RunContext {
         // normally only tests should not have the flow variable
         return flow != null ? flow.get("tenantId") : null;
     }
+
+    @SuppressWarnings("unchecked")
+    public FlowInfo flowInfo() {
+        Map<String, Object> flow = (Map<String, Object>) this.getVariables().get("flow");
+        // normally only tests should not have the flow variable
+        return flow == null ? null : new FlowInfo((String) flow.get("tenantId"), (String) flow.get("namespace"), (String) flow.get("id"), (Integer) flow.get("revision"));
+    }
+
+    public record FlowInfo(String tenantId, String namespace, String id, Integer revision) {}
 
     /**
      * Returns the value of the specified configuration property for the plugin type

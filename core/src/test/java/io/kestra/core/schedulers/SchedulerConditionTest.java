@@ -1,14 +1,15 @@
 package io.kestra.core.schedulers;
 
-import io.kestra.core.models.conditions.types.DayWeekInMonthCondition;
+import io.kestra.plugin.core.condition.DayWeekInMonthCondition;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.flows.State;
 import io.kestra.core.models.triggers.Trigger;
-import io.kestra.core.models.triggers.types.Schedule;
+import io.kestra.plugin.core.trigger.Schedule;
 import io.kestra.core.runners.FlowListeners;
 import io.kestra.core.runners.TestMethodScopedWorker;
 import io.kestra.core.runners.Worker;
+import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -79,7 +80,7 @@ class SchedulerConditionTest extends AbstractSchedulerTest {
             applicationContext,
             flowListenersServiceSpy,
             triggerState);
-             Worker worker = new TestMethodScopedWorker(applicationContext, 8, null)) {
+             Worker worker = applicationContext.createBean(TestMethodScopedWorker.class, IdUtils.create(), 8, null)) {
             // wait for execution
             Runnable assertionStop = executionQueue.receive(SchedulerConditionTest.class, either -> {
                 Execution execution = either.getLeft();

@@ -10,7 +10,6 @@
     "revision": "Revision",
     "Language": "Language",
     "Set default page": "Set default page",
-    "settings": "Settings",
     "theme": "Theme",
     "flows": "Flows",
     "flow": "Flow",
@@ -41,6 +40,7 @@
     "is deprecated": "is deprecated",
     "success": "Success",
     "save": "Save",
+    "save task": "Save Task",
     "saved": "Successfully saved",
     "saved done": "<em>{name}</em> is successfully saved",
     "multiple saved done": "{name} have been saved",
@@ -185,6 +185,7 @@
     "killed confirm": "Are you sure to kill execution <code>{id}</code>?",
     "killed done": "Execution is queued for killing",
     "resume": "Resume",
+    "resumed title": "Resume execution <code>{id}</code>",
     "resumed confirm": "Are you sure to resume execution <code>{id}</code>?",
     "resumed done": "Execution is resumed",
     "toggle output": "Toggle outputs",
@@ -278,7 +279,7 @@
     "template": "Template",
     "template creation": "Template creation",
     "templates": "Templates",
-    "templates deprecated": "Templates are deprecated. Please use subflows instead. See the <a href=\"https://kestra.io/docs/migrations/templates\" target=\"_blank\">Migrations section</a> explaining how you can migrate from templates to subflows.",
+    "templates deprecated": "Templates are deprecated. Please use subflows instead. See the <a href=\"https://kestra.io/docs/migration-guide/templates\" target=\"_blank\">Migrations section</a> explaining how you can migrate from templates to subflows.",
     "no result": "No results for the current selection",
     "trigger": "Trigger",
     "triggers": "Triggers",
@@ -397,11 +398,14 @@
     "onboarding-content": {
       "step1": {
         "title": "Welcome to Kestra!",
-        "content": "Kestra uses a declarative interface to create a language-agnostic workflow definition in a YAML file format. Follow the next steps to create your first workflow."
+        "content": "We're thrilled to have you here.<br />Let's create your first flow.",
+        "action": "Let's go!"
       },
       "step2": {
-        "title": "This is the built-in code editor",
-        "content": "You can edit your flow directly here from the UI. To add comments to your code, use <code>#</code>. Kestra provides autocompletion for all workflow components, including tasks, triggers and inputs. Start typing and use the keyboard shortcut <kbd>CTRL or ⌘ + SPACE</kbd> to leverage the autocompletion feature."
+        "title": "Choose a use-case<br />and we'll show you how it's done!",
+        "content": "You can edit your flow directly here from the UI. To add comments to your code, use <code>#</code>. Kestra provides autocompletion for all workflow components, including tasks, triggers and inputs. Start typing and use the keyboard shortcut <kbd>CTRL or ⌘ + SPACE</kbd> to leverage the autocompletion feature.",
+        "action": "Next"
+
       },
       "step3": {
         "title": "Let's write your first flow!",
@@ -466,6 +470,7 @@
       "triggerSchedule1": "Here we use the 'Schedule' trigger to run the flow every minute."
     },
     "Skip tour": "Skip tour",
+    "Skip tutorial": "Skip Tutorial",
     "Next step": "Next step",
     "Previous step": "Previous step",
     "Finish": "Finish",
@@ -474,13 +479,7 @@
     "welcome aboard content": "Use our Guided Tour to create your first flow and check Blueprints to find more examples.",
     "welcome display require": "Run your <strong>first flow</strong> to get started",
     "welcome button create": "Create my first flow",
-    "get started": "Get started",
-    "get started content": "Check our documentation for a step-by-step walkthrough.",
-    "watch demo": "Take a product tour",
-    "watch demo content": "See the product tour video explaining key concepts.",
     "live help": "Live help",
-    "need help?": "Need help?",
-    "need help? content": "Need assistance with a specific feature or flow? Our developer community is here to help.",
     "show task documentation": "Show task documentation",
     "hide task documentation": "Hide task documentation",
     "show task documentation in editor": "Show task documentation in the editor",
@@ -518,7 +517,7 @@
     "can not save": "Can not save",
     "flow must have id and namespace": "Flow must have an id and a namespace.",
     "readonly property": "Read-only property",
-    "namespace and id readonly": "Namespace and id are read-only. They were reinitialized to their initial value.",
+    "namespace and id readonly": "The properties `namespace` and `id` cannot be changed — they are now set to their initial values. If you want to rename a flow or change its namespace, you can create a new flow and remove the old one.",
     "avg": "Average",
     "sum": "Sum",
     "min": "Min",
@@ -547,7 +546,7 @@
     "environment color setting": "Environment color",
     "slack support": "Ask any question via Slack",
     "join community": "Join the Community",
-    "reach us": "Reach out to us",
+    "reach us": "Talk to us",
     "new version": "New version {version} available!",
     "error detected": "Error(s) detected",
     "warning detected": "Warning(s) detected",
@@ -598,15 +597,63 @@
       }
     },
     "namespace files": {
+      "toggle": {
+        "show": "Show namespace files",
+        "hide": "Hide namespace files"
+      },
+      "filter": "Filter",
+      "no_items": {
+        "heading": "There are no files here!",
+        "paragraph": "Create or import your files to get started."
+      },
+      "tree": {
+        "expand": "Expand all folders",
+        "collapse": "Collapse all folders"
+      },
+      "create": {
+        "label": "Create",
+        "file": "Create file",
+        "folder": "Create folder"
+      },
+      "rename": {
+        "label": "Rename",
+        "file": "Rename file",
+        "folder": "Rename folder",
+        "new_file": "New name with extension:",
+        "new_folder": "New folder name:"
+      },
+      "delete": {
+        "label": "Delete",
+        "file": "Delete file",
+        "folder": "Delete folder"
+      },
       "import": {
-        "file": "Import from ZIP or add file(s)",
-        "folder": "Import from folder",
+        "import": "Import",
+        "file": "Import file",
+        "folder": "Import folder",
         "success": "File(s) successfully imported",
         "error": "Error(s) occurred while importing the file(s)"
       },
-      "export": "Export as a ZIP file"
+      "export": "Export namespace files",
+      "dialog": {
+        "name": {
+          "file": "Name with extension:",
+          "folder": "Folder name:"
+        },
+        "parent_folder": "Parent folder:",
+        "file_deletion": "Confirm file deletion",
+        "folder_deletion": "Confirm folder deletion",
+        "file_deletion_description": "Are you sure you want to delete this file?",
+        "folder_deletion_description": "Are you sure you want to delete this folder and all of its contents?",
+        "confirm": "Confirm"
+      },
+      "path": {
+        "copy": "Copy path",
+        "success": "Path copied to clipboard",
+        "error": "Error(s) occurred while copying the path to clipboard"
+      }
     },
-    "continue backfill":"Continue the backfill",
+    "continue backfill": "Continue the backfill",
     "delete backfill": "Delete the backfill",
     "pause backfill": "Pause the backfill",
     "backfill executions": "Backfill executions",
@@ -632,6 +679,120 @@
     },
     "true": "True",
     "false": "False",
-    "undefined": "Undefined"
+    "undefined": "Undefined",
+    "execution-include-non-terminated": "Include non-terminated executions?",
+    "execution-warn-deleting-still-running": "Executions still running will not be stopped and must be killed before being deleting.",
+    "originalCreatedDate": "Original creation date",
+    "welcome": {
+      "started": {
+        "title": "Get started in 3 easy steps"
+      },
+      "product-tour": {
+        "title": "Take a product tour"
+      },
+      "doc": {
+        "title": "Docs"
+      },
+      "need-help": {
+        "title": "Need help?"
+      }
+    },
+    "pluginPage": {
+      "title1": "Plugins are building blocks for your workflows.",
+      "title2": "Search for tasks and triggers to build your flow.",
+      "search": "Search across +{count} plugins"
+    },
+    "no inputs": "This flow has no inputs.",
+    "settings": {
+      "label": "Settings",
+      "blocks": {
+        "configuration": {
+          "label": "Main Configuration",
+          "fields": {
+            "default_namespace": "Default Namespace",
+            "log_level": "Default Log Level",
+            "log_display": "Default Log Display",
+            "execute_flow": "Execute the Flow"
+          }
+        },
+        "theme": {
+          "label": "Theme Preferences",
+          "fields": {
+            "mode": "Theme Mode",
+            "editor_theme": "Editor Theme",
+            "editor_font_size": "Editor Font Size",
+            "editor_font_family": "Editor Font Family",
+            "editor_folding_stratgy": "Editor Automatic Fold or Multi Lines",
+            "environment_name": "Environment Name",
+            "environment_color": "Environment Color"
+          }
+        },
+        "localization": {
+          "label": "Date and Time Settings",
+          "fields": {
+            "language": "Language",
+            "time_zone": "Time Zone",
+            "date_format": "Date Format"
+          }
+        },
+        "export": {
+          "label": "Export",
+          "fields": {
+            "flows": "Export All Flows",
+            "templates": "Export All Templates"
+          }
+        }
+      }
+    },
+    "onboarding": {
+      "next": "Next",
+      "previous": "Previous",
+      "finish": "Finish",
+      "skip": "Skip Tutorial",
+      "steps": {
+        "0": {
+          "title": "Welcome to Kestra!",
+          "content": "We're thrilled to have you here.<br />Let's create your first flow.",
+          "primary": "Let's go!"
+        },
+        "1": {
+          "title": "Choose a use-case<br />and we'll show you how it's done!",
+          "primary": "Next"
+        },
+        "2": {
+          "title": "Code Editor",
+          "content": "Your flow is written in YAML with autocompletion and syntax validation. So simple!",
+          "primary": "Next"
+        },
+        "3": {
+          "title": "Topology View",
+          "content": "The dependency view is updating in real time. Try adding a new task and see!",
+          "primary": "Next"
+        },
+        "4": {
+          "title": "It's time to run it.",
+          "content": "\"Execute\" to launch your flow."
+        },
+        "5": {
+          "title": "Confirm and launch!",
+          "content": "\"Execute\" and see your flow in action."
+        },
+        "6": {
+          "title": "You’re all set!",
+          "content": "Check the Logs and Outputs tabs to track your execution progress.<br /><br />Then, head over to the Flows page to explore other use cases.",
+          "primary": "Create a new flow",
+          "secondary": "Explore other Flows"
+        }
+      }
+    },
+    "enable concurrency": "Enable concurrency",
+    "auditlogs": "Audit Logs",
+    "iam": "IAM",
+    "tenant": "Tenant",
+    "tenants": "Tenants",
+    "ee-tooltip": {
+      "features-blocked": "This feature requires Enterprise Edition.",
+      "button": "Talk to us"
+    }
   }
 }

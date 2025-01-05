@@ -7,11 +7,10 @@ import io.kestra.cli.commands.plugins.PluginCommand;
 import io.kestra.cli.commands.servers.ServerCommand;
 import io.kestra.cli.commands.sys.SysCommand;
 import io.kestra.cli.commands.templates.TemplateCommand;
-import io.kestra.core.contexts.KestraClassLoader;
 import io.micronaut.configuration.picocli.MicronautFactory;
 import io.micronaut.configuration.picocli.PicocliRunner;
 import io.micronaut.context.ApplicationContext;
-import io.kestra.core.contexts.KestraApplicationContextBuilder;
+import io.micronaut.context.ApplicationContextBuilder;
 import io.micronaut.context.env.Environment;
 import io.micronaut.core.annotation.Introspected;
 import org.slf4j.bridge.SLF4JBridgeHandler;
@@ -61,9 +60,6 @@ public class App implements Callable<Integer> {
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
 
-        // Register a ClassLoader with isolation for plugins
-        Thread.currentThread().setContextClassLoader(KestraClassLoader.create(Thread.currentThread().getContextClassLoader()));
-
         // Init ApplicationContext
         ApplicationContext applicationContext = App.applicationContext(cls, args);
 
@@ -83,8 +79,11 @@ public class App implements Callable<Integer> {
      * @param args args passed to java app
      * @return the application context created
      */
-    protected static ApplicationContext applicationContext(Class<?> mainClass, String[] args) {
-        KestraApplicationContextBuilder builder = (KestraApplicationContextBuilder) new KestraApplicationContextBuilder()
+    protected static ApplicationContext applicationContext(Class<?> mainClass,
+                                                           String[] args) {
+
+        ApplicationContextBuilder builder = ApplicationContext
+            .builder()
             .mainClass(mainClass)
             .environments(Environment.CLI);
 
@@ -120,11 +119,7 @@ public class App implements Callable<Integer> {
                 });
 
             builder.properties(properties);
-
-            // add plugins registry if plugin path defined
-            builder.pluginRegistry(getPropertiesFromMethod(cls, "initPluginRegistry", commandLine.getCommandSpec().userObject()));
         }
-
         return builder.build();
     }
 

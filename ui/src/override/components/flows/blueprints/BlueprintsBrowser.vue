@@ -63,7 +63,7 @@
                         </div>
                         <div class="side buttons ms-auto">
                             <slot name="buttons" :blueprint="blueprint" />
-                            <el-tooltip v-if="embed" trigger="click" content="Copied" placement="left" :auto-close="2000">
+                            <el-tooltip v-if="embed" trigger="click" content="Copied" placement="left" :auto-close="2000" effect="light">
                                 <el-button
                                     @click.prevent.stop="copy(blueprint.id)"
                                     :icon="icon.ContentCopy"
@@ -143,12 +143,12 @@
             },
             async blueprintToEditor(blueprintId) {
                 localStorage.setItem(editorViewTypes.STORAGE_KEY, editorViewTypes.SOURCE_TOPOLOGY);
-                localStorage.setItem("autoRestore-creation_draft", (await this.$http.get(`${this.blueprintBaseUri}/${blueprintId}/flow`)).data);
                 this.$router.push({
                     name: "flows/create",
                     params: {
                         tenant: this.$route.params.tenant
-                    }
+                    },
+                    query: {blueprintId: blueprintId}
                 });
             },
             tagsToString(blueprintTags) {
@@ -320,6 +320,7 @@
     }
 
     .blueprints {
+        display: grid;
         width: 100%;
 
         .blueprint-card {

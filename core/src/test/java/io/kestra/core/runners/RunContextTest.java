@@ -4,6 +4,8 @@ import io.kestra.core.encryption.EncryptionService;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.metrics.MetricRegistry;
 import io.kestra.core.models.Label;
+import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.executions.LogEntry;
 import io.kestra.core.models.executions.TaskRun;
@@ -14,17 +16,30 @@ import io.kestra.core.models.flows.State;
 import io.kestra.core.models.flows.Type;
 import io.kestra.core.models.flows.input.StringInput;
 import io.kestra.core.models.tasks.common.EncryptedString;
+import io.kestra.core.models.triggers.AbstractTrigger;
+import io.kestra.core.models.triggers.PollingTriggerInterface;
+import io.kestra.core.models.triggers.TriggerContext;
+import io.kestra.core.plugins.PluginConfigurations;
 import io.kestra.core.queues.QueueFactoryInterface;
 import io.kestra.core.queues.QueueInterface;
+import io.kestra.core.runners.test.TaskWithAlias;
 import io.kestra.core.storages.StorageInterface;
-import io.kestra.core.tasks.test.PollingTrigger;
+import io.kestra.core.tasks.test.SleepTrigger;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.TestsUtils;
+import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.annotation.Property;
 import io.micronaut.context.annotation.Value;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import jakarta.validation.constraints.NotNull;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+import lombok.experimental.SuperBuilder;
 import org.exparity.hamcrest.date.ZonedDateTimeMatchers;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.slf4j.event.Level;
 
@@ -48,11 +63,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @Property(name = "kestra.tasks.tmp-dir.path", value = "/tmp/sub/dir/tmp/")
 class RunContextTest extends AbstractMemoryRunnerTest {
     @Inject
+    ApplicationContext applicationContext;
+
+    @Inject
     @Named(QueueFactoryInterface.WORKERTASKLOG_NAMED)
     QueueInterface<LogEntry> workerTaskLogQueue;
 
     @Inject
-    TaskDefaultsCaseTest taskDefaultsCaseTest;
+    PluginDefaultsCaseTest pluginDefaultsCaseTest;
 
     @Inject
     RunContextFactory runContextFactory;
@@ -65,6 +83,13 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
     @Value("${kestra.encryption.secret-key}")
     private String secretKey;
+
+    @Inject
+    @Named(QueueFactoryInterface.WORKERTASKLOG_NAMED)
+    private QueueInterface<LogEntry> logQueue;
+
+    @Inject
+    private PluginConfigurations pluginConfigurations;
 
     @Test
     void logs() throws TimeoutException {
@@ -84,7 +109,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(1).getId()));
         assertThat(matchingLog, notNullValue());
         assertThat(matchingLog.getLevel(), is(Level.WARN));
-        assertThat(matchingLog.getMessage(), is("second io.kestra.core.tasks.log.Log"));
+        assertThat(matchingLog.getMessage(), is("second io.kestra.plugin.core.log.Log"));
 
         matchingLog = TestsUtils.awaitLog(logs, log -> Objects.equals(log.getTaskRunId(), execution.getTaskRunList().get(2).getId()));
         assertThat(matchingLog, notNullValue());
@@ -140,8 +165,8 @@ class RunContextTest extends AbstractMemoryRunnerTest {
 
     @Test
     void taskDefaults() throws TimeoutException, IOException, URISyntaxException {
-        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/task-defaults.yaml")));
-        taskDefaultsCaseTest.taskDefaults();
+        repositoryLoader.load(Objects.requireNonNull(ListenersTest.class.getClassLoader().getResource("flows/tests/plugin-defaults.yaml")));
+        pluginDefaultsCaseTest.taskDefaults();
     }
 
     @Test
@@ -150,6 +175,15 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         Path path = runContext.tempFile();
 
         assertThat(path.toFile().getAbsolutePath().startsWith("/tmp/sub/dir/tmp/"), is(true));
+    }
+
+    @Test
+    void files() throws IOException {
+        RunContext runContext = runContextFactory.of();
+        Path path = runContext.file("folder/file.txt");
+
+        assertThat(path.toFile().getAbsolutePath().startsWith("/tmp/sub/dir/tmp/"), is(true));
+        assertThat(path.toFile().getAbsolutePath().endsWith("/folder/file.txt"), is(true));
     }
 
     @Test
@@ -163,7 +197,7 @@ class RunContextTest extends AbstractMemoryRunnerTest {
         p.waitFor();
         p.destroy();
 
-        URI uri = runContext.putTempFile(path.toFile());
+        URI uri = runContext.storage().putFile(path.toFile());
         assertThat(storageInterface.getAttributes(null, uri).getSize(), is(size + 1));
     }
 
@@ -266,10 +300,94 @@ class RunContextTest extends AbstractMemoryRunnerTest {
     @Test
     void withNullLabel() throws IllegalVariableEvaluationException {
         Flow flow = Flow.builder().id("triggerWithDefaultInput").namespace("io.kestra.test").revision(1).inputs(List.of(StringInput.builder().id("test").type(Type.STRING).defaults("test").build())).build();
-        Execution execution = Execution.builder().id(IdUtils.create()).flowId("triggerWithDefaultInput").namespace("io.kestra.test").state(new State()).labels(List.of(new Label("key", null))).build();
+        Execution execution = Execution.builder().id(IdUtils.create()).flowId("triggerWithDefaultInput").namespace("io.kestra.test").state(new State()).labels(List.of(new Label("key", null), new Label(null, "value"))).build();
 
         RunContext runContext = runContextFactory.of(flow, execution);
 
         assertThat(runContext.render("{{inputs.test}}"), is("test"));
+    }
+
+    @Test
+    void renderMap() throws IllegalVariableEvaluationException {
+        RunContext runContext = runContextFactory.of(Map.of(
+            "key", "default",
+            "value", "default"
+        ));
+
+        Map<String, String> rendered = runContext.renderMap(Map.of("{{key}}", "{{value}}"));
+        assertThat(rendered.get("default"), is("default"));
+
+        rendered = runContext.renderMap(Map.of("{{key}}", "{{value}}"), Map.of(
+            "key", "key",
+            "value", "value"
+        ));
+        assertThat(rendered.get("key"), is("value"));
+    }
+
+
+    @Test
+    void secretTrigger() throws IllegalVariableEvaluationException {
+        List<LogEntry> logs = new CopyOnWriteArrayList<>();
+        List<LogEntry> matchingLog;
+        logQueue.receive(either -> logs.add(either.getLeft()));
+
+        LogTrigger trigger = LogTrigger.builder()
+            .type(SleepTrigger.class.getName())
+            .id("unit-test")
+            .format("john {{ secret('PASSWORD') }} doe")
+            .build();
+
+        Map.Entry<ConditionContext, TriggerContext> mockedTrigger = TestsUtils.mockTrigger(runContextFactory, trigger);
+
+        WorkerTrigger workerTrigger = WorkerTrigger.builder()
+            .trigger(trigger)
+            .triggerContext(mockedTrigger.getValue())
+            .conditionContext(mockedTrigger.getKey())
+            .build();
+
+        RunContext runContext = mockedTrigger.getKey().getRunContext().forWorker(applicationContext, workerTrigger);
+        Optional<Execution> evaluate = trigger.evaluate(mockedTrigger.getKey().withRunContext(runContext), mockedTrigger.getValue());
+
+        matchingLog = TestsUtils.awaitLogs(logs, 3);
+        assertThat(matchingLog.stream().filter(logEntry -> logEntry.getLevel().equals(Level.INFO)).findFirst().orElse(null).getMessage(), is("john ******** doe"));
+    }
+
+    @Test
+    void shouldResolvePluginConfigurationGivenAlias() {
+        // Given
+        RunContext context = new RunContext(applicationContext, Map.of());
+        context.initPluginConfiguration(applicationContext, TaskWithAlias.class, new TaskWithAlias().getType());
+
+        // When
+        Optional<String> result = context.pluginConfiguration("prop0");
+        
+        // Then
+        String expected = (String) pluginConfigurations.getConfigurationByPluginType("io.kestra.core.runners.test.task.Alias").get("prop0");
+        Assertions.assertEquals(Optional.of(expected), result);
+    }
+
+
+    @SuperBuilder
+    @ToString
+    @EqualsAndHashCode
+    @Getter
+    @NoArgsConstructor
+    public static class LogTrigger extends AbstractTrigger implements PollingTriggerInterface {
+
+        @PluginProperty
+        @NotNull
+        private String format;
+
+        @Override
+        public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws IllegalVariableEvaluationException {
+            conditionContext.getRunContext().logger().info(conditionContext.getRunContext().render(format));
+
+            return Optional.empty();
+        }
+
+        @Override
+        public Duration getInterval() {
+            return null;
+        }
     }
 }
