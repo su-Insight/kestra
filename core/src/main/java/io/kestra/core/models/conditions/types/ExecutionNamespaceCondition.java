@@ -1,5 +1,7 @@
 package io.kestra.core.models.conditions.types;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import io.kestra.core.exceptions.IllegalConditionEvaluation;
 import io.kestra.core.exceptions.InternalException;
 import io.kestra.core.models.annotations.PluginProperty;
@@ -11,8 +13,9 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.conditions.Condition;
 import io.kestra.core.models.conditions.ConditionContext;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
+import java.util.Optional;
+import java.util.function.BiPredicate;
 
 @SuperBuilder
 @ToString
@@ -20,7 +23,7 @@ import javax.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Condition for an execution namespace"
+    title = "Condition for an execution namespace."
 )
 @Plugin(
     examples = {
@@ -30,8 +33,7 @@ import javax.validation.constraints.NotNull;
                 "- conditions:",
                 "    - type: io.kestra.core.models.conditions.types.ExecutionNamespaceCondition",
                 "      namespace: io.kestra.tests",
-                "      prefix: true",
-
+                "      comparison: PREFIX"
             }
         )
     }
@@ -39,32 +41,48 @@ import javax.validation.constraints.NotNull;
 public class ExecutionNamespaceCondition extends Condition {
     @NotNull
     @Schema(
-        description = "The namespace of the flow or the prefix if `prefix` is true"
+        title = "String against which to match the execution namespace depending on the provided comparison."
     )
     @PluginProperty
     private String namespace;
 
-    @Builder.Default
     @Schema(
-        description = "If we must look at the flow namespace by prefix (simple startWith case sensitive)"
+        title = "Comparison to use when checking if namespace matches. If not provided, it will use `EQUALS` by default."
     )
     @PluginProperty
-    private final Boolean prefix = false;
+    private Comparison comparison;
+
+    @Schema(
+        title = "Whether to look at the flow namespace by prefix. Shortcut for `comparison: PREFIX`.",
+        description = "Only used when `comparison` is not set"
+    )
+    @PluginProperty
+    @Builder.Default
+    private boolean prefix = false;
 
     @Override
     public boolean test(ConditionContext conditionContext) throws InternalException {
         if (conditionContext.getExecution() == null) {
-            throw new IllegalConditionEvaluation("Invalid condition with execution null");
+            throw new IllegalConditionEvaluation("Invalid condition with null execution");
         }
 
-        if (!prefix && conditionContext.getExecution().getNamespace().equals(this.namespace)) {
-            return  true;
+        return Optional.ofNullable(this.comparison).orElse(prefix ? Comparison.PREFIX : Comparison.EQUALS)
+            .test(conditionContext.getExecution().getNamespace(), this.namespace);
+    }
+
+    public enum Comparison {
+        EQUALS(String::equals),
+        PREFIX(String::startsWith),
+        SUFFIX(String::endsWith);
+        private final BiPredicate<String, String> checker;
+
+
+        Comparison(BiPredicate<String, String> checker) {
+            this.checker = checker;
         }
 
-        if (prefix && conditionContext.getExecution().getNamespace().startsWith(this.namespace)) {
-            return  true;
+        public boolean test(String actualNamespace, String matcher) {
+            return this.checker.test(actualNamespace, matcher);
         }
-
-        return false;
     }
 }

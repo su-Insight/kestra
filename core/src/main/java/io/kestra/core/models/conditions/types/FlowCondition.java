@@ -13,7 +13,7 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.conditions.Condition;
 import io.kestra.core.models.conditions.ConditionContext;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 @SuperBuilder
 @ToString
@@ -39,12 +39,12 @@ import javax.validation.constraints.NotNull;
 @Deprecated
 public class FlowCondition extends Condition {
     @NotNull
-    @Schema(title = "The namespace of the flow")
+    @Schema(title = "The namespace of the flow.")
     @PluginProperty
     private String namespace;
 
     @NotNull
-    @Schema(title = "The flow id")
+    @Schema(title = "The flow id.")
     @PluginProperty
     private String flowId;
 

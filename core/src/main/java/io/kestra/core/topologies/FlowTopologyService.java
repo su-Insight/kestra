@@ -5,6 +5,7 @@ import io.kestra.core.models.conditions.types.*;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.hierarchies.Graph;
+import io.kestra.core.models.tasks.ExecutableTask;
 import io.kestra.core.models.topologies.FlowNode;
 import io.kestra.core.models.topologies.FlowRelation;
 import io.kestra.core.models.topologies.FlowTopology;
@@ -12,7 +13,6 @@ import io.kestra.core.models.topologies.FlowTopologyGraph;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.repositories.FlowRepositoryInterface;
 import io.kestra.core.repositories.FlowTopologyRepositoryInterface;
-import io.kestra.core.runners.RunnerUtils;
 import io.kestra.core.services.ConditionService;
 import io.kestra.core.utils.ListUtils;
 import io.micronaut.core.annotation.Nullable;
@@ -35,14 +35,10 @@ public class FlowTopologyService {
     protected ConditionService conditionService;
 
     @Inject
-    protected RunnerUtils runnerUtils;
-
-    @Inject
     private FlowRepositoryInterface flowRepository;
 
     @Inject
     private FlowTopologyRepositoryInterface flowTopologyRepository;
-
 
     public FlowTopologyGraph graph(Stream<FlowTopology> flows, Function<FlowNode, FlowNode> anonymize) {
         Graph<FlowNode, FlowRelation> graph = new Graph<>();
@@ -161,10 +157,10 @@ public class FlowTopologyService {
             return parent
                 .allTasksWithChilds()
                 .stream()
-                .filter(t -> t instanceof io.kestra.core.tasks.flows.Flow)
-                .map(t -> (io.kestra.core.tasks.flows.Flow) t)
+                .filter(t -> t instanceof ExecutableTask)
+                .map(t -> (ExecutableTask<?>) t)
                 .anyMatch(t ->
-                    t.getNamespace().equals(child.getNamespace()) && t.getFlowId().equals(child.getId())
+                    t.subflowId() != null && t.subflowId().namespace().equals(child.getNamespace()) && t.subflowId().flowId().equals(child.getId())
                 );
         } catch (Exception e) {
             log.warn("Failed to detect flow task on namespace:'" + parent.getNamespace() + "', flowId:'" + parent.getId()  + "'", e);
@@ -176,16 +172,16 @@ public class FlowTopologyService {
         List<AbstractTrigger> triggers = ListUtils.emptyOnNull(child.getTriggers());
 
         // simulated execution
-        Execution execution = runnerUtils.newExecution(parent, (f, e) -> null, null);
+        Execution execution = Execution.newExecution(parent, (f, e) -> null, null);
 
         // keep only flow trigger
         List<io.kestra.core.models.triggers.types.Flow> flowTriggers = triggers
             .stream()
             .filter(t -> t instanceof io.kestra.core.models.triggers.types.Flow)
             .map(t -> (io.kestra.core.models.triggers.types.Flow) t)
-            .collect(Collectors.toList());
+            .toList();
 
-        if (flowTriggers.size() == 0) {
+        if (flowTriggers.isEmpty()) {
             return false;
         }
 
@@ -206,7 +202,7 @@ public class FlowTopologyService {
                 .values()
                 .stream()
                 .filter(c -> !isFilterCondition(c))
-                .collect(Collectors.toList());
+                .toList();
 
 
             return (multipleConditions
