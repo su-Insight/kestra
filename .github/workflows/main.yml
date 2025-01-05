@@ -16,9 +16,9 @@ on:
     inputs:
       skip-test:
         description: 'Skip test'
-        type: choice
-        required: true
-        default: 'false'
+        required: false
+        type: string
+        default: "false"
         options:
           - "true"
           - "false"
@@ -112,7 +112,7 @@ jobs:
           python3 -m pip install virtualenv
           echo $GOOGLE_SERVICE_ACCOUNT | base64 -d > ~/.gcp-service-account.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcp-service-account.json
-          ./gradlew check javadoc --parallel
+          ./gradlew check javadoc --no-daemon --priority=normal
 
       # Sonar
       - name: Analyze with Sonar
@@ -133,7 +133,7 @@ jobs:
       - uses: rlespinasse/github-slug-action@v4
 
       - name: Publish allure report
-        uses: andrcuns/allure-publish-action@v2.6.0
+        uses: andrcuns/allure-publish-action@v2.7.0
         if: ${{ always() && env.GOOGLE_SERVICE_ACCOUNT != 0 && (github.event.inputs.skip-test == 'false' || github.event.inputs.skip-test == '') }}
         env:
           GITHUB_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -149,11 +149,11 @@ jobs:
 
       # Jacoco
       - name: 'Set up Cloud SDK'
-        if: ${{ env.GOOGLE_SERVICE_ACCOUNT != 0 && (github.event.inputs.skip-test == 'false' || github.event.inputs.skip-test == '') }}
+        if: ${{ env.GOOGLE_SERVICE_ACCOUNT != 0 }}
         uses: 'google-github-actions/setup-gcloud@v2'
 
       - name: 'Copy jacoco files'
-        if: ${{ env.GOOGLE_SERVICE_ACCOUNT != 0 && (github.event.inputs.skip-test == 'false' || github.event.inputs.skip-test == '') }}
+        if: ${{ env.GOOGLE_SERVICE_ACCOUNT != 0 }}
         run: |
           mv build/reports/jacoco/testCodeCoverageReport build/reports/jacoco/test/
           mv build/reports/jacoco/test/testCodeCoverageReport.xml build/reports/jacoco/jacocoTestReport.xml
@@ -174,7 +174,7 @@ jobs:
 
       # Shadow Jar
       - name: Build jars
-        run: ./gradlew executableJar
+        run: ./gradlew executableJar --no-daemon --priority=normal
 
       # Upload artifacts
       - name: Upload jar
@@ -199,6 +199,13 @@ jobs:
           prerelease: false
           files: |
             build/executable/*
+
+      - name: Flow to add BC
+        if: startsWith(github.ref, 'refs/tags/v')
+        continue-on-error: true
+        run: |
+          curl --location "http://15.188.182.127:8080/api/v1/executions/webhook/product/release_notes/${{secrets.KESTRA_WEBHOOK_KEY}}" \
+          --header 'Content-Type: application/json'
 
   docker:
     name: Publish docker
@@ -419,7 +426,7 @@ jobs:
           echo "signing.password=${SONATYPE_GPG_PASSWORD}" >> ~/.gradle/gradle.properties
           echo "signing.secretKeyRingFile=${HOME}/.gradle/secring.gpg" >> ~/.gradle/gradle.properties
           echo ${SONATYPE_GPG_FILE} | base64 -d > ~/.gradle/secring.gpg
-          ./gradlew publishToSonatype
+          ./gradlew publishToSonatype --no-daemon --priority=normal
 
       # Release
       - name: Release package to Maven Central
@@ -435,7 +442,7 @@ jobs:
           echo "signing.password=${SONATYPE_GPG_PASSWORD}" >> ~/.gradle/gradle.properties
           echo "signing.secretKeyRingFile=${HOME}/.gradle/secring.gpg" >> ~/.gradle/gradle.properties
           echo ${SONATYPE_GPG_FILE} | base64 -d > ~/.gradle/secring.gpg
-          ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository
+          ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository --no-daemon --priority=normal
   end:
     runs-on: ubuntu-latest
     needs:
